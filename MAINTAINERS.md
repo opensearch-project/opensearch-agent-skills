@@ -4,8 +4,8 @@ This document contains a list of maintainers in this repo. See [opensearch-proje
 
 ## Current Maintainers
 
-| Maintainer       | GitHub ID                                                 | Affiliation |
-| ---------------- | --------------------------------------------------------- | ----------- |
-| Arjun kumar Giri | [arjunkumargiri](https://github.com/arjunkumargiri)       | Amazon      |
-| Darshit Chanpura | [DarshitChanpura](https://github.com/DarshitChanpura)     | Amazon      |
-| Sean Zheng       | [sean-zheng-amazon](https://github.com/sean-zheng-amazon) | Amazon      |
+| Maintainer        | GitHub ID                                                 | Affiliation |
+| ----------------- | --------------------------------------------------------- | ----------- |
+| Arjun kumar Giri  | [arjunkumargiri](https://github.com/arjunkumargiri)       | Amazon      |
+| Sarat Vemulapalli | [saratvemulapalli](https://github.com/saratvemulapalli)   | Amazon      |
+| Sean Zheng        | [sean-zheng-amazon](https://github.com/sean-zheng-amazon) | Amazon      |
