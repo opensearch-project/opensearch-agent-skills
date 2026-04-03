@@ -738,7 +738,7 @@ def _introspect_search_config(client: OpenSearch, index_name: str) -> dict:
     }
 
 
-def _build_search_query(config: dict, query_text: str, size: int) -> dict:
+def _build_search_query(config: dict, query_text: str, size: int, memory_id: str = "") -> dict:
     """Build the search query clause from a search config and query text.
 
     The same query structure is used for ALL query types (exact, fuzzy,
@@ -764,7 +764,10 @@ def _build_search_query(config: dict, query_text: str, size: int) -> dict:
     elif strategy == "dense_vector":
         return _build_neural_clause(query_text, vector_field, model_id, size)
     elif strategy == "agentic":
-        return {"agentic": {"query_text": query_text}}
+        agentic_query = {"query_text": query_text}
+        if memory_id:
+            agentic_query["memory_id"] = memory_id
+        return {"agentic": agentic_query}
     else:
         return lexical
 
@@ -780,6 +783,7 @@ def search_ui_search(
     debug: bool = False,
     search_intent: str = "",
     field_hint: str = "",
+    memory_id: str = "",
 ) -> dict:
     empty_response = {
         "error": "", "hits": [], "total": 0, "took_ms": 0,
@@ -809,7 +813,7 @@ def search_ui_search(
         # Build query from the execution plan config — same for all queries
         executed_body = {
             "size": size,
-            "query": _build_search_query(config, query, size),
+            "query": _build_search_query(config, query, size, memory_id),
         }
         query_mode = strategy
 
@@ -976,4 +980,7 @@ def _format_search_response(
     }
     if query_body is not None:
         result["query_body"] = query_body
+    # Include ext section if present (contains memory_id for conversational agents)
+    if "ext" in response:
+        result["ext"] = response["ext"]
     return result

@@ -422,6 +422,77 @@ def create_flow_agent(agent_name: str, model_id: str) -> str:
         return f"Error creating flow agent: {e}"
 
 
+def create_conversational_agent(agent_name: str, model_id: str, max_iterations: int = 10) -> str:
+    """Create a conversational agentic search agent with memory for multi-turn conversations.
+
+    Conversational agents support:
+    - Multi-turn conversations with memory retention via memory_id
+    - Context from previous questions in the conversation
+    - Multiple tools: ListIndex, IndexMapping, WebSearch, QueryPlanning
+    - Follow-up questions like "What about blue ones?" after asking about red cars
+
+    Args:
+        agent_name: Name for the agent (e.g., "my-conversational-agent")
+        model_id: The deployed LLM model ID from deploy_agentic_model
+        max_iterations: Maximum LLM iterations for query planning (default: 10)
+
+    Returns:
+        Agent ID or error message
+
+    Reference: https://docs.opensearch.org/latest/vector-search/ai-search/agentic-search/agent-converse/
+    """
+    if not model_id:
+        return "Error: model_id required."
+
+    try:
+        client = create_client()
+        body = {
+            "name": agent_name,
+            "type": "conversational",
+            "description": f"Conversational agentic search agent with memory for multi-turn queries",
+            "llm": {
+                "model_id": model_id,
+                "parameters": {
+                    "max_iteration": max_iterations
+                }
+            },
+            "tools": [
+                {"type": "ListIndexTool", "name": "ListIndexTool"},
+                {"type": "IndexMappingTool", "name": "IndexMappingTool"},
+                {
+                    "type": "WebSearchTool",
+                    "name": "DuckduckgoWebSearchTool",
+                    "parameters": {"engine": "duckduckgo"}
+                },
+                {"type": "QueryPlanningTool", "name": "QueryPlanningTool"}
+            ],
+            "memory": {
+                "type": "conversation_index"
+            },
+            "app_type": "os_chat",
+            "parameters": {
+                "_llm_interface": "bedrock/converse/claude"
+            }
+        }
+
+        resp = client.transport.perform_request(
+            "POST", "/_plugins/_ml/agents/_register", body=body
+        )
+        agent_id = resp.get("agent_id")
+        if not agent_id:
+            return f"Failed to create conversational agent: {resp}"
+
+        return json.dumps({
+            "agent_id": agent_id,
+            "agent_name": agent_name,
+            "type": "conversational",
+            "message": f"Conversational agent '{agent_name}' created with memory support. Use memory_id in queries for multi-turn conversations.",
+            "tools": ["ListIndexTool", "IndexMappingTool", "WebSearchTool", "QueryPlanningTool"]
+        }, indent=2)
+    except Exception as e:
+        return f"Error creating conversational agent: {e}"
+
+
 def create_agentic_pipeline(
     pipeline_name: str, agent_id: str, index_name: str
 ) -> str:
@@ -432,7 +503,14 @@ def create_agentic_pipeline(
         "request_processors": [
             {"agentic_query_translator": {"agent_id": agent_id}}
         ],
-        "response_processors": [{"agentic_context": {}}],
+        "response_processors": [
+            {
+                "agentic_context": {
+                    "agent_steps_summary": True,
+                    "dsl_query": True,
+                }
+            }
+        ],
     }
 
     try:

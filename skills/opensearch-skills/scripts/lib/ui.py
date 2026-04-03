@@ -277,6 +277,7 @@ class _UIHandler(BaseHTTPRequestHandler):
         index = (params.get("index") or [_default_index])[0] or _default_index
         search_intent = (params.get("intent") or [""])[0]
         field_hint = (params.get("field") or [""])[0]
+        memory_id = (params.get("memory_id") or [""])[0]
         debug_param = (params.get("debug") or ["0"])[0].strip().lower()
         debug_mode = debug_param in {"1", "true", "yes", "on"}
         try:
@@ -299,6 +300,7 @@ class _UIHandler(BaseHTTPRequestHandler):
                 debug=debug_mode,
                 search_intent=search_intent,
                 field_hint=field_hint,
+                memory_id=memory_id,
             )
             self._send_json(result)
         except Exception as e:
@@ -325,12 +327,14 @@ class _UIHandler(BaseHTTPRequestHandler):
                 # Otherwise treat as a structured search request
                 query_text = body.get("q", body.get("query_text", ""))
                 debug = body.get("debug", False)
+                memory_id = body.get("memory_id", "")
                 result = search_ui_search(
                     client=client,
                     index_name=index,
                     query_text=query_text,
                     size=size,
                     debug=debug,
+                    memory_id=memory_id,
                 )
                 self._send_json(result)
         except Exception as e:

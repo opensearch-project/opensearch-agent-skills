@@ -150,6 +150,17 @@ body {
   font-weight: 400;
 }
 
+.indices-error {
+  max-width: 420px;
+  font-size: 12px;
+  line-height: 1.35;
+  color: #8a3b1a;
+  background: #fff4e8;
+  border: 1px solid #f0c9a0;
+  border-radius: var(--radius-lg);
+  padding: 6px 10px;
+}
+
 /* ---- Header buttons (Settings, Evaluate) ---- */
 .hdr-btn {
   border: 1px solid hsl(var(--border));
@@ -626,6 +637,37 @@ body {
   padding: 2px 6px;
   border: 1px solid hsl(var(--border));
   border-radius: var(--radius-full);
+}
+
+/* Conversation toggle (conversational agent memory) */
+.conversation-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  margin-left: 16px;
+  cursor: pointer;
+  user-select: none;
+  font-size: 14px;
+  font-weight: 500;
+  color: hsl(var(--foreground));
+  padding: 4px 8px;
+  border-radius: var(--radius-lg);
+  transition: background 150ms ease;
+}
+
+.conversation-toggle:hover {
+  background: hsl(var(--accent) / 0.5);
+}
+
+.conversation-toggle input[type="checkbox"] {
+  width: 18px;
+  height: 18px;
+  cursor: pointer;
+  accent-color: hsl(var(--primary));
+}
+
+.conversation-toggle span {
+  color: hsl(var(--foreground));
 }
 
 /* Status row */

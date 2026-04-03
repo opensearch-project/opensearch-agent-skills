@@ -22,6 +22,7 @@ from lib.operations import (
     deploy_bedrock_model,
     deploy_agentic_model,
     create_flow_agent,
+    create_conversational_agent,
     create_agentic_pipeline,
 )
 
@@ -401,6 +402,37 @@ def test_create_flow_agent_success(monkeypatch):
 
     assert "created successfully" in result
     assert "agent-1" in result
+
+
+# ---------------------------------------------------------------------------
+# create_conversational_agent
+# ---------------------------------------------------------------------------
+def test_create_conversational_agent_missing_model_id():
+    result = create_conversational_agent("my-conv-agent", "")
+
+    assert "Error: model_id required" in result
+
+
+def test_create_conversational_agent_success(monkeypatch):
+    fake = _FakeClient(transport_responses=[{"agent_id": "conv-agent-1"}])
+    monkeypatch.setattr("lib.operations.create_client", lambda: fake)
+
+    result = create_conversational_agent("my-conv-agent", "model-1", max_iterations=15)
+
+    assert "conv-agent-1" in result
+    assert "conversational" in result.lower()
+    assert "memory" in result.lower()
+
+
+def test_create_conversational_agent_default_iterations(monkeypatch):
+    fake = _FakeClient(transport_responses=[{"agent_id": "conv-agent-2"}])
+    monkeypatch.setattr("lib.operations.create_client", lambda: fake)
+
+    result = create_conversational_agent("my-conv-agent", "model-1")
+
+    assert "conv-agent-2" in result
+    # Verify it uses default max_iterations=10
+    assert fake.transport.calls[0][2]["llm"]["parameters"]["max_iteration"] == 10
 
 
 # ---------------------------------------------------------------------------

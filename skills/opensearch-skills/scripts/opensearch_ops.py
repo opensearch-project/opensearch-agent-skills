@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # /// script
 # requires-python = ">=3.11"
-# dependencies = ["opensearch-py>=2.4"]
+# dependencies = ["opensearch-py>=2.4", "boto3>=1.28"]
 # ///
 """Standalone CLI for OpenSearch operations.
 
@@ -27,7 +27,8 @@ Commands:
     cleanup                Stop UI and clean up
     read-knowledge         Read a knowledge base reference file
     deploy-agentic-model   Deploy a Bedrock Claude model for agentic search
-    create-flow-agent      Create a flow agent for agentic search
+    create-flow-agent      Create a flow agent for agentic search (stateless)
+    create-conversational-agent Create a conversational agent with memory (multi-turn)
     create-agentic-pipeline Create and attach an agentic search pipeline
     search-docs            Search documentation via DuckDuckGo (default: opensearch.org)
 """
@@ -120,7 +121,16 @@ def cmd_index_bulk(args):
 
 
 def cmd_launch_ui(args):
+    from lib import client as client_lib
     from lib.ui import launch_ui
+
+    user = (getattr(args, "username", None) or "").strip()
+    pwd = (getattr(args, "password", None) or "").strip()
+    if user and pwd:
+        os.environ[client_lib.OPENSEARCH_AUTH_MODE_ENV] = client_lib.OPENSEARCH_AUTH_MODE_CUSTOM
+        os.environ[client_lib.OPENSEARCH_USER_ENV] = user
+        os.environ[client_lib.OPENSEARCH_PASSWORD_ENV] = pwd
+
     result = launch_ui(args.index or "")
     print(result)
     if "started" in result.lower() or "running" in result.lower():
@@ -275,6 +285,13 @@ def cmd_search_docs(args):
 def cmd_create_flow_agent(args):
     from lib.operations import create_flow_agent
     print(create_flow_agent(args.name, args.model_id))
+
+
+def cmd_create_conversational_agent(args):
+    from lib.operations import create_conversational_agent
+    print(create_conversational_agent(args.name, args.model_id, args.max_iterations))
+
+
 def cmd_compare_ui(args):
     from lib.ui import set_comparison_mode, launch_ui
     result = set_comparison_mode(args.baseline, args.improved)
@@ -353,6 +370,16 @@ def main():
     # launch-ui
     p = sub.add_parser("launch-ui", help="Launch Search Builder UI")
     p.add_argument("--index", default="")
+    p.add_argument(
+        "--username",
+        default="",
+        help="OpenSearch username (sets custom auth for this process; same as OPENSEARCH_USER)",
+    )
+    p.add_argument(
+        "--password",
+        default="",
+        help="OpenSearch password (sets custom auth for this process; same as OPENSEARCH_PASSWORD)",
+    )
 
     # connect-ui
     p = sub.add_parser("connect-ui", help="Connect UI to remote endpoint")
@@ -398,9 +425,15 @@ def main():
     p.add_argument("--improved", required=True, help="Improved index name (after evaluation)")
 
     # create-flow-agent
-    p = sub.add_parser("create-flow-agent", help="Create a flow agent for agentic search")
+    p = sub.add_parser("create-flow-agent", help="Create a flow agent for agentic search (stateless)")
     p.add_argument("--name", required=True)
     p.add_argument("--model-id", required=True)
+
+    # create-conversational-agent
+    p = sub.add_parser("create-conversational-agent", help="Create a conversational agent with memory (multi-turn)")
+    p.add_argument("--name", required=True, help="Agent name")
+    p.add_argument("--model-id", required=True, help="Deployed LLM model ID")
+    p.add_argument("--max-iterations", type=int, default=10, help="Max LLM iterations (default: 10)")
 
     # search-docs
     p = sub.add_parser("search-docs", help="Search documentation via DuckDuckGo")
@@ -434,6 +467,7 @@ def main():
         "read-knowledge": cmd_read_knowledge,
         "deploy-agentic-model": cmd_deploy_agentic_model,
         "create-flow-agent": cmd_create_flow_agent,
+        "create-conversational-agent": cmd_create_conversational_agent,
         "create-agentic-pipeline": cmd_create_agentic_pipeline,
         "search-docs": cmd_search_docs,
     }

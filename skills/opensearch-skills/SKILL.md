@@ -232,6 +232,43 @@ Present the plan and wait for user approval.
 
 Execute the approved plan step by step using `opensearch_ops.py` commands: create index, deploy model, create pipeline, index documents, launch UI. Run `opensearch_ops.py --help` for the full command reference. When launching the UI, always present the URL (default: `http://127.0.0.1:8765`) to the user so they can click to open the Search Builder in their browser.
 
+**IMPORTANT: For Agentic Search — Ask About Agent Type**
+
+When the plan includes agentic search, ALWAYS ask the user which agent type they need BEFORE creating the agent:
+
+> "Which agent type do you need for agentic search?
+>
+> **1. Flow Agent** (Recommended for most cases)
+> - ⚡ Faster response times
+> - 💰 Lower cost
+> - Each query is independent
+> - ✅ Best for: REST APIs, search apps where each query stands alone
+>
+> **2. Conversational Agent** (For chat/conversational interfaces)
+> - 💬 Multi-turn conversations with memory
+> - 🔗 Remembers context from previous questions
+> - Supports follow-up questions like "What about blue ones?" after asking about red items
+> - ⏱️ Slower responses, higher cost
+> - ✅ Best for: Chat bots, Q&A interfaces, conversational search
+>
+> **Example difference:**
+>
+> Flow Agent:
+>   User: "Show me red cars under $30k" → Works ✅
+>   User: "What about blue ones?" → Doesn't understand what "ones" means ❌
+>
+> Conversational Agent:
+>   User: "Show me red cars under $30k" → Works ✅
+>   User: "What about blue ones?" → Understands: blue cars under $30k ✅
+>
+> Which type do you need?"
+
+Then use the appropriate command:
+- Flow: `create-flow-agent --name <name> --model-id <model-id>`
+- Conversational: `create-conversational-agent --name <name> --model-id <model-id> --max-iterations 10`
+
+See `references/knowledge/agentic_search_guide.md` section 2.3 for the detailed decision matrix.
+
 After the UI is running, present the next steps:
 > "Your search app is live! Here's what you can do next:"
 > 1. **Evaluate search quality** (Phase 4.5) — I'll run test queries, measure relevance metrics (nDCG, precision, MRR), and suggest improvements.

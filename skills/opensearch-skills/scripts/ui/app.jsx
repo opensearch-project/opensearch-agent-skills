@@ -562,12 +562,17 @@ function App() {
   const [backendEndpoint, setBackendEndpoint] = useState("");
   const [backendConnected, setBackendConnected] = useState(false);
 
+  // Conversational agent memory state
+  const [conversationMemoryId, setConversationMemoryId] = useState(null);
+  const [continueConversation, setContinueConversation] = useState(false);
+
   // Comparison mode state
   const [comparisonAvailable, setComparisonAvailable] = useState(false);
   const [comparisonEnabled, setComparisonEnabled] = useState(false);
   const [compareIndex1, setCompareIndex1] = useState("");
   const [compareIndex2, setCompareIndex2] = useState("");
   const [availableIndices, setAvailableIndices] = useState([]);
+  const [indicesLoadError, setIndicesLoadError] = useState("");
 
   // Template & settings state
   const [schema, setSchema] = useState(null);
@@ -694,9 +699,13 @@ function App() {
       const res = await fetch("/api/indices");
       const data = await res.json();
       const list = Array.isArray(data.indices) ? data.indices : [];
+      const err = String(data.error || "").trim();
+      setIndicesLoadError(err);
       setAvailableIndices(list);
       if (list.length >= 2) setComparisonAvailable(true);
-    } catch (_) {}
+    } catch (e) {
+      setIndicesLoadError(String(e || "Failed to load indices"));
+    }
   };
 
   useEffect(() => { loadConfig(); loadComparisonConfig(); loadIndices(); }, []);
@@ -781,8 +790,12 @@ function App() {
       qs.set("debug", "1");
       if (options.intent) qs.set("intent", options.intent);
       if (options.field) qs.set("field", options.field);
+      if (continueConversation && conversationMemoryId) {
+        qs.set("memory_id", conversationMemoryId);
+      }
       const res = await fetch(`/api/search?${qs.toString()}`);
       const data = await res.json();
+      console.log("Search response:", data);
 
       if (data.error) {
         setError(data.error);
@@ -800,6 +813,18 @@ function App() {
         setCapability(String(data.capability || ""));
         setFallbackReason(String(data.fallback_reason || ""));
         setUsedSemantic(Boolean(data.used_semantic));
+
+        // Capture memory_id from conversational agent responses
+        if (data.ext?.memory_id) {
+          console.log("Memory ID captured:", data.ext.memory_id);
+          setConversationMemoryId(data.ext.memory_id);
+          if (!continueConversation) {
+            setContinueConversation(true); // Auto-enable on first memory
+          }
+        } else {
+          console.log("No memory_id in response. ext:", data.ext);
+        }
+
         if (activeTemplate === "agentic-chat") {
           setChatMessages((prev) => [...prev, {
             role: "assistant", results: hits, total: data.total, took_ms: data.took_ms,
@@ -889,6 +914,11 @@ function App() {
             <strong>{backendConnected ? "Connected" : "Disconnected"}</strong>
             {backendEndpoint && <span className="conn-ep">{backendEndpoint}</span>}
           </div>
+          {indicesLoadError && (
+            <div className="indices-error" title={indicesLoadError}>
+              Index list failed: {indicesLoadError.length > 120 ? `${indicesLoadError.slice(0, 120)}…` : indicesLoadError}
+            </div>
+          )}
           <button className={`hdr-btn ${showSettings ? "on" : ""}`} onClick={() => setShowSettings(!showSettings)}>
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
               <circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/>
@@ -1090,6 +1120,16 @@ function App() {
                 Try these auto-generated queries
                 <span>{showSuggestions ? "\u25B4" : "\u25BE"}</span>
               </button>
+              {conversationMemoryId && (
+                <label className="conversation-toggle">
+                  <input
+                    type="checkbox"
+                    checked={continueConversation}
+                    onChange={(e) => setContinueConversation(e.target.checked)}
+                  />
+                  <span>Continue conversation (multi-turn)</span>
+                </label>
+              )}
               {showSuggestions && (
                 <div className="chips">
                   {suggestions.map((item) => (
@@ -1130,6 +1170,7 @@ function App() {
                   {capability && <span>capability: {capability}</span>}
                   {!error && <span>semantic: {usedSemantic ? "on" : "off"}</span>}
                   {fallbackReason && <span>fallback: {fallbackReason}</span>}
+                  {conversationMemoryId && <span style={{color: "#7c3aed", fontWeight: 600}}>memory: {conversationMemoryId.slice(0, 8)}...</span>}
                   {error && <span className="error">{error}</span>}
                 </div>
 

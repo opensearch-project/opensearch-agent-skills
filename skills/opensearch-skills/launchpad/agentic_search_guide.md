@@ -62,6 +62,72 @@ Agentic search supports two agent types optimized for different use cases.
 | **Cost** | Lower |
 | **Use Case** | Simple stateless queries, known indexes |
 
+### 2.3 Choosing the Right Agent Type
+
+**IMPORTANT:** Always ask the user which agent type they need based on their requirements.
+
+#### Decision Matrix
+
+| Requirement | Recommended Agent | Why |
+|-------------|------------------|-----|
+| **Multi-turn conversations** (e.g., "What about blue ones?" after asking about red cars) | **Conversational** | Needs memory to maintain context |
+| **Low latency required** (< 1 second response time) | **Flow** | Fewer LLM calls, faster execution |
+| **Cost-sensitive** (minimize API calls) | **Flow** | Single tool, no memory storage |
+| **Simple, stateless queries** (each query independent) | **Flow** | No memory overhead |
+| **Complex tool orchestration** (web search, multiple indices) | **Conversational** | Has 4 tools vs 2 tools |
+| **Follow-up questions** (building on previous context) | **Conversational** | Memory retention via memory_id |
+| **Production API** (each request independent) | **Flow** | Stateless, scales better |
+| **Chat interface** (ongoing conversation) | **Conversational** | Conversation history support |
+
+#### Quick Selection Guide
+
+**Choose Flow Agent if:**
+- ✅ Each query is independent (no conversation history needed)
+- ✅ Low latency is critical (< 500ms LLM overhead preferred)
+- ✅ Cost optimization is important
+- ✅ Simple query-to-DSL translation is sufficient
+
+**Choose Conversational Agent if:**
+- ✅ Users will ask follow-up questions
+- ✅ Context from previous queries is important
+- ✅ Building a chat-style interface
+- ✅ Need web search or additional tools
+- ✅ Latency/cost is less critical than conversation quality
+
+#### Tool Comparison
+
+| Tool | Flow Agent | Conversational Agent |
+|------|-----------|---------------------|
+| IndexMappingTool | ✅ | ✅ |
+| QueryPlanningTool | ✅ | ✅ |
+| ListIndexTool | ❌ | ✅ |
+| WebSearchTool | ❌ | ✅ |
+| **Total Tools** | **2** | **4** |
+| **Memory** | ❌ | ✅ (conversation_index) |
+
+#### Example Conversation Flow
+
+**Conversational Agent:**
+```
+User: "Show me red cars under $30000"
+Agent: [Creates memory_id: abc123]
+Results: Toyota Camry, Ford Mustang
+
+User: "What about blue ones?"  ← Uses memory_id: abc123
+Agent: [Understands "blue ones" = blue cars under $30000]
+Results: Honda Accord, Tesla Model 3
+```
+
+**Flow Agent:**
+```
+User: "Show me red cars under $30000"
+Agent: [No memory created]
+Results: Toyota Camry, Ford Mustang
+
+User: "What about blue ones?"  ← No context!
+Agent: [Error: "blue ones" is ambiguous without context]
+```
+
 ---
 
 ## 3. Accuracy Characteristics
