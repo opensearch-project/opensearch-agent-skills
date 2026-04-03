@@ -1,0 +1,11 @@
+[project]
+name = "opensearch-agent-skills"
+version = "0.1.0"
+description = "OpenSearch Agent Skills"
+requires-python = ">=3.11"
+dependencies = [
+    "opensearch-py",
+]
+
+[dependency-groups]
+dev = ["pytest>=7.0"]
