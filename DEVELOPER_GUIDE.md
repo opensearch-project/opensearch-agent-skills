@@ -89,26 +89,62 @@ uv run pytest tests/test_your_skill.py -v
 
 ## Testing
 
-All tests live in the `tests/` directory and run with [pytest](https://docs.pytest.org/) via `uv`:
+All tests live in the `tests/` directory and run with [pytest](https://docs.pytest.org/) via [uv](https://docs.astral.sh/uv/).
+
+### Prerequisites
+
+- Python 3.11+
+- [uv](https://docs.astral.sh/uv/getting-started/installation/) (dependency manager / task runner)
+
+No additional setup is needed — `uv run` automatically creates a virtual environment and installs all dependencies (including `opensearch-py` and `pytest`) from `pyproject.toml` on first run.
+
+### Running the full test suite
 
 ```bash
-uv run pytest -q
+uv run pytest tests/ -v
 ```
 
-### Running a subset
+### Running a subset of tests
 
 ```bash
-# Only opensearch-skills tests
-uv run pytest tests/test_opensearch_skills_*.py -v
+# Run tests for a specific module
+uv run pytest tests/test_agent_skills_client.py -v
+uv run pytest tests/test_agent_skills_search.py -v
 
-# Single file
-uv run pytest tests/test_opensearch_skills_search.py -v
+# Run tests matching a keyword
+uv run pytest tests/ -v -k "preflight"
+
+# Run a single test
+uv run pytest tests/test_agent_skills_evaluate.py::test_ndcg_perfect_ranking -v
 ```
+
+### Available test files
+
+| Test file | Module under test |
+|---|---|
+| `test_agent_skills_client.py` | `lib/client.py` — connection, auth, text normalization |
+| `test_agent_skills_evaluate.py` | `lib/evaluate.py` — search quality metrics, diagnostics, reporting |
+| `test_agent_skills_operations.py` | `lib/operations.py` — index CRUD, bulk indexing, pipelines, model deployment |
+| `test_agent_skills_preflight.py` | `lib/client.py` — preflight cluster detection and credential management |
+| `test_agent_skills_samples.py` | `lib/samples.py` — file loading (JSON/CSV/TSV), text field inference |
+| `test_agent_skills_search.py` | `lib/search.py` — query building, suggestions, autocomplete, search UI |
+| `test_agent_skills_standalone_assets.py` | Verifies UI assets and sample data are bundled correctly |
 
 ### Writing new tests
 
-- Tests must not require a running OpenSearch cluster. Use fake/mock clients.
-- Import from skill scripts by inserting the scripts directory onto `sys.path` (see existing test patterns).
+- **No cluster required.** Tests must not require a running OpenSearch cluster. Use fake/mock clients (see existing tests for patterns).
+- **Naming convention.** Name test files `test_agent_skills_<module>.py` to match the skill's `scripts/lib/` modules.
+- **Importing skill code.** Insert the scripts directory onto `sys.path` at the top of your test file:
+  ```python
+  import sys
+  from pathlib import Path
+
+  _SCRIPTS_DIR = Path(__file__).resolve().parents[1] / "skills" / "opensearch-skills" / "scripts"
+  sys.path.insert(0, str(_SCRIPTS_DIR))
+
+  from lib.client import normalize_text  # example import
+  ```
+- **Monkeypatching.** Use pytest's `monkeypatch` fixture to stub out `create_client` and other functions that would connect to a real cluster.
 
 ### CI
 
