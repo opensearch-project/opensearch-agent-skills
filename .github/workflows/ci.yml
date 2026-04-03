@@ -1,0 +1,52 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  test-linux:
+    name: Test on Linux
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+      - name: Set up Python 3
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install UV
+        uses: astral-sh/setup-uv@v6
+      - name: Run tests
+        run: uv run pytest tests/ -v
+
+  test-macos:
+    name: Test on macOS
+    runs-on: macOS-latest
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+      - name: Set up Python 3
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install UV
+        uses: astral-sh/setup-uv@v6
+      - name: Run tests
+        run: uv run pytest tests/ -v
+
+  test-windows:
+    name: Test on Windows
+    runs-on: windows-latest
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+      - name: Set up Python 3
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install UV
+        uses: astral-sh/setup-uv@v6
+      - name: Run tests
+        shell: pwsh
+        run: uv run pytest tests/ -v
