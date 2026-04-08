@@ -40,6 +40,7 @@ venv/
 .idea/
 
 # IDE-specific local config
+.claude/
 .cursor/*
 !.cursor/skills
 .kiro/*
