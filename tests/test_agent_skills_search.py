@@ -54,7 +54,7 @@ class _FakeClient:
             "took": 1,
         }
 
-    def search(self, index, body, size=10):
+    def search(self, index, body, size=10, **kwargs):
         self.calls.append({"index": index, "body": body})
         return self._search_response
 
