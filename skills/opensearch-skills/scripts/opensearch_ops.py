@@ -26,10 +26,12 @@ Commands:
     load-sample            Load sample data (file, URL, builtin IMDB)
     cleanup                Stop UI and clean up
     read-knowledge         Read a knowledge base reference file
-    deploy-agentic-model   Deploy a Bedrock Claude model for agentic search
+    deploy-agentic-model   Deploy a Bedrock Claude model for agentic search (converse API)
+    deploy-rag-model       Deploy a Bedrock Claude model for RAG processor (invoke API)
     create-flow-agent      Create a flow agent for agentic search (stateless)
     create-conversational-agent Create a conversational agent with memory (multi-turn)
-    create-agentic-pipeline Create and attach an agentic search pipeline
+    create-flow-agentic-pipeline Create and attach a flow agent search pipeline
+    create-conversational-agent-pipeline Create and attach a conversational agent pipeline with RAG
     search-docs            Search documentation via DuckDuckGo (default: opensearch.org)
 """
 
@@ -282,6 +284,18 @@ def cmd_search_docs(args):
         print(json.dumps({"query": args.query, "site": args.site, "results": [], "error": str(e)}))
 
 
+def cmd_deploy_rag_model(args):
+    from lib.operations import deploy_rag_model
+    result = deploy_rag_model(
+        access_key=args.access_key or os.getenv("AWS_ACCESS_KEY_ID", ""),
+        secret_key=args.secret_key or os.getenv("AWS_SECRET_ACCESS_KEY", ""),
+        region=args.region,
+        session_token=args.session_token or os.getenv("AWS_SESSION_TOKEN", ""),
+        model_name=args.model_name,
+    )
+    print(result)
+
+
 def cmd_create_flow_agent(args):
     from lib.operations import create_flow_agent
     print(create_flow_agent(args.name, args.model_id))
@@ -313,9 +327,14 @@ def cmd_compare_ui(args):
 
 
 
-def cmd_create_agentic_pipeline(args):
-    from lib.operations import create_agentic_pipeline
-    print(create_agentic_pipeline(args.name, args.agent_id, args.index))
+def cmd_create_flow_agentic_pipeline(args):
+    from lib.operations import create_flow_agentic_pipeline
+    print(create_flow_agentic_pipeline(args.name, args.agent_id, args.index))
+
+
+def cmd_create_conversational_agent_pipeline(args):
+    from lib.operations import create_conversational_agent_pipeline
+    print(create_conversational_agent_pipeline(args.name, args.agent_id, args.index, args.model_id))
 
 
 def main():
@@ -412,7 +431,15 @@ def main():
     p.add_argument("--file", required=True)
 
     # deploy-agentic-model
-    p = sub.add_parser("deploy-agentic-model", help="Deploy Bedrock Claude for agentic search")
+    p = sub.add_parser("deploy-agentic-model", help="Deploy Bedrock Claude for agentic search (converse API)")
+    p.add_argument("--access-key", default="")
+    p.add_argument("--secret-key", default="")
+    p.add_argument("--region", default="us-east-1")
+    p.add_argument("--session-token", default="")
+    p.add_argument("--model-name", default="us.anthropic.claude-sonnet-4-20250514-v1:0")
+
+    # deploy-rag-model
+    p = sub.add_parser("deploy-rag-model", help="Deploy Bedrock Claude for RAG processor (invoke API)")
     p.add_argument("--access-key", default="")
     p.add_argument("--secret-key", default="")
     p.add_argument("--region", default="us-east-1")
@@ -441,11 +468,18 @@ def main():
     p.add_argument("--site", default="opensearch.org", help="Site to restrict search to (default: opensearch.org)")
     p.add_argument("--count", type=int, default=5, help="Max results (1-10)")
 
-    # create-agentic-pipeline
-    p = sub.add_parser("create-agentic-pipeline", help="Create agentic search pipeline")
-    p.add_argument("--name", required=True)
-    p.add_argument("--agent-id", required=True)
-    p.add_argument("--index", required=True)
+    # create-flow-agentic-pipeline
+    p = sub.add_parser("create-flow-agentic-pipeline", help="Create flow agent search pipeline")
+    p.add_argument("--name", required=True, help="Pipeline name")
+    p.add_argument("--agent-id", required=True, help="Flow agent ID")
+    p.add_argument("--index", required=True, help="Index name")
+
+    # create-conversational-agent-pipeline
+    p = sub.add_parser("create-conversational-agent-pipeline", help="Create conversational agent pipeline with RAG")
+    p.add_argument("--name", required=True, help="Pipeline name")
+    p.add_argument("--agent-id", required=True, help="Conversational agent ID")
+    p.add_argument("--index", required=True, help="Index name")
+    p.add_argument("--model-id", required=True, help="Deployed LLM model ID for RAG")
 
     args = parser.parse_args()
 
@@ -466,9 +500,11 @@ def main():
         "cleanup": cmd_cleanup,
         "read-knowledge": cmd_read_knowledge,
         "deploy-agentic-model": cmd_deploy_agentic_model,
+        "deploy-rag-model": cmd_deploy_rag_model,
         "create-flow-agent": cmd_create_flow_agent,
         "create-conversational-agent": cmd_create_conversational_agent,
-        "create-agentic-pipeline": cmd_create_agentic_pipeline,
+        "create-flow-agentic-pipeline": cmd_create_flow_agentic_pipeline,
+        "create-conversational-agent-pipeline": cmd_create_conversational_agent_pipeline,
         "search-docs": cmd_search_docs,
     }
 

@@ -186,6 +186,8 @@ def _resolve_semantic_runtime_hints(
         pass
 
     has_neural_search_pipeline = False
+    has_rag_processor = False
+    rag_model_id = ""
 
     if search_pipeline:
         try:
@@ -197,6 +199,13 @@ def _resolve_semantic_runtime_hints(
                         has_agentic_pipeline = True
                     if "neural_query_enricher" in processor:
                         has_neural_search_pipeline = True
+            # Check response processors for RAG (conversational agent)
+            for processor in pipeline.get("response_processors", []):
+                if isinstance(processor, dict):
+                    if "retrieval_augmented_generation" in processor:
+                        has_rag_processor = True
+                        rag_config = processor["retrieval_augmented_generation"]
+                        rag_model_id = normalize_text(rag_config.get("model_id", ""))
             # normalization-processor in phase_results_processors also indicates neural search
             for processor in pipeline.get("phase_results_processors", []):
                 if isinstance(processor, dict) and "normalization-processor" in processor:
@@ -248,6 +257,8 @@ def _resolve_semantic_runtime_hints(
         "has_agentic_pipeline": str(has_agentic_pipeline).lower(),
         "has_neural_search_pipeline": str(has_neural_search_pipeline).lower(),
         "has_sparse": str(has_sparse).lower(),
+        "has_rag_processor": str(has_rag_processor).lower(),
+        "rag_model_id": rag_model_id,
     }
 
 
@@ -691,7 +702,7 @@ def set_search_config(index_name: str, config: dict) -> None:
     """Store the execution plan's query configuration for an index.
 
     Config keys:
-        strategy: "bm25" | "neural_sparse" | "dense_vector" | "hybrid" | "agentic"
+        strategy: "bm25" | "neural_sparse" | "dense_vector" | "hybrid" | "agentic_flow" | "agentic_conversational"
         lexical_fields: list of field names (with optional ^boost)
         vector_field: name of the vector/rank_features field (if semantic)
         vector_type: "sparse" | "dense" (if semantic)
@@ -703,6 +714,14 @@ def set_search_config(index_name: str, config: dict) -> None:
 def get_search_config(index_name: str) -> dict | None:
     """Retrieve the stored search config for an index, or None."""
     return _search_configs.get(index_name)
+
+
+def clear_search_config(index_name: str = None) -> None:
+    """Clear cached search config for an index, or all indices if None."""
+    if index_name:
+        _search_configs.pop(index_name, None)
+    else:
+        _search_configs.clear()
 
 
 def _introspect_search_config(client: OpenSearch, index_name: str) -> dict:
@@ -720,8 +739,10 @@ def _introspect_search_config(client: OpenSearch, index_name: str) -> dict:
     semantic_ready = bool(vector_field and (model_id or (has_sparse and has_neural)))
 
     has_search_pipeline = bool(hints.get("search_pipeline", ""))
+    has_rag = hints.get("has_rag_processor", "false") == "true"
     if has_agentic:
-        strategy = "agentic"
+        # Conversational agent has RAG processor, flow agent does not
+        strategy = "agentic_conversational" if has_rag else "agentic_flow"
     elif semantic_ready and has_search_pipeline:
         strategy = "hybrid"
     elif semantic_ready:
@@ -735,10 +756,11 @@ def _introspect_search_config(client: OpenSearch, index_name: str) -> dict:
         "vector_field": vector_field,
         "vector_type": "sparse" if has_sparse else "dense",
         "model_id": model_id,
+        "rag_model_id": hints.get("rag_model_id", ""),
     }
 
 
-def _build_search_query(config: dict, query_text: str, size: int, memory_id: str = "") -> dict:
+def _build_search_query(config: dict, query_text: str, size: int) -> dict:
     """Build the search query clause from a search config and query text.
 
     The same query structure is used for ALL query types (exact, fuzzy,
@@ -763,11 +785,8 @@ def _build_search_query(config: dict, query_text: str, size: int, memory_id: str
         return _build_neural_sparse_clause(query_text, vector_field, model_id)
     elif strategy == "dense_vector":
         return _build_neural_clause(query_text, vector_field, model_id, size)
-    elif strategy == "agentic":
-        agentic_query = {"query_text": query_text}
-        if memory_id:
-            agentic_query["memory_id"] = memory_id
-        return {"agentic": agentic_query}
+    elif strategy in ("agentic_flow", "agentic_conversational"):
+        return {"agentic": {"query_text": query_text}}
     else:
         return lexical
 
@@ -783,7 +802,6 @@ def search_ui_search(
     debug: bool = False,
     search_intent: str = "",
     field_hint: str = "",
-    memory_id: str = "",
 ) -> dict:
     empty_response = {
         "error": "", "hits": [], "total": 0, "took_ms": 0,
@@ -804,7 +822,8 @@ def search_ui_search(
     strategy = config.get("strategy", "bm25")
     query = query_text.strip()
     fallback_reason = ""
-    used_semantic = strategy in ("hybrid", "neural_sparse", "dense_vector", "agentic")
+    is_agentic = strategy in ("agentic_flow", "agentic_conversational")
+    used_semantic = strategy in ("hybrid", "neural_sparse", "dense_vector") or is_agentic
 
     if not query:
         executed_body: dict = {"size": size, "query": {"match_all": {}}}
@@ -813,12 +832,30 @@ def search_ui_search(
         # Build query from the execution plan config — same for all queries
         executed_body = {
             "size": size,
-            "query": _build_search_query(config, query, size, memory_id),
+            "query": _build_search_query(config, query, size),
         }
-        query_mode = strategy
+        query_mode = "agentic" if is_agentic else strategy
 
+        # Conversational agent: add ext.generative_qa_parameters for RAG processor
+        # llm_model must start with "bedrock/" to trigger BEDROCK provider format
+        # in ML Commons, which sends ${parameters.inputs} to the connector.
+        if strategy == "agentic_conversational":
+            rag_params: dict = {
+                "llm_model": "bedrock/claude",
+                "llm_question": query,
+                "context_size": 5,
+                "message_size": 5,
+                "timeout": 60,
+            }
+            executed_body["ext"] = {"generative_qa_parameters": rag_params}
+
+    # Preserve RAG ext params for fallback queries (pipeline requires them)
+    rag_ext = executed_body.get("ext")
+
+    # Agentic search needs longer timeout (agent + RAG both call Bedrock)
+    search_timeout = 60 if is_agentic else 10
     try:
-        response = client.search(index=index_name, body=executed_body)
+        response = client.search(index=index_name, body=executed_body, request_timeout=search_timeout)
     except Exception as query_error:
         if query:
             fallback_reason = f"primary query failed: {query_error}"
@@ -826,6 +863,8 @@ def search_ui_search(
             executed_body = _build_default_lexical_body(
                 query=query, size=size, fields=lexical_fields,
             )
+            if rag_ext:
+                executed_body["ext"] = rag_ext
             try:
                 response = client.search(index=index_name, body=executed_body)
             except Exception:
@@ -833,6 +872,8 @@ def search_ui_search(
                     "size": size,
                     "query": {"multi_match": {"query": query, "fields": ["*"]}},
                 }
+                if rag_ext:
+                    executed_body["ext"] = rag_ext
                 response = client.search(index=index_name, body=executed_body)
             used_semantic = False
             query_mode = f"{query_mode}_fallback_bm25"
@@ -980,7 +1021,4 @@ def _format_search_response(
     }
     if query_body is not None:
         result["query_body"] = query_body
-    # Include ext section if present (contains memory_id for conversational agents)
-    if "ext" in response:
-        result["ext"] = response["ext"]
     return result

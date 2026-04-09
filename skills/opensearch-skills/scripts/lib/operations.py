@@ -391,6 +391,64 @@ def deploy_agentic_model(
         return f"Error creating agentic model: {e}"
 
 
+def deploy_rag_model(
+    access_key: str,
+    secret_key: str,
+    region: str = "us-east-1",
+    session_token: str = "",
+    model_name: str = "us.anthropic.claude-sonnet-4-20250514-v1:0",
+) -> str:
+    """Deploy a Bedrock model for the RAG processor.
+
+    The RAG processor passes context via ${parameters.inputs}; the connector
+    template uses the /invoke API, unlike the agent connector which uses
+    ${parameters.system_prompt}/${parameters.user_prompt} (the /converse API).
+    """
+    if not access_key or not secret_key:
+        return "Error: AWS credentials required."
+
+    creds = {"access_key": access_key.strip(), "secret_key": secret_key.strip()}
+    if session_token and session_token.strip():
+        creds["session_token"] = session_token.strip()
+
+    register_body = {
+        "name": f"rag-model-{int(time.time())}",
+        "function_name": "remote",
+        "connector": {
+            "name": f"Bedrock Claude RAG Connector {int(time.time())}",
+            "description": "Bedrock connector for RAG processor (invoke API)",
+            "version": 1,
+            "protocol": "aws_sigv4",
+            "parameters": {
+                "region": region.strip(),
+                "service_name": "bedrock",
+                "model": model_name,
+            },
+            "credential": creds,
+            "actions": [{
+                "action_type": "predict",
+                "method": "POST",
+                "url": f"https://bedrock-runtime.{region.strip()}.amazonaws.com/model/{model_name}/invoke",
+                "headers": {"content-type": "application/json"},
+                "request_body": '{"anthropic_version":"bedrock-2023-05-31","max_tokens":1024,"messages":[{"role":"user","content":[{"type":"text","text":"${parameters.inputs}"}]}]}',
+            }],
+        },
+    }
+
+    try:
+        client = create_client()
+        set_ml_settings(client)
+        resp = client.transport.perform_request(
+            "POST", "/_plugins/_ml/models/_register?deploy=true", body=register_body
+        )
+        model_id = resp.get("model_id") or resp.get("modelId")
+        if not model_id:
+            return f"Registration failed: {resp}"
+        return model_id
+    except Exception as e:
+        return f"Error creating RAG model: {e}"
+
+
 def create_flow_agent(agent_name: str, model_id: str) -> str:
     if not model_id:
         return "Error: model_id required."
@@ -493,9 +551,14 @@ def create_conversational_agent(agent_name: str, model_id: str, max_iterations: 
         return f"Error creating conversational agent: {e}"
 
 
-def create_agentic_pipeline(
+def create_flow_agentic_pipeline(
     pipeline_name: str, agent_id: str, index_name: str
 ) -> str:
+    """Create a search pipeline for Flow Agent (stateless, low-latency).
+
+    Flow agents are optimized for REST APIs and search applications
+    requiring fast, independent queries.
+    """
     if not agent_id or not index_name:
         return "Error: agent_id and index_name required."
 
@@ -504,12 +567,7 @@ def create_agentic_pipeline(
             {"agentic_query_translator": {"agent_id": agent_id}}
         ],
         "response_processors": [
-            {
-                "agentic_context": {
-                    "agent_steps_summary": True,
-                    "dsl_query": True,
-                }
-            }
+            {"agentic_context": {"dsl_query": True}}
         ],
     }
 
@@ -522,6 +580,69 @@ def create_agentic_pipeline(
             index=index_name,
             body={"index": {"search.default_pipeline": pipeline_name}},
         )
-        return f"Agentic pipeline '{pipeline_name}' attached to '{index_name}'."
+        return f"Flow agent pipeline '{pipeline_name}' attached to '{index_name}'."
     except Exception as e:
-        return f"Failed to create agentic pipeline: {e}"
+        return f"Failed to create flow agent pipeline: {e}"
+
+
+def create_conversational_agent_pipeline(
+    pipeline_name: str, agent_id: str, index_name: str, model_id: str
+) -> str:
+    """Create a search pipeline for Conversational Agent with RAG processor.
+
+    Conversational agents support multi-turn conversations with context retention.
+    The RAG processor enriches responses with context from retrieved documents.
+    context_field_list is auto-detected from the index mapping (text/keyword fields).
+    """
+    if not agent_id or not index_name or not model_id:
+        return "Error: agent_id, index_name, and model_id required."
+
+    # Auto-detect text fields from index mapping for RAG context
+    try:
+        client = create_client()
+        mapping = client.indices.get_mapping(index=index_name)
+        props = mapping.get(index_name, {}).get("mappings", {}).get("properties", {})
+        context_fields = [
+            f for f, spec in props.items()
+            if spec.get("type") in ("text", "keyword")
+        ]
+    except Exception as e:
+        return f"Error: could not read index mapping for '{index_name}': {e}"
+
+    if not context_fields:
+        return f"Error: no text/keyword fields found in index '{index_name}'."
+
+    pipeline_body = {
+        "request_processors": [
+            {"agentic_query_translator": {"agent_id": agent_id}}
+        ],
+        "response_processors": [
+            {
+                "agentic_context": {
+                    "agent_steps_summary": True,
+                    "dsl_query": True,
+                }
+            },
+            {
+                "retrieval_augmented_generation": {
+                    "model_id": model_id,
+                    "context_field_list": context_fields,
+                    "system_prompt": "You are a helpful assistant. Answer the user's question based on the provided context.",
+                    "user_instructions": "Answer the question based on the search results provided as context.",
+                }
+            },
+        ],
+    }
+
+    try:
+        client = create_client()
+        client.transport.perform_request(
+            "PUT", f"/_search/pipeline/{pipeline_name}", body=pipeline_body
+        )
+        client.indices.put_settings(
+            index=index_name,
+            body={"index": {"search.default_pipeline": pipeline_name}},
+        )
+        return f"Conversational agent pipeline '{pipeline_name}' with RAG attached to '{index_name}'."
+    except Exception as e:
+        return f"Failed to create conversational agent pipeline: {e}"

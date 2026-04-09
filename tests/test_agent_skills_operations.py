@@ -21,9 +21,9 @@ from lib.operations import (
     deploy_local_model,
     deploy_bedrock_model,
     deploy_agentic_model,
+    deploy_rag_model,
     create_flow_agent,
     create_conversational_agent,
-    create_agentic_pipeline,
 )
 
 
@@ -52,6 +52,13 @@ class _FakeIndices:
 
     def put_settings(self, index, body):
         self.settings_calls.append((index, body))
+
+    def get_mapping(self, index):
+        return {index: {"mappings": {"properties": {
+            "title": {"type": "text"},
+            "description": {"type": "text"},
+            "category": {"type": "keyword"},
+        }}}}
 
 
 class _FakeTransport:
@@ -386,6 +393,47 @@ def test_deploy_agentic_model_success(monkeypatch):
 
 
 # ---------------------------------------------------------------------------
+# deploy_rag_model
+# ---------------------------------------------------------------------------
+def test_deploy_rag_model_missing_credentials():
+    result = deploy_rag_model(access_key="", secret_key="")
+
+    assert "Error: AWS credentials required" in result
+
+
+def test_deploy_rag_model_success(monkeypatch):
+    fake = _FakeClient(transport_responses=[
+        {},  # set_ml_settings
+        {"model_id": "rag-m-1"},  # register+deploy
+    ])
+    monkeypatch.setattr("lib.operations.create_client", lambda: fake)
+
+    result = deploy_rag_model(access_key="AK", secret_key="SK", region="us-west-2")
+
+    assert result == "rag-m-1"
+
+
+def test_deploy_rag_model_uses_invoke_api(monkeypatch):
+    captured = {}
+    def fake_perform(method, url, body=None, **kw):
+        captured["body"] = body
+        return {"model_id": "rag-m-2"}
+
+    fake = _FakeClient(transport_responses=[{}])
+    fake.transport.perform_request = fake_perform
+    monkeypatch.setattr("lib.operations.create_client", lambda: fake)
+
+    deploy_rag_model(access_key="AK", secret_key="SK", region="us-east-1")
+
+    connector = captured["body"]["connector"]
+    action_url = connector["actions"][0]["url"]
+    request_body = connector["actions"][0]["request_body"]
+    assert "/invoke" in action_url
+    assert "/converse" not in action_url
+    assert "${parameters.inputs}" in request_body
+
+
+# ---------------------------------------------------------------------------
 # create_flow_agent
 # ---------------------------------------------------------------------------
 def test_create_flow_agent_missing_model_id():
@@ -436,19 +484,43 @@ def test_create_conversational_agent_default_iterations(monkeypatch):
 
 
 # ---------------------------------------------------------------------------
-# create_agentic_pipeline
+# create_flow_agentic_pipeline
 # ---------------------------------------------------------------------------
-def test_create_agentic_pipeline_missing_params():
-    assert "Error:" in create_agentic_pipeline("pipe", "", "idx")
-    assert "Error:" in create_agentic_pipeline("pipe", "agent-1", "")
+def test_create_flow_agentic_pipeline_missing_params():
+    from lib.operations import create_flow_agentic_pipeline
+    assert "Error:" in create_flow_agentic_pipeline("pipe", "", "idx")
+    assert "Error:" in create_flow_agentic_pipeline("pipe", "agent-1", "")
 
 
-def test_create_agentic_pipeline_success(monkeypatch):
+def test_create_flow_agentic_pipeline_success(monkeypatch):
+    from lib.operations import create_flow_agentic_pipeline
     fake = _FakeClient()
     monkeypatch.setattr("lib.operations.create_client", lambda: fake)
 
-    result = create_agentic_pipeline("agentic-pipe", "agent-1", "my-index")
+    result = create_flow_agentic_pipeline("flow-pipe", "agent-1", "my-index")
 
+    assert "Flow agent pipeline" in result
+    assert "attached to" in result
+    assert fake.transport.calls
+    assert fake.indices.settings_calls
+
+
+def test_create_conversational_agent_pipeline_missing_params():
+    from lib.operations import create_conversational_agent_pipeline
+    assert "Error:" in create_conversational_agent_pipeline("pipe", "", "idx", "model-1")
+    assert "Error:" in create_conversational_agent_pipeline("pipe", "agent-1", "", "model-1")
+    assert "Error:" in create_conversational_agent_pipeline("pipe", "agent-1", "idx", "")
+
+
+def test_create_conversational_agent_pipeline_success(monkeypatch):
+    from lib.operations import create_conversational_agent_pipeline
+    fake = _FakeClient()
+    monkeypatch.setattr("lib.operations.create_client", lambda: fake)
+
+    result = create_conversational_agent_pipeline("conv-pipe", "agent-1", "my-index", "model-1")
+
+    assert "Conversational agent pipeline" in result
+    assert "RAG" in result
     assert "attached to" in result
     assert fake.transport.calls
     assert fake.indices.settings_calls

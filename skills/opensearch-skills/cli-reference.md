@@ -124,13 +124,31 @@ uv run python scripts/opensearch_ops.py connect-ui --endpoint my-opensearch.exam
 
 ```bash
 # 1. Deploy Bedrock Claude model for agent reasoning
+# Method A: Using environment variables (recommended for manual use)
+export AWS_ACCESS_KEY_ID="your-access-key"
+export AWS_SECRET_ACCESS_KEY="your-secret-key"
+export AWS_REGION="us-east-1"
 uv run python scripts/opensearch_ops.py deploy-agentic-model --region us-east-1
 
-# 2. Create a flow agent
-uv run python scripts/opensearch_ops.py create-flow-agent --name my-agent --model-id <CONNECTOR_MODEL_ID>
+# Method B: Passing credentials as arguments (for automation, delete from chat history after use)
+uv run python scripts/opensearch_ops.py deploy-agentic-model \
+  --access-key "your-access-key" \
+  --secret-key "your-secret-key" \
+  --region us-east-1
 
-# 3. Create and attach agentic search pipeline
-uv run python scripts/opensearch_ops.py create-agentic-pipeline --name my-agentic-pipeline --agent-id <AGENT_ID> --index my-index
+# 2a. For stateless searches (REST APIs, search apps):
+# Create a flow agent
+uv run python scripts/opensearch_ops.py create-flow-agent --name my-flow-agent --model-id <CONNECTOR_MODEL_ID>
+# Create flow agent pipeline
+uv run python scripts/opensearch_ops.py create-flow-agentic-pipeline --name my-flow-pipeline --agent-id <AGENT_ID> --index my-index
+
+# 2b. For multi-turn conversations (chatbots):
+# Create a conversational agent
+uv run python scripts/opensearch_ops.py create-conversational-agent --name my-conv-agent --model-id <CONNECTOR_MODEL_ID>
+# Deploy a separate RAG model (uses /invoke API, different from agent's /converse API)
+uv run python scripts/opensearch_ops.py deploy-rag-model --region us-east-1
+# Create conversational agent pipeline with RAG
+uv run python scripts/opensearch_ops.py create-conversational-agent-pipeline --name my-conv-pipeline --agent-id <AGENT_ID> --index my-index --model-id <RAG_MODEL_ID>
 ```
 
 ## Read knowledge base files
