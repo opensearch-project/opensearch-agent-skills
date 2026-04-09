@@ -5,40 +5,12 @@
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>OpenSearch Launchpad</title>
   <link rel="stylesheet" href="/styles.css" />
-  <!-- Pinned jsDelivr UMD builds: unpkg redirects / blocked CDNs often cause a blank page (no React). -->
-  <script crossorigin src="https://cdn.jsdelivr.net/npm/react@18.3.1/umd/react.production.min.js"></script>
-  <script crossorigin src="https://cdn.jsdelivr.net/npm/react-dom@18.3.1/umd/react-dom.production.min.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/@babel/standalone@7.26.9/babel.min.js"></script>
+  <script crossorigin src="https://unpkg.com/react@18/umd/react.development.js"></script>
+  <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
 </head>
 <body>
-  <div id="root">
-    <div id="boot-loading" style="max-width:42rem;margin:3rem auto;padding:0 1.25rem;font-family:system-ui,sans-serif;color:#0c4a6e;">
-      <p style="font-weight:600;font-size:1.1rem;margin:0 0 0.5rem;">Loading Search Builder…</p>
-      <p style="margin:0;font-size:0.9rem;color:#64748b;line-height:1.5;">Fetching React and compiling the UI. If this message stays for a long time, your network may be blocking <code>cdn.jsdelivr.net</code> — check the browser console (F12).</p>
-    </div>
-  </div>
-  <script type="text/babel" data-presets="react" src="/app.jsx"></script>
-  <script>
-    (function () {
-      var deadline = Date.now() + 12000;
-      function tick() {
-        var root = document.getElementById("root");
-        var boot = document.getElementById("boot-loading");
-        if (!root || !boot) return;
-        if (!root.contains(boot)) return;
-        if (Date.now() < deadline) {
-          setTimeout(tick, 500);
-          return;
-        }
-        root.innerHTML =
-          '<div style="max-width:42rem;margin:3rem auto;padding:0 1.25rem;font-family:system-ui,sans-serif">' +
-          "<h1 style=\"font-size:1.25rem;margin:0 0 0.75rem\">Search UI did not start</h1>" +
-          "<p style=\"margin:0 0 0.75rem;line-height:1.55;color:#334155\">React/Babel likely failed to load from the CDN, or <code>app.jsx</code> failed to compile. Open <strong>Developer tools → Console</strong> for errors.</p>" +
-          "<p style=\"margin:0;line-height:1.55;color:#334155\">Allow outbound HTTPS to <code>cdn.jsdelivr.net</code>, or use a network without script blocking.</p>" +
-          "</div>";
-      }
-      setTimeout(tick, 500);
-    })();
-  </script>
+  <div id="root"></div>
+  <script type="text/babel" src="/app.jsx"></script>
 </body>
 </html>
