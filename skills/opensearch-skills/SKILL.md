@@ -214,7 +214,7 @@ Ask the user whether they want to process the entire document or specific page r
 
 ### Phase 2 — Gather Preferences
 
-Ask the user **one at a time**: query pattern (keyword, semantic, hybrid, agentic) and deployment preference. Skip questions that don't apply.
+Ask the user **one at a time**: search strategy and deployment preference. Always present all five strategies — `bm25` (keyword), `dense_vector` (semantic via embeddings), `neural_sparse` (semantic via learned sparse representations), `hybrid` (combines keyword + semantic), and `agentic` (LLM-driven multi-step retrieval, requires OpenSearch 3.2+) — regardless of cluster version. Skip questions that don't apply.
 
 ### Phase 3 — Plan
 

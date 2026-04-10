@@ -32,6 +32,7 @@ docker rm -f "$CONTAINER_NAME" 2>/dev/null || true
 echo "Starting OpenSearch..." >&2
 
 docker run -d \
+    --pull always \
     --name "$CONTAINER_NAME" \
     -p "${PORT}:9200" \
     -p 9600:9600 \
