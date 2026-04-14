@@ -177,6 +177,9 @@ uv run python scripts/opensearch_ops.py <command> [options]
 - Show architecture proposals to the user before execution.
 - Follow the phases **in order** — do not jump ahead.
 - When a step fails, present the error and wait for guidance.
+- Do not describe **Amazon OpenSearch Serverless** as scaling to zero.
+- **Agentic search** does not deploy to **Amazon OpenSearch Serverless** in this workflow — use a **managed domain** (see Phase 5). Do not promise Serverless for `agentic`.
+- Do not assume **Serverless** matches a **managed domain** or self-managed cluster for every plugin, cluster setting, or OpenSearch feature — confirm in **AWS documentation**.
 
 ## Workflow Phases
 
