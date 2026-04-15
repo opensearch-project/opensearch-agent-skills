@@ -9,6 +9,7 @@ A collection of [Agent Skills](https://agentskills.io/specification) for buildin
 | Skill | Description |
 |-------|-------------|
 | **[opensearch-skills](skills/opensearch-skills/)** | Build search apps (semantic, hybrid, neural, agentic) and analyze logs/traces with OpenSearch. Includes local execution and optional AWS deployment. |
+| **[opensearch-plugins](skills/opensearch-plugins/)** | OpenSearch plugin reference and guidance. Covers 17 plugins including anomaly detection, ML Commons, alerting, flow framework, k-NN, neural search, index management, security, and more. |
 
 > More skills coming soon — contributions welcome! See [DEVELOPER_GUIDE.md](DEVELOPER_GUIDE.md).
 
@@ -67,6 +68,9 @@ skills/
     launchpad/               # Search architecture guides (loaded on demand)
     observability/            # Log analytics & trace guides (loaded on demand)
     scripts/                 # Execution scripts
+  opensearch-plugins/        # Plugin reference skill
+    SKILL.md                 # Routing entry point (keyword table)
+    references/              # Per-plugin reference files (loaded on demand)
 ```
 
 ---
