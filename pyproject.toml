@@ -8,4 +8,4 @@ dependencies = [
 ]
 
 [dependency-groups]
-dev = ["pytest>=7.0"]
+dev = ["pytest>=9.0.3"]
