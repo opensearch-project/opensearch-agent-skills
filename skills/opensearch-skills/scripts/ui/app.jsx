@@ -3,12 +3,26 @@ const { useEffect, useState, useRef, useCallback } = React;
 const TEMPLATES = [
   { id: "document", label: "Document" },
   { id: "ecommerce", label: "E-Commerce" },
-  { id: "agentic-chat", label: "Conversational", disabled: true },
-  { id: "media", label: "Media", disabled: true },
+  { id: "agent", label: "Agent" },
 ];
 
+const AGENT_PROMPTS_FALLBACK = {
+  search: [
+    "Find items with high ratings from recent years",
+    "Show me entries in a specific category",
+    "Top results matching a keyword",
+    "Items with particular attributes or filters",
+  ],
+  chat: [
+    "What are the highest rated items?",
+    "Tell me about the most popular categories",
+    "Recommend something interesting",
+    "Which items stand out in this collection?",
+  ],
+};
+
 function TemplateIcon({ id }) {
-  const size = 32;
+  const size = 20;
   if (id === "document") {
     return (
       <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
@@ -23,17 +37,10 @@ function TemplateIcon({ id }) {
       </svg>
     );
   }
-  if (id === "agentic-chat") {
+  if (id === "agent") {
     return (
       <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
         <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
-      </svg>
-    );
-  }
-  if (id === "media") {
-    return (
-      <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-        <rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/>
       </svg>
     );
   }
@@ -43,9 +50,10 @@ function TemplateIcon({ id }) {
 // ---------------------------------------------------------------------------
 // Field role inference for ecommerce/media templates
 // ---------------------------------------------------------------------------
-const TITLE_HINTS = ["title", "name", "label", "heading", "subject"];
+const TITLE_HINTS = ["title", "name", "label", "heading", "subject", "primarytitle"];
 const IMAGE_HINTS = ["image", "img", "poster", "photo", "thumbnail", "picture", "cover", "avatar", "logo"];
 const DESC_HINTS = ["description", "summary", "overview", "abstract", "content", "body", "text", "plot"];
+const NOT_TITLE_HINTS = ["titletype", "type", "category", "kind"];
 
 function inferFieldRoles(source, schema, fieldOverrides) {
   const roles = { title: null, image: null, description: null, tags: [], metrics: [] };
@@ -73,7 +81,7 @@ function inferFieldRoles(source, schema, fieldOverrides) {
     const lower = key.toLowerCase();
     const strVal = String(val);
 
-    if (!roles.title && TITLE_HINTS.some((h) => lower.includes(h)) && strVal.length < 200) {
+    if (!roles.title && TITLE_HINTS.some((h) => lower.includes(h)) && !NOT_TITLE_HINTS.some((h) => lower === h) && strVal.length < 200) {
       roles.title = { field: key, value: strVal };
       continue;
     }
@@ -99,7 +107,7 @@ function inferFieldRoles(source, schema, fieldOverrides) {
       const strVal = String(val);
       if (!roles.title && strVal.length >= 3 && strVal.length < 120 && /[a-zA-Z]/.test(strVal)) {
         roles.title = { field: key, value: strVal };
-      } else if (!roles.description && strVal.length > 40) {
+      } else if (!roles.description && strVal.length > 40 && !/^https?:\/\//.test(strVal)) {
         roles.description = { field: key, value: strVal.slice(0, 300) };
       }
       if (roles.title && roles.description) break;
@@ -127,8 +135,11 @@ function EcommerceResults({ results, loading, schema, fieldOverrides, filterSour
               </div>
             )}
             <div className="ecommerce-body">
-              <div className="ecommerce-title">{roles.title?.value || item.preview || item.id}</div>
-              {roles.description && (
+              <div className="ecommerce-title-row">
+                <span className="ecommerce-rank">{idx + 1}</span>
+                <span className="ecommerce-title">{roles.title?.value || item.preview || item.id}</span>
+              </div>
+              {roles.description && roles.description.value !== (roles.title?.value || "") && (
                 <div className="ecommerce-desc">{roles.description.value}</div>
               )}
               {roles.tags.length > 0 && (
@@ -157,27 +168,36 @@ function EcommerceResults({ results, loading, schema, fieldOverrides, filterSour
 // ---------------------------------------------------------------------------
 // Template: Document Search (list with large previews, score bars)
 // ---------------------------------------------------------------------------
-function DocumentResults({ results, loading, filterSource }) {
+function DocumentResults({ results, loading, filterSource, schema, fieldOverrides }) {
   if (loading) return null;
-  const maxScore = results.length > 0 ? Math.max(...results.map((r) => Number(r.score || 0)), 0.001) : 1;
   return (
     <div className="results doc-results">
       {results.map((item, idx) => {
-        const pct = Math.round((Number(item.score || 0) / maxScore) * 100);
+        const s = item.source || {};
+        const displaySource = filterSource ? filterSource(s) : s;
+        const roles = inferFieldRoles(displaySource, schema, fieldOverrides);
+        const title = roles.title?.value || item.preview || "Untitled";
+        const metaParts = [];
+        roles.tags.slice(0, 3).forEach((tag) => metaParts.push(tag.value));
+        roles.metrics.slice(0, 2).forEach((m) => metaParts.push(`${m.field}: ${m.value}`));
+        const metaLine = metaParts.join(" · ");
+        const score = Number(item.score || 0).toFixed(4);
         return (
           <article className="doc-card" key={item.id || idx} style={{ animationDelay: `${idx * 35}ms` }}>
-            <div className="doc-score-col">
-              <div className="doc-score-bar-bg">
-                <div className="doc-score-bar-fill" style={{ height: `${pct}%` }} />
-              </div>
-              <span className="doc-score-label">{Number(item.score || 0).toFixed(2)}</span>
-            </div>
+            <span className="doc-rank">{idx + 1}</span>
             <div className="doc-content">
-              <div className="doc-id">ID: {item.id || "(none)"}</div>
-              <details>
-                <summary>Full document</summary>
-                <pre>{JSON.stringify(filterSource ? filterSource(item.source) : item.source, null, 2)}</pre>
+              <div className="doc-title">{title}</div>
+              {metaLine && <div className="doc-meta">{metaLine}</div>}
+              <div className="doc-details-row">
+                <details className="doc-details">
+                <summary>View details</summary>
+                <div className="doc-details-content">
+                  <div className="doc-detail-row"><span className="doc-detail-label">ID:</span> <code>{item.id || "(none)"}</code></div>
+                  <pre>{JSON.stringify(displaySource, null, 2)}</pre>
+                </div>
               </details>
+              <span className="doc-score-inline">{score}</span>
+              </div>
             </div>
           </article>
         );
@@ -190,7 +210,7 @@ function DocumentResults({ results, loading, filterSource }) {
 // Template: Agentic Chat
 // ---------------------------------------------------------------------------
 // Generate a conversational summary from search results
-function generateChatSummary(query, results, total) {
+function generateChatSummary(query, results, total, schema) {
   if (!results || results.length === 0) {
     return `I couldn't find any results matching "${query}". Try rephrasing your question or using different keywords.`;
   }
@@ -198,7 +218,6 @@ function generateChatSummary(query, results, total) {
   const count = total ?? results.length;
   const topItems = results.slice(0, 5);
 
-  // Build a natural summary
   let summary = `I found ${count} result${count !== 1 ? "s" : ""} for your query. `;
 
   if (count <= 3) {
@@ -209,21 +228,18 @@ function generateChatSummary(query, results, total) {
 
   topItems.forEach((item, i) => {
     const s = item.source || {};
-    const title = s.title || s.name || s.primaryTitle || s.label || item.preview || "Untitled";
-    const year = s.year || s.startYear || "";
-    const desc = s.plot || s.description || s.overview || s.summary || item.preview || "";
+    const roles = inferFieldRoles(s, schema, null);
+    const title = roles.title?.value || item.preview || "Untitled";
     const score = Number(item.score || 0);
-    const rating = s.rating ? ` \u2022 Rating: ${s.rating}` : "";
-    const genre = s.genre || s.genres || "";
-    const genreStr = genre ? ` \u2022 ${genre}` : "";
+    const tags = roles.tags.slice(0, 2).map((t) => t.value).join(", ");
+    const tagsStr = tags ? ` ${"\u2022"} ${tags}` : "";
 
     summary += `${i + 1}. **${title}**`;
-    if (year) summary += ` (${year})`;
-    summary += `${genreStr}${rating}`;
-    if (score > 0) summary += ` \u2022 Relevance: ${score.toFixed(2)}`;
+    summary += `${tagsStr}`;
+    if (score > 0) summary += ` ${"\u2022"} Relevance: ${score.toFixed(2)}`;
     summary += `\n`;
-    if (desc && desc !== title) {
-      const shortDesc = desc.length > 150 ? desc.slice(0, 147) + "..." : desc;
+    if (roles.description && roles.description.value !== title) {
+      const shortDesc = roles.description.value.length > 150 ? roles.description.value.slice(0, 147) + "..." : roles.description.value;
       summary += `   ${shortDesc}\n`;
     }
     summary += `\n`;
@@ -247,10 +263,10 @@ function renderChatText(text) {
   });
 }
 
-function AgenticChat({ messages, loading }) {
+function AgenticChat({ messages, loading, onPromptClick, agentPrompts, agentPromptsLoaded, schema }) {
   const endRef = useRef(null);
   useEffect(() => {
-    endRef.current?.scrollIntoView({ behavior: "smooth" });
+    if (messages.length > 0) endRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages, loading]);
 
   return (
@@ -263,9 +279,11 @@ function AgenticChat({ messages, loading }) {
             </svg>
           </div>
           <div className="chat-empty-title">Conversational Search</div>
-          <div className="chat-empty-desc">Ask questions in natural language. I'll search the index and summarize what I find.</div>
-          <div className="chat-empty-examples">
-            Try: "Show me sci-fi movies rated above 8" or "What are the best films by Christopher Nolan?"
+          <div className="chat-empty-desc">Ask follow-up questions and the agent will remember the context of your conversation.</div>
+          <div className="suggested-prompts">
+            {(agentPrompts?.chat?.length > 0 ? agentPrompts.chat : (agentPromptsLoaded ? AGENT_PROMPTS_FALLBACK.chat : [])).map((p) => (
+              <button key={p} className="suggested-prompt" onClick={() => onPromptClick && onPromptClick(p)}>{p}</button>
+            ))}
           </div>
         </div>
       )}
@@ -277,11 +295,22 @@ function AgenticChat({ messages, loading }) {
             <div className="chat-assistant">
               {msg.results && msg.results.length > 0 ? (
                 <>
+                  {msg.agent_steps_summary && (
+                    <details className="chat-agent-reasoning" open>
+                      <summary>Agent reasoning</summary>
+                      <div className="chat-reasoning-content">
+                        <div className="chat-reasoning-section">
+                          <div className="chat-reasoning-label">Steps</div>
+                          <pre className="chat-reasoning-pre">{msg.agent_steps_summary}</pre>
+                        </div>
+                      </div>
+                    </details>
+                  )}
                   <div className="chat-summary">
-                    {renderChatText(msg.summary || generateChatSummary(msg.query, msg.results, msg.total))}
+                    {renderChatText(msg.summary || generateChatSummary(msg.query, msg.results, msg.total, schema))}
                   </div>
                   <div className="chat-meta-bar">
-                    <span>{msg.total ?? msg.results.length} result(s) \u2022 {msg.took_ms ?? 0}ms</span>
+                    <span>{msg.total ?? msg.results.length} result(s) {"\u2022"} {msg.took_ms ?? 0}ms</span>
                     {msg.capability && <span className="chat-cap-badge">{msg.capability}</span>}
                   </div>
                   <details className="chat-sources">
@@ -298,6 +327,16 @@ function AgenticChat({ messages, loading }) {
                       ))}
                     </div>
                   </details>
+                  {msg.dsl_query && (
+                    <details className="chat-agent-reasoning">
+                      <summary>Generated DSL</summary>
+                      <div className="chat-reasoning-content">
+                        <div className="chat-reasoning-section">
+                          <pre className="chat-reasoning-pre">{(() => { try { return JSON.stringify(JSON.parse(msg.dsl_query), null, 2); } catch(e) { return msg.dsl_query; } })()}</pre>
+                        </div>
+                      </div>
+                    </details>
+                  )}
                 </>
               ) : msg.error ? (
                 <div className="chat-error">{msg.error}</div>
@@ -323,23 +362,76 @@ function AgenticChat({ messages, loading }) {
 }
 
 // ---------------------------------------------------------------------------
-// Comparison Toggle
+// Custom Dropdown for version/index selection
 // ---------------------------------------------------------------------------
-function ComparisonToggle({ enabled, onToggle }) {
+function IndexDropdown({ value, options, onChange, placeholder }) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef(null);
+
+  useEffect(() => {
+    const handleClick = (e) => { if (ref.current && !ref.current.contains(e.target)) setOpen(false); };
+    document.addEventListener("mousedown", handleClick);
+    return () => document.removeEventListener("mousedown", handleClick);
+  }, []);
+
+  const selected = options.find((o) => o.name === value);
+
   return (
-    <div className="compare-toggle">
-      <span className="compare-toggle-label">Compare</span>
-      <div
-        role="switch"
-        aria-checked={enabled}
-        aria-label="Toggle comparison mode"
-        tabIndex={0}
-        className={`compare-toggle-track ${enabled ? "on" : ""}`}
-        onClick={() => onToggle(!enabled)}
-        onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onToggle(!enabled); } }}
+    <div className="idx-dropdown" ref={ref}>
+      <button className="idx-dropdown-trigger" onClick={() => setOpen(!open)} type="button">
+        <span className="idx-dropdown-value">{selected ? selected.name : (placeholder || "Select...")}</span>
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+          <path d="M6 9l6 6 6-6"/>
+        </svg>
+      </button>
+      {open && (
+        <div className="idx-dropdown-menu">
+          {options.map((opt) => (
+            <button
+              key={opt.name}
+              className={`idx-dropdown-item ${opt.name === value ? "selected" : ""}`}
+              onClick={() => { onChange(opt.name); setOpen(false); }}
+              type="button"
+            >
+              <div className="idx-dropdown-item-name">{opt.name}</div>
+              <div className="idx-dropdown-item-meta">{opt.description || `${opt.docs} docs`}</div>
+              <div className="idx-dropdown-item-meta">{[opt.created, opt.docs ? `${opt.docs} docs` : ""].filter(Boolean).join(" · ")}</div>
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// View Mode Selector (List / Compare)
+// ---------------------------------------------------------------------------
+function ViewModeSelector({ enabled, onToggle }) {
+  return (
+    <div className="view-mode-seg" role="radiogroup" aria-label="View mode">
+      <button
+        className={`view-mode-btn ${!enabled ? "active" : ""}`}
+        onClick={() => onToggle(false)}
+        role="radio"
+        aria-checked={!enabled}
       >
-        <div className="compare-toggle-thumb" />
-      </div>
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+          <rect x="3" y="3" width="18" height="18" rx="2"/><line x1="3" y1="9" x2="21" y2="9"/><line x1="3" y1="15" x2="21" y2="15"/>
+        </svg>
+        Single
+      </button>
+      <button
+        className={`view-mode-btn ${enabled ? "active" : ""}`}
+        onClick={() => onToggle(true)}
+        role="radio"
+        aria-checked={enabled}
+      >
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+          <rect x="3" y="3" width="7" height="18" rx="1"/><rect x="14" y="3" width="7" height="18" rx="1"/>
+        </svg>
+        Compare
+      </button>
     </div>
   );
 }
@@ -349,36 +441,26 @@ function ComparisonToggle({ enabled, onToggle }) {
 // ResultPane – one half of the comparison view
 // ---------------------------------------------------------------------------
 function ResultPane({ label, indexName, results, loading, error, stats, queryMode, capability, usedSemantic, fallbackReason, activeTemplate, schema, fieldOverrides, filterSource }) {
-  const capabilityLabel = {
-    exact: "Exact",
-    semantic: "Semantic",
-    structured: "Structured",
-    combined: "Combined",
+  const capabilityDesc = {
+    exact: "Lexical BM25",
+    semantic: "Semantic Vector",
+    structured: "Structured Filter",
+    combined: "Hybrid BM25 + Dense Vector",
     autocomplete: "Autocomplete",
-    fuzzy: "Fuzzy",
-    manual: "Manual",
+    fuzzy: "Fuzzy Match",
+    manual: "Manual Query",
   };
 
-  const isSecond = label === "Index 2";
+  const desc = capability ? (capabilityDesc[capability] || capability) : "";
 
   return (
     <div className="result-pane">
-      {/* Header */}
-      <div className={`result-pane-header ${isSecond ? "idx2" : "idx1"}`}>
-        <span className={`result-pane-label ${isSecond ? "idx2" : "idx1"}`}>{label}</span>
-        <span className="result-pane-index">{indexName}</span>
+      <div className="result-pane-header">
+        <span className="result-pane-name">{indexName || label}</span>
+        {desc && <span className="result-pane-desc">{desc}</span>}
+        <span className="result-pane-stats">{stats}</span>
       </div>
 
-      {/* Status row */}
-      <div className="result-pane-status">
-        <span>{stats}</span>
-        {queryMode && <span>mode: {queryMode}</span>}
-        {capability && <span>capability: {capabilityLabel[capability] || capability}</span>}
-        {!error && <span>semantic: {usedSemantic ? "on" : "off"}</span>}
-        {fallbackReason && <span>fallback: {fallbackReason}</span>}
-      </div>
-
-      {/* Loading indicator */}
       {loading && (
         <div className="result-pane-loading">
           <div className="loading-bar"><div className="loading-bar-progress"></div></div>
@@ -386,18 +468,14 @@ function ResultPane({ label, indexName, results, loading, error, stats, queryMod
         </div>
       )}
 
-      {/* Error message */}
-      {error && (
-        <div className="result-pane-error">{error}</div>
-      )}
+      {error && <div className="result-pane-error">{error}</div>}
 
-      {/* Results */}
       {!loading && !error && (
         <div className="result-pane-results">
           {activeTemplate === "ecommerce" || activeTemplate === "media" ? (
             <EcommerceResults results={results} loading={false} schema={schema} fieldOverrides={fieldOverrides} filterSource={filterSource} />
           ) : (
-            <DocumentResults results={results} loading={false} filterSource={filterSource} />
+            <DocumentResults results={results} loading={false} filterSource={filterSource} schema={schema} fieldOverrides={fieldOverrides} />
           )}
         </div>
       )}
@@ -547,7 +625,6 @@ function App() {
   const [searchSize, setSearchSize] = useState("20");
   const [query, setQuery] = useState("");
   const [suggestions, setSuggestions] = useState([]);
-  const [showSuggestions, setShowSuggestions] = useState(true);
   const [results, setResults] = useState([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
@@ -572,8 +649,24 @@ function App() {
   // Template & settings state
   const [schema, setSchema] = useState(null);
   const [activeTemplate, setActiveTemplate] = useState("document");
-  const [chatMessages, setChatMessages] = useState([]);
   const [showSettings, setShowSettings] = useState(false);
+  const [darkMode, setDarkMode] = useState(false);
+
+  // Chat / agent state
+  const [chatMessages, setChatMessages] = useState([]);
+  const [memoryId, setMemoryId] = useState(null);
+  const [prevComparisonEnabled, setPrevComparisonEnabled] = useState(false);
+  const [ragAnswer, setRagAnswer] = useState("");
+  const [agentStepsSummary, setAgentStepsSummary] = useState("");
+  const [dslQuery, setDslQuery] = useState("");
+  // "search" = google-like (flow agent), "chat" = chatbox (conversational agent)
+  const [agenticMode, setAgenticMode] = useState("search");
+  const [agentPrompts, setAgentPrompts] = useState({ search: [], chat: [] });
+  const [agentPromptsLoaded, setAgentPromptsLoaded] = useState(false);
+
+  useEffect(() => {
+    document.documentElement.classList.toggle("dark", darkMode);
+  }, [darkMode]);
 
   // Field mapping overrides
   const [titleField, setTitleField] = useState("(none)");
@@ -615,7 +708,19 @@ function App() {
     manual: "Manual",
   };
 
+  // ---- Template change with comparison mode management ----
+  const handleTemplateChange = (newTemplate) => {
+    if (newTemplate === "agent" && activeTemplate !== "agent") {
+      setPrevComparisonEnabled(comparisonEnabled);
+      setComparisonEnabled(false);
+    } else if (newTemplate !== "agent" && activeTemplate === "agent") {
+      setComparisonEnabled(prevComparisonEnabled);
+    }
+    setActiveTemplate(newTemplate);
+  };
+
   // ---- Schema fetch ----
+  const schemaLoadedRef = useRef(false);
   const fetchSchema = useCallback(async (index) => {
     if (!index) return;
     try {
@@ -623,10 +728,46 @@ function App() {
       const data = await res.json();
       if (!data.error) {
         setSchema(data);
-        setActiveTemplate(data.suggested_template || "document");
+        // Always update agentic mode when agent type changes
+        if (data.agentic_agent_type) {
+          setAgenticMode(data.agentic_agent_type === "conversational" ? "chat" : "search");
+        }
+        if (!schemaLoadedRef.current) {
+          schemaLoadedRef.current = true;
+          const suggested = data.suggested_template || "document";
+          setActiveTemplate(suggested);
+          if (suggested === "agent") {
+            setComparisonEnabled(false);
+          }
+          if (data.agentic_agent_type) {
+            loadAgentPrompts(index);
+          }
+        }
       }
     } catch (_) {}
   }, []);
+
+  // ---- Agent Prompts ----
+  const loadAgentPrompts = async (index) => {
+    if (!index) return;
+    setAgentPromptsLoaded(false);
+    // Race: API response vs 5s timeout for fallback
+    const fallbackTimer = setTimeout(() => {
+      setAgentPromptsLoaded(true);
+    }, 5000);
+    try {
+      const res = await fetch(`/api/agent-prompts?index=${encodeURIComponent(index)}`);
+      const data = await res.json();
+      clearTimeout(fallbackTimer);
+      if ((data.search && data.search.length > 0) || (data.chat && data.chat.length > 0)) {
+        setAgentPrompts(data);
+      }
+      setAgentPromptsLoaded(true);
+    } catch (_) {
+      clearTimeout(fallbackTimer);
+      setAgentPromptsLoaded(true);
+    }
+  };
 
   // ---- Suggestions ----
   const loadSuggestions = async (index) => {
@@ -757,8 +898,61 @@ function App() {
     };
   }, [indexName, query, capability, queryMode, autocompleteField, comparisonEnabled, compareIndex2]);
 
+  // ---- Agent Search ----
+  const runAgentSearch = async (overrideQuery = null) => {
+    const effectiveQuery = (overrideQuery !== null ? overrideQuery : query).trim();
+    const effectiveIndex = indexName.trim();
+    if (!effectiveIndex || !effectiveQuery) return;
+
+    setChatMessages(prev => [...prev, { role: "user", text: effectiveQuery }]);
+    setLoading(true);
+    setError("");
+
+    try {
+      const qs = new URLSearchParams();
+      qs.set("index", effectiveIndex);
+      qs.set("q", effectiveQuery);
+      qs.set("size", String(parseInt(searchSize, 10) || 20));
+      qs.set("debug", "1");
+      if (memoryId) qs.set("memory_id", memoryId);
+
+      const res = await fetch(`/api/search?${qs.toString()}`);
+      const data = await res.json();
+
+      if (data.error) {
+        const friendlyError = data.error.includes("expired") 
+          ? "AI agent credentials have expired. Please refresh and try again."
+          : data.error.includes("timeout") 
+          ? "The AI agent took too long to respond. Please try a simpler question."
+          : "I had trouble processing your question. Please try rephrasing it.";
+        setChatMessages(prev => [...prev, { role: "assistant", error: friendlyError }]);
+      } else {
+        const hits = Array.isArray(data.hits) ? data.hits : [];
+        const summary = generateChatSummary(effectiveQuery, hits, data.total ?? 0, schema);
+        setChatMessages(prev => [...prev, {
+          role: "assistant",
+          query: effectiveQuery,
+          results: hits,
+          total: data.total ?? 0,
+          took_ms: data.took_ms ?? 0,
+          capability: data.capability || "",
+          summary: data.rag_answer || summary,
+          agent_steps_summary: data.agent_steps_summary || "",
+          dsl_query: data.dsl_query || "",
+        }]);
+        if (data.memory_id) setMemoryId(data.memory_id);
+      }
+    } catch (err) {
+      setChatMessages(prev => [...prev, { role: "assistant", error: "Something went wrong. Please try again." }]);
+    } finally {
+      setLoading(false);
+      setQuery("");
+    }
+  };
+
   // ---- Search ----
   const runSearch = async (overrideQuery = null, options = {}) => {
+    if (activeTemplate === "agent" && agenticMode === "chat") { runAgentSearch(overrideQuery); return; }
     // In comparison mode, ComparisonView handles search via its own useEffect on query
     if (comparisonEnabled) return;
     const effectiveQuery = (overrideQuery !== null ? overrideQuery : query).trim();
@@ -768,10 +962,6 @@ function App() {
 
     setError("");
     setLoading(true);
-
-    if (activeTemplate === "agentic-chat" && effectiveQuery) {
-      setChatMessages((prev) => [...prev, { role: "user", text: effectiveQuery }]);
-    }
 
     try {
       const qs = new URLSearchParams();
@@ -789,9 +979,6 @@ function App() {
         setResults([]);
         setStats("Search failed");
         setQueryMode(""); setCapability(""); setFallbackReason(""); setUsedSemantic(false);
-        if (activeTemplate === "agentic-chat") {
-          setChatMessages((prev) => [...prev, { role: "assistant", error: data.error, results: [], total: 0, took_ms: 0 }]);
-        }
       } else {
         const hits = Array.isArray(data.hits) ? data.hits : [];
         setResults(hits);
@@ -800,12 +987,9 @@ function App() {
         setCapability(String(data.capability || ""));
         setFallbackReason(String(data.fallback_reason || ""));
         setUsedSemantic(Boolean(data.used_semantic));
-        if (activeTemplate === "agentic-chat") {
-          setChatMessages((prev) => [...prev, {
-            role: "assistant", results: hits, total: data.total, took_ms: data.took_ms,
-            capability: data.capability, query: effectiveQuery, error: null,
-          }]);
-        }
+        setRagAnswer(String(data.rag_answer || ""));
+        setAgentStepsSummary(String(data.agent_steps_summary || ""));
+        setDslQuery(String(data.dsl_query || ""));
         await loadSuggestions(effectiveIndex);
       }
     } catch (err) {
@@ -835,55 +1019,24 @@ function App() {
     runSearch(text, { intent: "autocomplete_selection", field: autocompleteField });
   };
 
-  const isChat = activeTemplate === "agentic-chat";
-
   // Derive field lists from schema for field mapping dropdowns
   const allFields = schema?.field_specs ? Object.keys(schema.field_specs).filter((f) => !f.endsWith(".keyword")) : [];
   const textFields = (schema?.field_categories?.text || []);
-  const keywordFields = new Set(schema?.field_categories?.keyword || []);
 
   return (
     <div className={`shell template-${activeTemplate}`}>
       <header className="topbar">
         <div className="brand">
           <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 42.6667 42.6667" fill="none" aria-label="OpenSearch" role="img">
-            <path fill="#075985" d="M41.1583 15.6667C40.3252 15.6667 39.6499 16.342 39.6499 17.1751C39.6499 29.5876 29.5876 39.6499 17.1751 39.6499C16.342 39.6499 15.6667 40.3252 15.6667 41.1583C15.6667 41.9913 16.342 42.6667 17.1751 42.6667C31.2537 42.6667 42.6667 31.2537 42.6667 17.1751C42.6667 16.342 41.9913 15.6667 41.1583 15.6667Z"/>
-            <path fill="#082F49" d="M32.0543 25.3333C33.5048 22.967 34.9077 19.8119 34.6317 15.3947C34.06 6.24484 25.7726 -0.696419 17.9471 0.0558224C14.8835 0.350311 11.7379 2.84747 12.0173 7.32032C12.1388 9.26409 13.0902 10.4113 14.6363 11.2933C16.1079 12.1328 17.9985 12.6646 20.1418 13.2674C22.7308 13.9956 25.7339 14.8135 28.042 16.5144C30.8084 18.553 32.6994 20.9162 32.0543 25.3333Z"/>
-            <path fill="#075985" d="M2.6124 9.33333C1.16184 11.6997 -0.241004 14.8548 0.0349954 19.2719C0.606714 28.4218 8.89407 35.3631 16.7196 34.6108C19.7831 34.3164 22.9288 31.8192 22.6493 27.3463C22.5279 25.4026 21.5765 24.2554 20.0304 23.3734C18.5588 22.5339 16.6681 22.0021 14.5248 21.3992C11.9358 20.6711 8.93276 19.8532 6.62463 18.1522C3.85831 16.1136 1.96728 13.7505 2.6124 9.33333Z"/>
+            <path className="logo-light" fill="#075985" d="M41.1583 15.6667C40.3252 15.6667 39.6499 16.342 39.6499 17.1751C39.6499 29.5876 29.5876 39.6499 17.1751 39.6499C16.342 39.6499 15.6667 40.3252 15.6667 41.1583C15.6667 41.9913 16.342 42.6667 17.1751 42.6667C31.2537 42.6667 42.6667 31.2537 42.6667 17.1751C42.6667 16.342 41.9913 15.6667 41.1583 15.6667Z"/>
+            <path className="logo-dark" fill="#082F49" d="M32.0543 25.3333C33.5048 22.967 34.9077 19.8119 34.6317 15.3947C34.06 6.24484 25.7726 -0.696419 17.9471 0.0558224C14.8835 0.350311 11.7379 2.84747 12.0173 7.32032C12.1388 9.26409 13.0902 10.4113 14.6363 11.2933C16.1079 12.1328 17.9985 12.6646 20.1418 13.2674C22.7308 13.9956 25.7339 14.8135 28.042 16.5144C30.8084 18.553 32.6994 20.9162 32.0543 25.3333Z"/>
+            <path className="logo-light" fill="#075985" d="M2.6124 9.33333C1.16184 11.6997 -0.241004 14.8548 0.0349954 19.2719C0.606714 28.4218 8.89407 35.3631 16.7196 34.6108C19.7831 34.3164 22.9288 31.8192 22.6493 27.3463C22.5279 25.4026 21.5765 24.2554 20.0304 23.3734C18.5588 22.5339 16.6681 22.0021 14.5248 21.3992C11.9358 20.6711 8.93276 19.8532 6.62463 18.1522C3.85831 16.1136 1.96728 13.7505 2.6124 9.33333Z"/>
           </svg>
           OpenSearch
         </div>
         <div className="divider"></div>
-        <div className="title">Search Builder</div>
+        <div className="title">Launchpad</div>
         <div className="topbar-right">
-          {comparisonAvailable && (
-            <ComparisonToggle
-              enabled={comparisonEnabled}
-              onToggle={(on) => {
-                if (on) {
-                  setComparisonEnabled(true);
-                  setResults([]);
-                  setError("");
-                  setStats("Ready");
-                  // Prefill dropdowns if not already set
-                  if (!compareIndex1 || !compareIndex2) {
-                    const current = indexName.trim();
-                    const names = availableIndices.map((i) => i.name);
-                    const other = names.find((n) => n !== current) || "";
-                    if (!compareIndex1) setCompareIndex1(current || names[0] || "");
-                    if (!compareIndex2) setCompareIndex2(other || names[1] || "");
-                  }
-                } else {
-                  setComparisonEnabled(false);
-                  if (compareIndex2) {
-                    setIndexName(compareIndex2);
-                    loadSuggestions(compareIndex2);
-                    fetchSchema(compareIndex2);
-                  }
-                }
-              }}
-            />
-          )}
           <div className={`conn-badge ${backendConnected ? "connected" : "disconnected"}`}>
             <span className="conn-dot"></span>
             <strong>{backendConnected ? "Connected" : "Disconnected"}</strong>
@@ -900,96 +1053,151 @@ function App() {
 
       {showSettings && (
         <div className="settings-panel">
-          {/* Index / Size row */}
+          {/* Index / Size / View mode row */}
           <div className="idx-row">
+            {availableIndices.length >= 2 && activeTemplate !== "agent" && (
+              <div className="field-group">
+                <label>View</label>
+                <ViewModeSelector
+                enabled={comparisonEnabled}
+                onToggle={(on) => {
+                  if (on) {
+                    setComparisonEnabled(true);
+                    if (!compareIndex1 || !compareIndex2) {
+                      const current = indexName.trim();
+                      const names = availableIndices.map((i) => i.name);
+                      const other = names.find((n) => n !== current) || "";
+                      if (!compareIndex1) setCompareIndex1(current || names[0] || "");
+                      if (!compareIndex2) setCompareIndex2(other || names[1] || "");
+                    }
+                  } else {
+                    setComparisonEnabled(false);
+                    if (compareIndex1) {
+                      setIndexName(compareIndex1);
+                    }
+                  }
+                }}
+              />
+              </div>
+            )}
             <div className="field-group">
-              <label>
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                  <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/>
-                </svg>
-                {comparisonEnabled ? "Index 1" : "Index"}
-              </label>
+              <label>Index</label>
               {availableIndices.length > 0 ? (
-                <select
-                  className="idx-input"
+                <IndexDropdown
                   value={comparisonEnabled ? compareIndex1 : indexName}
-                  onChange={(e) => {
+                  options={comparisonEnabled ? availableIndices.filter((i) => i.name !== compareIndex2) : availableIndices}
+                  onChange={(v) => {
                     if (comparisonEnabled) {
-                      setCompareIndex1(e.target.value);
+                      setCompareIndex1(v);
                     } else {
-                      setIndexName(e.target.value);
-                      loadSuggestions(e.target.value);
-                      fetchSchema(e.target.value);
+                      setIndexName(v);
+                      loadSuggestions(v);
+                      fetchSchema(v);
+                      setChatMessages([]);
+                      setMemoryId(null);
                     }
                   }}
-                >
-                  <option value="">Select index...</option>
-                  {availableIndices.map((idx) => (
-                    <option key={idx.name} value={idx.name}>{idx.name} ({idx.docs} docs)</option>
-                  ))}
-                </select>
+                  placeholder="Select index..."
+                />
               ) : (
-                <input className="idx-input" value={indexName} onChange={(e) => setIndexName(e.target.value)} placeholder="e.g. movies-index" />
+                <input className="idx-input" value={indexName} onChange={(e) => setIndexName(e.target.value)} placeholder="e.g. my-index" />
               )}
             </div>
             {comparisonEnabled && (
+              <>
+              <span className="vs-label">vs</span>
               <div className="field-group">
-                <label className="idx2-label">Index 2</label>
-                <select
-                  className="idx-input"
+                <label>Index 2</label>
+                <IndexDropdown
                   value={compareIndex2}
-                  onChange={(e) => { setCompareIndex2(e.target.value); loadSuggestions(e.target.value); fetchSchema(e.target.value); }}
-                >
-                  <option value="">Select index...</option>
-                  {availableIndices.map((idx) => (
-                    <option key={idx.name} value={idx.name}>{idx.name} ({idx.docs} docs)</option>
-                  ))}
-                </select>
+                  options={availableIndices.filter((i) => i.name !== compareIndex1)}
+                  onChange={(v) => { setCompareIndex2(v); loadSuggestions(v); fetchSchema(v); }}
+                  placeholder="Select..."
+                />
               </div>
+              </>
             )}
             <div className="field-group">
               <label>Size</label>
               <input className="size-input" value={searchSize} onChange={(e) => setSearchSize(e.target.value)} />
             </div>
             <div className="spacer"></div>
-            {schema && (
-              <span className="schema-caps">
-                {schema.capabilities.map((c) => (
-                  <span key={c} className={`cap-pill cap-${c}`}>{c}</span>
-                ))}
-              </span>
-            )}
+            <div className="field-group">
+              <label>Theme</label>
+              <div className="theme-seg">
+                <button
+                  className={`theme-seg-btn ${!darkMode ? "active" : ""}`}
+                  onClick={() => setDarkMode(false)}
+                  aria-label="Light mode"
+                >
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/>
+                  </svg>
+                </button>
+                <button
+                  className={`theme-seg-btn ${darkMode ? "active" : ""}`}
+                  onClick={() => setDarkMode(true)}
+                  aria-label="Dark mode"
+                >
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/>
+                  </svg>
+                </button>
+              </div>
+            </div>
           </div>
 
-          <hr className="sep" />
-
-          {/* Template selection */}
+          <div className="settings-section">
           <div className="sec-label">Template</div>
           <div className="tpl-grid">
             {TEMPLATES.map((t) => {
               const disabled = !!t.disabled;
+              const isAgent = t.id === "agent";
+              const isActive = activeTemplate === t.id;
               return (
-                <button
-                  key={t.id}
-                  className={`tpl-card ${activeTemplate === t.id ? "on" : ""} ${disabled ? "disabled" : ""}`}
-                  disabled={disabled}
-                  title=""
-                  onClick={() => {
-                    if (disabled) return;
-                    setActiveTemplate(t.id);
-                    if (t.id === "agentic-chat") setChatMessages([]);
-                  }}
-                >
-                  <div className="tpl-card-icon"><TemplateIcon id={t.id} /></div>
-                  <div className="tpl-card-label">{t.label}</div>
-                  {schema?.suggested_template === t.id && <span className="template-auto">auto</span>}
-                </button>
+                <div key={t.id} className={`tpl-card-wrap ${isAgent && isActive ? "expanded" : ""}`}>
+                  <button
+                    className={`tpl-card ${isActive ? "on" : ""} ${disabled ? "disabled" : ""}`}
+                    disabled={disabled}
+                    title=""
+                    onClick={() => {
+                      if (disabled) return;
+                      handleTemplateChange(t.id);
+                    }}
+                  >
+                    <div className="tpl-card-icon"><TemplateIcon id={t.id} /></div>
+                    <div className="tpl-card-label">{t.label}</div>
+                    {schema?.suggested_template === t.id && <span className="template-auto">auto</span>}
+                  </button>
+                  {isAgent && isActive && (
+                    <div className="agent-mode-sub">
+                      <button
+                        className={`agent-mode-opt ${agenticMode === "search" ? "active" : ""} ${schema?.agentic_agent_type === "conversational" ? "disabled" : ""}`}
+                        onClick={(e) => { e.stopPropagation(); if (schema?.agentic_agent_type !== "conversational") setAgenticMode("search"); }}
+                        title={schema?.agentic_agent_type === "conversational" ? "Search requires a flow agent" : ""}
+                      >
+                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+                        Search
+                        <span className="agent-mode-opt-desc">Answer + results</span>
+                      </button>
+                      <button
+                        className={`agent-mode-opt ${agenticMode === "chat" ? "active" : ""} ${schema?.agentic_agent_type === "flow" ? "disabled" : ""}`}
+                        onClick={(e) => { e.stopPropagation(); if (schema?.agentic_agent_type !== "flow") setAgenticMode("chat"); }}
+                        title={schema?.agentic_agent_type === "flow" ? "Chat requires a conversational agent" : ""}
+                      >
+                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+                        Chat
+                        <span className="agent-mode-opt-desc">Conversational</span>
+                      </button>
+                    </div>
+                  )}
+                </div>
               );
             })}
           </div>
+          </div>
 
-          <hr className="sep" />
-
+          <div className="settings-section">
           {/* Field mapping */}
           <div className="field-map-row">
             <div className="field-map-group">
@@ -1014,6 +1222,7 @@ function App() {
               </select>
             </div>
           </div>
+          </div>
 
           {/* Metadata chips */}
           {allFields.length > 0 && (
@@ -1034,27 +1243,10 @@ function App() {
         </div>
       )}
 
-      <section className="search-panel">
-        {/* Agentic chat template */}
-        {isChat ? (
-          <div className="chat-container">
-            <AgenticChat messages={chatMessages} loading={loading} />
-            <div className="chat-input-row">
-              <input
-                className="chat-input"
-                value={query}
-                onChange={(e) => setQuery(e.target.value)}
-                onKeyDown={(e) => { if (e.key === "Enter" && query.trim()) { runSearch(); setQuery(""); } }}
-                placeholder="Ask a question..."
-              />
-              <button className="search-btn" onClick={() => { if (query.trim()) { runSearch(); setQuery(""); } }} disabled={loading}>
-                {loading ? "..." : "Send"}
-              </button>
-            </div>
-          </div>
-        ) : (
-          <>
-            {/* Standard search bar */}
+      <section className={`search-panel ${activeTemplate === "agent" && agenticMode === "chat" ? "chat-layout" : ""}`}>
+            {/* Search bar and suggestions — hidden in chat mode */}
+            {!(activeTemplate === "agent" && agenticMode === "chat") && (
+            <>
             <div className="search-row">
               <div className="query-wrap">
                 <span className="query-icon">
@@ -1065,8 +1257,8 @@ function App() {
                 <input
                   value={query}
                   onChange={(e) => setQuery(e.target.value)}
-                  onKeyDown={(e) => { if (e.key === "Enter") { setAutocompleteOptions([]); runSearch(); } }}
-                  placeholder="Search..."
+                  onKeyDown={(e) => { if (e.key === "Enter") { setAutocompleteOptions([]); runSearch(query); } }}
+                  placeholder={activeTemplate === "agent" ? "Ask a question..." : "Search..."}
                 />
                 {autocompleteOptions.length > 0 && (
                   <div className="autocomplete-menu">
@@ -1079,35 +1271,34 @@ function App() {
                   </div>
                 )}
               </div>
-              <button className="search-btn" onClick={() => runSearch()} disabled={loading}>
+              <button className="search-btn" onClick={() => runSearch(query)} disabled={loading}>
                 {loading ? "..." : "Search"}
               </button>
             </div>
 
             {/* Suggestions */}
             <div className="suggestions">
-              <button className="suggestion-toggle" onClick={() => setShowSuggestions(!showSuggestions)}>
-                Try these auto-generated queries
-                <span>{showSuggestions ? "\u25B4" : "\u25BE"}</span>
-              </button>
-              {showSuggestions && (
-                <div className="chips">
-                  {suggestions.map((item) => (
-                    <button key={`${item.text}-${item.capability || "none"}`} className="chip" onClick={() => onSuggestionClick(item)}>
+              <div className="chips">
+                {(activeTemplate === "agent"
+                  ? (agentPrompts.search.length > 0 ? agentPrompts.search : (agentPromptsLoaded ? AGENT_PROMPTS_FALLBACK.search : [])).map((text) => ({ text, capability: "" }))
+                  : suggestions.slice(0, 5)
+                ).map((item) => (
+                    <button key={`${item.text}-${item.capability || "none"}`} className="chip" onClick={() => {
+                      if (activeTemplate === "agent") { setQuery(item.text); runSearch(item.text); }
+                      else onSuggestionClick(item);
+                    }}>
                       <span>{item.text}</span>
                       {item.capability && (
                         <span className={`cap-badge cap-${item.capability}`}>
                           {(capabilityLabel[item.capability] || item.capability).toUpperCase()}
                         </span>
                       )}
-                      {item.query_mode && item.query_mode !== "default" && (
-                        <span className="mode-badge">{item.query_mode.toUpperCase()}</span>
-                      )}
                     </button>
                   ))}
                 </div>
-              )}
             </div>
+            </>
+            )}
 
             {/* Results area: comparison view or standard single-index results */}
             {comparisonEnabled ? (
@@ -1123,18 +1314,30 @@ function App() {
               />
             ) : (
               <>
-                {/* Status row */}
+                {/* Status row — only shown after a search has been performed */}
+                {(activeTemplate !== "agent" || agenticMode === "search") && results.length > 0 && (
                 <div className="status-row">
                   <span>{stats}</span>
                   {queryMode && <span>mode: {queryMode}</span>}
                   {capability && <span>capability: {capability}</span>}
-                  {!error && <span>semantic: {usedSemantic ? "on" : "off"}</span>}
-                  {fallbackReason && <span>fallback: {fallbackReason}</span>}
+                  {activeTemplate !== "agent" && !error && <span>semantic: {usedSemantic ? "on" : "off"}</span>}
                   {error && <span className="error">{error}</span>}
                 </div>
+                )}
 
-                {/* Loading bar */}
-                {loading && (
+                {/* Agentic fallback warning — shown when agentic search failed or backend lacks agentic support */}
+                {activeTemplate === "agent" && !loading && results.length > 0 && !ragAnswer && !agentStepsSummary && !dslQuery && (
+                  <div className="agentic-fallback-warning">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+                    <span>AI agent unavailable — showing standard search results.
+                      {fallbackReason && fallbackReason.includes("expired") && " AWS credentials may have expired."}
+                      {fallbackReason && fallbackReason.includes("timeout") && " The request timed out."}
+                    </span>
+                  </div>
+                )}
+
+                {/* Loading bar - hidden in agent chat mode (has typing indicator) */}
+                {loading && (activeTemplate !== "agent" || agenticMode === "search") && (
                   <div className="loading-container">
                     <div className="loading-bar"><div className="loading-bar-progress"></div></div>
                     <div className="loading-text">Searching...</div>
@@ -1142,14 +1345,100 @@ function App() {
                 )}
 
                 {/* Template-specific results */}
+                {activeTemplate === "agent" && agenticMode === "chat" && (
+                  <div className="chat-messages-area">
+                    {chatMessages.length > 0 && (
+                      <div className="chat-toolbar">
+                        <button className="new-chat-btn" onClick={() => { setChatMessages([]); setMemoryId(null); }}>
+                          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+                          New conversation
+                        </button>
+                      </div>
+                    )}
+                    <AgenticChat messages={chatMessages} loading={loading} onPromptClick={(text) => { setQuery(text); runSearch(text); }} agentPrompts={agentPrompts} agentPromptsLoaded={agentPromptsLoaded} schema={schema} />
+                    <div className="chat-input-bar">
+                      <div className="query-wrap">
+                        <span className="query-icon">
+                          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                            <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
+                          </svg>
+                        </span>
+                        <input
+                          value={query}
+                          onChange={(e) => setQuery(e.target.value)}
+                          onKeyDown={(e) => { if (e.key === "Enter") { setAutocompleteOptions([]); runSearch(query); } }}
+                          placeholder="Ask a question..."
+                        />
+                      </div>
+                      <button className="search-btn" onClick={() => runSearch(query)} disabled={loading}>
+                        {loading ? "..." : "Send"}
+                      </button>
+                    </div>
+                  </div>
+                )}
+                {activeTemplate === "agent" && agenticMode === "search" && (
+                  <>
+                    {!loading && results.length === 0 && !ragAnswer && !error && (
+                      <div className="chat-empty">
+                        <div className="chat-empty-icon">
+                          <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1" strokeLinecap="round" strokeLinejoin="round" style={{opacity: 0.3}}>
+                            <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
+                          </svg>
+                        </div>
+                        <div className="chat-empty-title">Agentic Search</div>
+                        <div className="chat-empty-desc">Ask questions in natural language. The AI agent will decompose your query and find relevant results.</div>
+                        <div className="chat-empty-examples">
+                          Try: "Show me the most relevant results" or "Find items from the last 5 years"
+                        </div>
+                      </div>
+                    )}
+                    {ragAnswer && (
+                      <div className="rag-answer-card">
+                        <div className="rag-answer-text">{renderChatText(ragAnswer)}</div>
+                      </div>
+                    )}
+                    {(agentStepsSummary || dslQuery) && results.length > 0 && (
+                      <div className="search-reasoning-bar">
+                        {agentStepsSummary && (
+                          <details className="chat-agent-reasoning">
+                            <summary>Agent reasoning</summary>
+                            <div className="chat-reasoning-content">
+                              <div className="chat-reasoning-section">
+                                <pre className="chat-reasoning-pre">{agentStepsSummary}</pre>
+                              </div>
+                            </div>
+                          </details>
+                        )}
+                        {dslQuery && (
+                          <details className="chat-agent-reasoning">
+                            <summary>Generated DSL</summary>
+                            <div className="chat-reasoning-content">
+                              <div className="chat-reasoning-section">
+                                <pre className="chat-reasoning-pre">{(() => { try { return JSON.stringify(JSON.parse(dslQuery), null, 2); } catch(e) { return dslQuery; } })()}</pre>
+                              </div>
+                            </div>
+                          </details>
+                        )}
+                      </div>
+                    )}
+                    {results.length > 0 && <DocumentResults results={results} loading={loading} filterSource={filterSource} schema={schema} fieldOverrides={fieldOverrides} />}
+                  </>
+                )}
+                {activeTemplate === "document" && (
+                  <>
+                    {ragAnswer && (
+                      <div className="rag-answer-card">
+                        <div className="rag-answer-text">{renderChatText(ragAnswer)}</div>
+                      </div>
+                    )}
+                    <DocumentResults results={results} loading={loading} filterSource={filterSource} schema={schema} fieldOverrides={fieldOverrides} />
+                  </>
+                )}
                 {(activeTemplate === "ecommerce" || activeTemplate === "media") && (
                   <EcommerceResults results={results} loading={loading} schema={schema} fieldOverrides={fieldOverrides} filterSource={filterSource} />
                 )}
-                {activeTemplate === "document" && <DocumentResults results={results} loading={loading} filterSource={filterSource} />}
               </>
             )}
-          </>
-        )}
       </section>
     </div>
   );

@@ -20,6 +20,7 @@ from .client import create_client, can_connect
 from .search import (
     autocomplete,
     extract_index_field_specs,
+    generate_agent_prompts,
     generate_suggestions,
     detect_index_profile,
     search_ui_search,
@@ -242,6 +243,17 @@ class _UIHandler(BaseHTTPRequestHandler):
                 self._send_json({"error": str(e)}, 500)
             return
 
+        # Agent prompts
+        if parsed.path == "/api/agent-prompts":
+            index_name = (params.get("index") or [""])[0] or _default_index
+            try:
+                client = _get_client()
+                prompts = generate_agent_prompts(client, index_name)
+                self._send_json(prompts)
+            except Exception as e:
+                self._send_json({"search": [], "chat": [], "error": str(e)})
+            return
+
         # Search API
         if parsed.path == "/api/search":
             self._handle_search(params)
@@ -277,6 +289,7 @@ class _UIHandler(BaseHTTPRequestHandler):
         index = (params.get("index") or [_default_index])[0] or _default_index
         search_intent = (params.get("intent") or [""])[0]
         field_hint = (params.get("field") or [""])[0]
+        memory_id_param = (params.get("memory_id") or [""])[0]
         debug_param = (params.get("debug") or ["0"])[0].strip().lower()
         debug_mode = debug_param in {"1", "true", "yes", "on"}
         try:
@@ -299,6 +312,7 @@ class _UIHandler(BaseHTTPRequestHandler):
                 debug=debug_mode,
                 search_intent=search_intent,
                 field_hint=field_hint,
+                memory_id=memory_id_param,
             )
             self._send_json(result)
         except Exception as e:

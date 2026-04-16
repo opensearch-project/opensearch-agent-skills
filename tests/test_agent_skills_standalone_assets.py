@@ -2,6 +2,7 @@
 bundled inside skills/opensearch-skills/ and resolve without depending on
 the repo-root opensearch_orchestrator/ tree."""
 
+import re
 import sys
 from pathlib import Path
 
@@ -9,6 +10,7 @@ import pytest
 
 _SKILL_ROOT = Path(__file__).resolve().parents[1] / "skills" / "opensearch-skills"
 _SCRIPTS_DIR = _SKILL_ROOT / "scripts"
+_UI_DIR = _SCRIPTS_DIR / "ui"
 
 sys.path.insert(0, str(_SCRIPTS_DIR))
 
@@ -123,3 +125,135 @@ class TestResolvedPathsAreRelative:
         assert "opensearch_orchestrator" not in source, (
             "load_sample_builtin_imdb still references opensearch_orchestrator path"
         )
+
+
+# ---------------------------------------------------------------------------
+# Frontend — agentic fallback warning condition
+# ---------------------------------------------------------------------------
+_APP_JSX = _UI_DIR / "app.jsx"
+
+
+@pytest.fixture(scope="module")
+def app_jsx_content():
+    assert _APP_JSX.exists(), f"app.jsx not found at {_APP_JSX}"
+    return _APP_JSX.read_text()
+
+
+class TestAgenticFallbackWarningCondition:
+    def test_fallback_warning_requires_no_dsl_query(self, app_jsx_content):
+        """The agentic fallback warning must check !dslQuery so it is hidden
+        when the flow agent successfully returns a translated DSL query."""
+        lines = app_jsx_content.splitlines()
+        fallback_line = None
+        for i, line in enumerate(lines):
+            if "agentic-fallback-warning" in line or "AI agent unavailable" in line:
+                for j in range(max(0, i - 3), i + 1):
+                    if "activeTemplate" in lines[j] and "agent" in lines[j]:
+                        fallback_line = lines[j]
+                        break
+                if fallback_line:
+                    break
+
+        assert fallback_line is not None, "Could not find agentic fallback warning condition"
+        assert "!dslQuery" in fallback_line, (
+            "Fallback warning condition must include !dslQuery to hide when "
+            "flow agent returns a DSL query"
+        )
+
+    def test_fallback_warning_checks_rag_answer(self, app_jsx_content):
+        lines = app_jsx_content.splitlines()
+        for i, line in enumerate(lines):
+            if "agentic-fallback-warning" in line:
+                context = "\n".join(lines[max(0, i - 5):i + 1])
+                assert "!ragAnswer" in context
+                return
+        pytest.fail("Could not find agentic-fallback-warning in app.jsx")
+
+    def test_fallback_warning_checks_agent_steps_summary(self, app_jsx_content):
+        lines = app_jsx_content.splitlines()
+        for i, line in enumerate(lines):
+            if "agentic-fallback-warning" in line:
+                context = "\n".join(lines[max(0, i - 5):i + 1])
+                assert "!agentStepsSummary" in context
+                return
+        pytest.fail("Could not find agentic-fallback-warning in app.jsx")
+
+
+# ---------------------------------------------------------------------------
+# Frontend — DSL query display
+# ---------------------------------------------------------------------------
+class TestDslQueryDisplay:
+    def test_dsl_query_shown_in_agent_search_results(self, app_jsx_content):
+        assert "dslQuery" in app_jsx_content, "dslQuery state variable should exist"
+        assert "chat-reasoning-pre" in app_jsx_content, "DSL query should render in a pre block"
+
+    def test_dsl_query_state_initialized(self, app_jsx_content):
+        assert 'useState("")' in app_jsx_content or "useState('')" in app_jsx_content
+
+
+# ---------------------------------------------------------------------------
+# Frontend — agentic mode toggle
+# ---------------------------------------------------------------------------
+class TestAgenticModeToggle:
+    def test_agentic_mode_state_exists(self, app_jsx_content):
+        assert "agenticMode" in app_jsx_content
+
+    def test_agentic_mode_default_is_search(self, app_jsx_content):
+        agentic_mode_lines = [
+            line for line in app_jsx_content.splitlines()
+            if "agenticMode" in line and "useState" in line
+        ]
+        assert len(agentic_mode_lines) > 0
+        assert any("search" in line for line in agentic_mode_lines)
+
+    def test_chat_mode_available(self, app_jsx_content):
+        assert '"chat"' in app_jsx_content or "'chat'" in app_jsx_content
+
+
+# ---------------------------------------------------------------------------
+# Frontend — agent template routing
+# ---------------------------------------------------------------------------
+class TestAgentTemplateRouting:
+    def test_agent_template_triggers_agentic_search(self, app_jsx_content):
+        agent_lines = [
+            line for line in app_jsx_content.splitlines()
+            if 'activeTemplate === "agent"' in line or "activeTemplate === 'agent'" in line
+        ]
+        assert len(agent_lines) > 0, "UI should check for agent template"
+
+    def test_agent_chat_mode_runs_agent_search(self, app_jsx_content):
+        assert "runAgentSearch" in app_jsx_content
+
+
+# ---------------------------------------------------------------------------
+# Frontend — API response field mapping
+# ---------------------------------------------------------------------------
+class TestApiResponseFieldMapping:
+    def test_dsl_query_read_from_response(self, app_jsx_content):
+        assert "data.dsl_query" in app_jsx_content or 'data["dsl_query"]' in app_jsx_content
+
+    def test_agentic_agent_type_read_from_schema(self, app_jsx_content):
+        assert "agentic_agent_type" in app_jsx_content
+
+
+# ---------------------------------------------------------------------------
+# Frontend — CSS classes
+# ---------------------------------------------------------------------------
+class TestAgenticCssClasses:
+    @pytest.fixture(scope="class")
+    def styles_css(self):
+        css_path = _UI_DIR / "styles.css"
+        assert css_path.exists(), f"styles.css not found at {css_path}"
+        return css_path.read_text()
+
+    def test_agentic_fallback_warning_styled(self, styles_css):
+        assert ".agentic-fallback-warning" in styles_css
+
+    def test_agentic_mode_toggle_styled(self, styles_css):
+        assert ".agentic-mode-toggle" in styles_css
+
+    def test_agentic_mode_btn_styled(self, styles_css):
+        assert ".agentic-mode-btn" in styles_css
+
+    def test_agentic_capability_pill_styled(self, styles_css):
+        assert ".cap-agentic" in styles_css
