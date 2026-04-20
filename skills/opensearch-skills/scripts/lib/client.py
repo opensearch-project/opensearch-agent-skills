@@ -61,6 +61,7 @@ def build_client(use_ssl: bool, http_auth: tuple[str, str] | None = None) -> Ope
         "use_ssl": use_ssl,
         "verify_certs": False,
         "ssl_show_warn": False,
+        "timeout": 60,
     }
     if http_auth is not None:
         kwargs["http_auth"] = http_auth

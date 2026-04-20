@@ -17,18 +17,25 @@ from lib.search import (
     _build_default_lexical_query,
     _build_default_lexical_body,
     _build_neural_clause,
+    _build_search_query,
+    _format_search_response,
     _suggestion_candidates_from_doc,
     _is_vector_value,
     _strip_vector_fields,
     preview_text,
     generate_suggestions,
+    generate_agent_prompts,
     detect_index_profile,
     _resolve_autocomplete_fields,
     _source_field_variants,
     _extract_values_from_source_by_path,
     autocomplete,
     search_ui_search,
+    set_search_config,
+    get_search_config,
+    clear_search_config,
     _search_configs,
+    _agent_prompts_cache,
 )
 
 
@@ -822,3 +829,486 @@ def test_detect_index_profile_semantic_capability():
 
     assert profile["has_semantic"] is True
     assert "semantic" in profile["capabilities"]
+
+
+# ---------------------------------------------------------------------------
+# _build_search_query — agentic strategies
+# ---------------------------------------------------------------------------
+def test_build_search_query_agentic_flow():
+    config = {"strategy": "agentic_flow", "lexical_fields": ["title"]}
+    query = _build_search_query(config, "show me action movies", 10)
+    assert query == {"agentic": {"query_text": "show me action movies"}}
+
+
+def test_build_search_query_agentic_conversational():
+    config = {"strategy": "agentic_conversational", "lexical_fields": ["title"]}
+    query = _build_search_query(config, "what about comedies?", 10)
+    assert query == {"agentic": {"query_text": "what about comedies?"}}
+
+
+def test_build_search_query_agentic_with_memory_id():
+    config = {"strategy": "agentic_conversational", "lexical_fields": ["title"]}
+    query = _build_search_query(config, "what about blue ones?", 10, memory_id="mem-123")
+    assert query == {"agentic": {"query_text": "what about blue ones?", "memory_id": "mem-123"}}
+
+
+def test_build_search_query_agentic_empty_memory_id():
+    config = {"strategy": "agentic_flow", "lexical_fields": ["title"]}
+    query = _build_search_query(config, "test", 10, memory_id="")
+    assert "memory_id" not in query.get("agentic", {})
+
+
+# ---------------------------------------------------------------------------
+# _format_search_response — ext field extraction
+# ---------------------------------------------------------------------------
+def test_format_search_response_basic():
+    response = {
+        "hits": {"hits": [{"_id": "1", "_score": 1.0, "_source": {"title": "Test"}}], "total": {"value": 1}},
+        "took": 5,
+    }
+    result = _format_search_response(response, "bm25", "manual", False, "")
+    assert result["total"] == 1
+    assert result["hits"][0]["id"] == "1"
+    assert "rag_answer" not in result
+    assert "memory_id" not in result
+
+
+def test_format_search_response_extracts_ext_fields():
+    response = {
+        "hits": {"hits": [], "total": {"value": 0}},
+        "took": 100,
+        "ext": {
+            "memory_id": "mem-abc",
+            "agent_steps_summary": "Step 1: analyzed query",
+            "dsl_query": '{"query":{"match_all":{}}}',
+            "retrieval_augmented_generation": {
+                "answer": "Here are the top movies..."
+            },
+        },
+    }
+    result = _format_search_response(response, "agentic", "agentic_conversational", True, "")
+    assert result["memory_id"] == "mem-abc"
+    assert result["agent_steps_summary"] == "Step 1: analyzed query"
+    assert result["dsl_query"] == '{"query":{"match_all":{}}}'
+    assert result["rag_answer"] == "Here are the top movies..."
+
+
+def test_format_search_response_no_ext():
+    response = {
+        "hits": {"hits": [], "total": {"value": 0}},
+        "took": 1,
+    }
+    result = _format_search_response(response, "bm25", "manual", False, "")
+    assert "rag_answer" not in result
+    assert "memory_id" not in result
+    assert "agent_steps_summary" not in result
+    assert "dsl_query" not in result
+
+
+def test_format_search_response_ext_empty_values():
+    response = {
+        "hits": {"hits": [], "total": {"value": 0}},
+        "took": 1,
+        "ext": {"memory_id": "", "agent_steps_summary": "", "dsl_query": ""},
+    }
+    result = _format_search_response(response, "agentic", "agentic_flow", True, "")
+    # Empty strings should not be included
+    assert "memory_id" not in result
+    assert "agent_steps_summary" not in result
+    assert "dsl_query" not in result
+
+
+# ---------------------------------------------------------------------------
+# search_ui_search — agentic strategies
+# ---------------------------------------------------------------------------
+def _make_agentic_client(strategy="agentic_flow", ext=None):
+    """Create a fake client that simulates an agentic pipeline index."""
+    search_pipeline_name = "my-agentic-pipeline"
+    agent_id = "agent-123"
+    model_id = "model-456"
+
+    class _FakeTransport:
+        def perform_request(self, method, url, body=None):
+            if "/_search/pipeline/" in url:
+                response_processors = [
+                    {"agentic_context": {"dsl_query": True}}
+                ]
+                if strategy == "agentic_conversational":
+                    response_processors.append({
+                        "retrieval_augmented_generation": {
+                            "model_id": "rag-model-789",
+                            "context_field_list": ["title"],
+                        }
+                    })
+                return {search_pipeline_name: {
+                    "request_processors": [
+                        {"agentic_query_translator": {"agent_id": agent_id}}
+                    ],
+                    "response_processors": response_processors,
+                }}
+            if "/_plugins/_ml/agents/" in url:
+                if strategy == "agentic_conversational":
+                    return {
+                        "type": "conversational",
+                        "llm": {"model_id": model_id},
+                        "tools": [
+                            {"type": "IndexMappingTool"},
+                            {"type": "QueryPlanningTool"},
+                        ],
+                    }
+                return {
+                    "type": "flow",
+                    "tools": [
+                        {"type": "IndexMappingTool"},
+                        {"type": "QueryPlanningTool", "parameters": {"model_id": model_id}},
+                    ],
+                }
+            return {}
+
+    class _FakeIngest:
+        def get_pipeline(self, id):
+            return {}
+
+    class _FakeIndices:
+        def get_mapping(self, index):
+            return {"idx": {"mappings": {"properties": {
+                "title": {"type": "text"},
+                "genres": {"type": "keyword"},
+            }}}}
+        def get_settings(self, index):
+            return {"idx": {"settings": {"index": {
+                "search": {"default_pipeline": search_pipeline_name},
+            }}}}
+
+    response = {
+        "hits": {
+            "hits": [{"_id": "1", "_score": 1.0, "_source": {"title": "The Matrix", "genres": "Action"}}],
+            "total": {"value": 1},
+        },
+        "took": 500,
+    }
+    if ext:
+        response["ext"] = ext
+
+    client = _FakeClient(search_response=response)
+    client.indices = _FakeIndices()
+    client.ingest = _FakeIngest()
+    client.transport = _FakeTransport()
+    return client
+
+
+def test_search_ui_search_agentic_flow(monkeypatch):
+    _search_configs.clear()
+    client = _make_agentic_client("agentic_flow")
+    result = search_ui_search(client, "idx", "show me action movies")
+    assert result["query_mode"] == "agentic"
+    assert result["capability"] == "agentic_flow"
+    assert result["used_semantic"] is True
+    assert len(result["hits"]) == 1
+
+
+def test_search_ui_search_agentic_conversational(monkeypatch):
+    _search_configs.clear()
+    ext = {
+        "dsl_query": '{"query":{"match_all":{}}}',
+        "retrieval_augmented_generation": {"answer": "Here are the results"},
+    }
+    client = _make_agentic_client("agentic_conversational", ext=ext)
+    result = search_ui_search(client, "idx", "what are the best movies?")
+    assert result["query_mode"] == "agentic"
+    assert result["capability"] == "agentic_conversational"
+    assert result["used_semantic"] is True
+    assert result.get("rag_answer") == "Here are the results"
+    assert result.get("dsl_query") == '{"query":{"match_all":{}}}'
+
+
+def test_search_ui_search_agentic_with_memory_id(monkeypatch):
+    _search_configs.clear()
+    ext = {"memory_id": "mem-xyz"}
+    client = _make_agentic_client("agentic_conversational", ext=ext)
+    result = search_ui_search(client, "idx", "follow up question", memory_id="mem-xyz")
+    assert result.get("memory_id") == "mem-xyz"
+
+
+def test_search_ui_search_agentic_match_all_no_query(monkeypatch):
+    _search_configs.clear()
+    client = _make_agentic_client("agentic_flow")
+    result = search_ui_search(client, "idx", "")
+    assert result["query_mode"] == "match_all"
+
+
+# ---------------------------------------------------------------------------
+# detect_index_profile — agentic template and agent type
+# ---------------------------------------------------------------------------
+def test_detect_index_profile_agentic_flow():
+    _search_configs.clear()
+    client = _make_agentic_client("agentic_flow")
+    profile = detect_index_profile(client, "idx")
+    assert profile["suggested_template"] == "agent"
+    assert profile["has_agentic"] is True
+    assert profile["agentic_agent_type"] == "flow"
+    assert "agentic" in profile["capabilities"]
+
+
+def test_detect_index_profile_agentic_conversational():
+    _search_configs.clear()
+    client = _make_agentic_client("agentic_conversational")
+    profile = detect_index_profile(client, "idx")
+    assert profile["suggested_template"] == "agent"
+    assert profile["has_agentic"] is True
+    assert profile["agentic_agent_type"] == "conversational"
+
+
+# ---------------------------------------------------------------------------
+# clear_search_config
+# ---------------------------------------------------------------------------
+def test_clear_search_config_specific_index():
+    _search_configs.clear()
+    set_search_config("idx-a", {"strategy": "bm25"})
+    set_search_config("idx-b", {"strategy": "hybrid"})
+    clear_search_config("idx-a")
+    assert get_search_config("idx-a") is None
+    assert get_search_config("idx-b") is not None
+
+
+def test_clear_search_config_all():
+    _search_configs.clear()
+    set_search_config("idx-a", {"strategy": "bm25"})
+    set_search_config("idx-b", {"strategy": "hybrid"})
+    clear_search_config()
+    assert get_search_config("idx-a") is None
+    assert get_search_config("idx-b") is None
+
+
+# ---------------------------------------------------------------------------
+# generate_agent_prompts — heuristic fallback
+# ---------------------------------------------------------------------------
+def test_generate_agent_prompts_heuristic_fallback():
+    _search_configs.clear()
+    _agent_prompts_cache.clear()
+
+    class _FakeTransport:
+        def perform_request(self, method, url, body=None):
+            if "/_search/pipeline/" in url:
+                return {}
+            return {}
+
+    class _FakeIngest:
+        def get_pipeline(self, id):
+            return {}
+
+    class _FakeIndices:
+        def get_mapping(self, index):
+            return {"idx": {"mappings": {"properties": {
+                "title": {"type": "text"},
+                "year": {"type": "integer"},
+            }}}}
+        def get_settings(self, index):
+            return {"idx": {"settings": {"index": {}}}}
+
+    client = _FakeClient(search_response={
+        "hits": {
+            "hits": [
+                {"_id": "1", "_score": 1.0, "_source": {"title": "The Matrix", "year": 1999}},
+            ],
+            "total": {"value": 1},
+        },
+        "took": 1,
+    })
+    client.indices = _FakeIndices()
+    client.ingest = _FakeIngest()
+    client.transport = _FakeTransport()
+
+    result = generate_agent_prompts(client, "idx")
+    assert len(result["search"]) > 0
+    assert len(result["chat"]) > 0
+    # Heuristic uses field names
+    assert any("title" in p for p in result["search"])
+    assert any("title" in p for p in result["chat"])
+
+
+def test_generate_agent_prompts_empty_index():
+    _search_configs.clear()
+    _agent_prompts_cache.clear()
+    client = _FakeClient(search_response={
+        "hits": {"hits": [], "total": {"value": 0}},
+        "took": 1,
+    })
+    result = generate_agent_prompts(client, "idx")
+    assert result == {"search": [], "chat": []}
+
+
+def test_generate_agent_prompts_caching():
+    _search_configs.clear()
+    _agent_prompts_cache.clear()
+
+    call_count = 0
+
+    class _CountingClient(_FakeClient):
+        def search(self, index, body, **kwargs):
+            nonlocal call_count
+            call_count += 1
+            return super().search(index, body, **kwargs)
+
+    class _FakeTransport:
+        def perform_request(self, method, url, body=None):
+            return {}
+
+    class _FakeIngest:
+        def get_pipeline(self, id):
+            return {}
+
+    class _FakeIndices:
+        def get_mapping(self, index):
+            return {"idx": {"mappings": {"properties": {"title": {"type": "text"}}}}}
+        def get_settings(self, index):
+            return {"idx": {"settings": {"index": {}}}}
+
+    client = _CountingClient(search_response={
+        "hits": {
+            "hits": [{"_id": "1", "_score": 1.0, "_source": {"title": "Test Movie"}}],
+            "total": {"value": 1},
+        },
+        "took": 1,
+    })
+    client.indices = _FakeIndices()
+    client.ingest = _FakeIngest()
+    client.transport = _FakeTransport()
+
+    result1 = generate_agent_prompts(client, "idx")
+    result2 = generate_agent_prompts(client, "idx")
+    # Second call should use cache, not call search again
+    assert call_count == 1
+    assert result1 == result2
+
+
+# ---------------------------------------------------------------------------
+# search_ui_search — agentic zero-hit retry
+# ---------------------------------------------------------------------------
+def test_search_ui_search_agentic_zero_hits_retries():
+    """When agentic search returns zero hits, it should retry once."""
+    _search_configs.clear()
+
+    call_count = 0
+    zero_response = {
+        "hits": {"hits": [], "total": {"value": 0}},
+        "took": 500,
+        "ext": {"dsl_query": '{"query":{"term":{"genres.keyword":"Action"}}}'},
+    }
+    hit_response = {
+        "hits": {
+            "hits": [{"_id": "1", "_score": 1.0, "_source": {"title": "The Matrix"}}],
+            "total": {"value": 1},
+        },
+        "took": 800,
+        "ext": {"dsl_query": '{"query":{"match_all":{}}}'},
+    }
+
+    class _RetryClient(_FakeClient):
+        def search(self, index, body, **kwargs):
+            nonlocal call_count
+            call_count += 1
+            # First call returns zero hits, second returns results
+            if call_count == 1:
+                return zero_response
+            return hit_response
+
+    client = _make_agentic_client("agentic_flow")
+    # Replace the search method with our retry-tracking version
+    retry_client = _RetryClient()
+    original_search = client.search
+    client.search = retry_client.search
+
+    result = search_ui_search(client, "idx", "show me action movies")
+    assert call_count == 2, "Should have retried once on zero hits"
+    assert len(result["hits"]) == 1
+    assert result["hits"][0]["id"] == "1"
+
+
+def test_search_ui_search_agentic_zero_hits_both_attempts():
+    """When both agentic attempts return zero hits, return zero hits gracefully."""
+    _search_configs.clear()
+
+    call_count = 0
+    zero_response = {
+        "hits": {"hits": [], "total": {"value": 0}},
+        "took": 500,
+        "ext": {"dsl_query": '{"query":{"term":{"genres.keyword":"SciFi"}}}'},
+    }
+
+    class _AlwaysEmptyClient(_FakeClient):
+        def search(self, index, body, **kwargs):
+            nonlocal call_count
+            call_count += 1
+            return zero_response
+
+    client = _make_agentic_client("agentic_flow")
+    client.search = _AlwaysEmptyClient().search
+
+    result = search_ui_search(client, "idx", "find scifi movies")
+    assert call_count == 2, "Should have retried once even though both returned zero"
+    assert len(result["hits"]) == 0
+    assert result["total"] == 0
+
+
+def test_search_ui_search_agentic_retry_exception_keeps_original():
+    """If the retry raises an exception, keep the original zero-hit response."""
+    _search_configs.clear()
+
+    call_count = 0
+    zero_response = {
+        "hits": {"hits": [], "total": {"value": 0}},
+        "took": 500,
+    }
+
+    class _RetryFailsClient(_FakeClient):
+        def search(self, index, body, **kwargs):
+            nonlocal call_count
+            call_count += 1
+            if call_count == 1:
+                return zero_response
+            raise RuntimeError("retry failed")
+
+    client = _make_agentic_client("agentic_flow")
+    client.search = _RetryFailsClient().search
+
+    result = search_ui_search(client, "idx", "test query")
+    assert call_count == 2
+    assert len(result["hits"]) == 0
+    assert result["error"] == ""  # No error — graceful degradation
+
+
+def test_search_ui_search_non_agentic_no_retry_on_zero_hits():
+    """Non-agentic searches should NOT retry on zero hits."""
+    _search_configs.clear()
+
+    call_count = 0
+
+    class _CountingClient(_FakeClient):
+        def search(self, index, body, **kwargs):
+            nonlocal call_count
+            call_count += 1
+            return {"hits": {"hits": [], "total": {"value": 0}}, "took": 1}
+
+    class _FakeIndices:
+        def get_mapping(self, index):
+            return {"idx": {"mappings": {"properties": {"title": {"type": "text"}}}}}
+        def get_settings(self, index):
+            return {"idx": {"settings": {"index": {}}}}
+
+    class _FakeIngest:
+        def get_pipeline(self, id):
+            return {}
+
+    class _FakeTransport:
+        def perform_request(self, method, url, body=None):
+            return {}
+
+    client = _CountingClient()
+    client.indices = _FakeIndices()
+    client.ingest = _FakeIngest()
+    client.transport = _FakeTransport()
+
+    result = search_ui_search(client, "idx", "hello world")
+    assert call_count == 1, "Non-agentic search should not retry"
+    assert len(result["hits"]) == 0
