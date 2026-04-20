@@ -179,9 +179,10 @@ def _resolve_semantic_runtime_hints(
         default_pipeline = normalize_text(
             index_settings.get("settings", {}).get("index", {}).get("default_pipeline", "")
         )
-        search_pipeline = normalize_text(
+        _raw_search_pipeline = normalize_text(
             index_settings.get("settings", {}).get("index", {}).get("search", {}).get("default_pipeline", "")
         )
+        search_pipeline = "" if _raw_search_pipeline in ("_none", "") else _raw_search_pipeline
     except Exception:
         pass
 
