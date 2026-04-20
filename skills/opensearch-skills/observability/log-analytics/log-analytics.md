@@ -355,5 +355,5 @@ Client: `clientip`, Request: `request`, Status: `response`, Bytes: `bytes`, Meth
 - Use `match()` for full-text search, `like` for wildcard patterns, `match_phrase()` for exact phrases
 - Use `patterns` for automatic log message clustering
 - Use `dedup` to find unique error messages: `dedup <MESSAGE_FIELD> | fields <MESSAGE_FIELD>`
-- See [ppl-reference.md](ppl-reference.md) for the full PPL command and function reference
+- See [ppl-reference.md](../ppl-reference.md) for the full PPL command and function reference
 - If a PPL query fails with a syntax error, search the docs: `uv run python scripts/opensearch_ops.py search-docs --query "PPL <command> syntax"`
