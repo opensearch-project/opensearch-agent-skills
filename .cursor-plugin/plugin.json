@@ -1,0 +1,49 @@
+{
+  "name": "opensearch-agent-skills",
+  "displayName": "OpenSearch Agent Skills",
+  "version": "0.1.0",
+  "description": "Build search applications and analyze observability data with OpenSearch. Includes semantic, hybrid, neural sparse, and agentic search strategies with optional AWS deployment.",
+  "author": "opensearch-project",
+  "license": "Apache-2.0",
+  "repository": "https://github.com/opensearch-project/opensearch-agent-skills",
+  "categories": ["search", "observability", "opensearch", "aws"],
+  "skillsDirectory": "skills",
+  "skillEntryFile": "SKILL.md",
+  "skills": [
+    {
+      "name": "opensearch-skills",
+      "path": "skills/opensearch-skills",
+      "entryPoint": "skills/opensearch-skills/SKILL.md",
+      "description": "Build search apps (semantic, hybrid, neural, agentic) and analyze logs/traces with OpenSearch. Includes local execution and optional AWS deployment.",
+      "keywords": [
+        "opensearch",
+        "search",
+        "semantic-search",
+        "vector-search",
+        "hybrid-search",
+        "neural-sparse",
+        "agentic-search",
+        "RAG",
+        "embeddings",
+        "log-analytics",
+        "observability",
+        "PPL",
+        "OpenTelemetry"
+      ]
+    }
+  ],
+  "prerequisites": {
+    "python": ">=3.11",
+    "tools": ["uv", "docker"],
+    "optional": ["aws-cli"]
+  },
+  "mcpServers": {
+    "opensearch-mcp-server": {
+      "command": "uvx",
+      "args": ["opensearch-mcp-server-py@latest"],
+      "env": {
+        "FASTMCP_LOG_LEVEL": "ERROR"
+      }
+    }
+  }
+}
