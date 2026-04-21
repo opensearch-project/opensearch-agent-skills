@@ -10,10 +10,10 @@ Skills are organized in a tree — install the whole collection or pick individu
 
 | Category | Skill | Description |
 |----------|-------|-------------|
-| **Search** | [opensearch-launchpad](skills/opensearch-skills/search/opensearch-launchpad/) | Build search apps from scratch — BM25, semantic, hybrid, agentic search |
-| **Observability** | [log-analytics](skills/opensearch-skills/observability/log-analytics/) | Query and analyze logs with PPL — error patterns, anomaly detection |
-| **Observability** | [trace-analytics](skills/opensearch-skills/observability/trace-analytics/) | Investigate distributed traces — slow spans, service maps, agent invocations |
-| **Cloud** | [aws-setup](skills/opensearch-skills/cloud/aws-setup/) | Deploy to Amazon OpenSearch Service or Serverless |
+| **Search** | [opensearch-launchpad](skills/search/opensearch-launchpad/) | Build search apps from scratch — BM25, semantic, hybrid, agentic search |
+| **Observability** | [log-analytics](skills/observability/log-analytics/) | Query and analyze logs with PPL — error patterns, anomaly detection |
+| **Observability** | [trace-analytics](skills/observability/trace-analytics/) | Investigate distributed traces — slow spans, service maps, agent invocations |
+| **Cloud** | [aws-setup](skills/cloud/aws-setup/) | Deploy to Amazon OpenSearch Service or Serverless |
 
 > More skills coming soon — contributions welcome! See [DEVELOPER_GUIDE.md](DEVELOPER_GUIDE.md).
 
@@ -70,32 +70,31 @@ Your agent reads the skill instructions and runs the scripts directly — no MCP
 
 ```
 skills/
-  opensearch-skills/                  # Top-level meta-skill
-    SKILL.md                          # Routes to category skills
-    cli-reference.md                  # Shared CLI command reference
-    scripts/                          # Shared scripts, UI, sample data
-    search/                           # Category: Search
+  SKILL.md                            # Top-level meta-skill, routes to categories
+  cli-reference.md                    # Shared CLI command reference
+  scripts/                            # Shared scripts, UI, sample data
+  search/                             # Category: Search
+    SKILL.md
+    opensearch-launchpad/             # Search app builder
       SKILL.md
-      opensearch-launchpad/           # Search app builder
-        SKILL.md
-        *.md                          # Model guides, evaluation, strategies
-    observability/                    # Category: Observability
+      *.md                            # Model guides, evaluation, strategies
+  observability/                      # Category: Observability
+    SKILL.md
+    log-analytics/                    # Log querying & analysis
       SKILL.md
-      log-analytics/                  # Log querying & analysis
-        SKILL.md
-        log-analytics.md
-        ppl-reference.md
-      trace-analytics/                # Distributed trace investigation
-        SKILL.md
-        traces.md
-        ppl-reference.md
-    cloud/                            # Category: Cloud deployment
+      log-analytics.md
+      ppl-reference.md
+    trace-analytics/                  # Distributed trace investigation
       SKILL.md
-      aws-setup/                      # AWS provisioning & deployment
-        SKILL.md
-        aos/                          # Amazon OpenSearch Service guides
-        aoss/                         # Amazon OpenSearch Serverless guides
-        reference.md
+      traces.md
+      ppl-reference.md
+  cloud/                              # Category: Cloud deployment
+    SKILL.md
+    aws-setup/                        # AWS provisioning & deployment
+      SKILL.md
+      aos/                            # Amazon OpenSearch Service guides
+      aoss/                           # Amazon OpenSearch Serverless guides
+      reference.md
 tests/                                # pytest test suite
 ```
 

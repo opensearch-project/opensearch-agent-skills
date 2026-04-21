@@ -8,7 +8,7 @@ import pytest
 
 # Add agent skills scripts to path
 sys.path.insert(
-    0, str(Path(__file__).resolve().parents[1] / "skills" / "opensearch-skills" / "scripts")
+    0, str(Path(__file__).resolve().parents[1] / "skills" / "scripts")
 )
 
 from lib.client import preflight_check_cluster, clear_cluster_credentials

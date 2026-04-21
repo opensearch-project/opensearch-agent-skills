@@ -1,4 +1,4 @@
-"""Tests for skills/opensearch-skills/scripts/lib/client.py"""
+"""Tests for skills/scripts/lib/client.py"""
 
 import os
 import sys
@@ -7,7 +7,7 @@ from pathlib import Path
 import pytest
 
 # Make the scripts/lib package importable
-_SCRIPTS_DIR = Path(__file__).resolve().parents[1] / "skills" / "opensearch-skills" / "scripts"
+_SCRIPTS_DIR = Path(__file__).resolve().parents[1] / "skills" / "scripts"
 sys.path.insert(0, str(_SCRIPTS_DIR))
 
 from lib.client import (

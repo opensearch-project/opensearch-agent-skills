@@ -139,7 +139,7 @@ uv run pytest tests/test_agent_skills_evaluate.py::test_ndcg_perfect_ranking -v
   import sys
   from pathlib import Path
 
-  _SCRIPTS_DIR = Path(__file__).resolve().parents[1] / "skills" / "opensearch-skills" / "scripts"
+  _SCRIPTS_DIR = Path(__file__).resolve().parents[1] / "skills" / "scripts"
   sys.path.insert(0, str(_SCRIPTS_DIR))
 
   from lib.client import normalize_text  # example import

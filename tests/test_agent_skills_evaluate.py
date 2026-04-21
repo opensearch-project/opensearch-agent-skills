@@ -1,4 +1,4 @@
-"""Tests for skills/opensearch-skills/scripts/lib/evaluate.py"""
+"""Tests for skills/scripts/lib/evaluate.py"""
 
 import math
 import sys
@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 
-_LIB_DIR = Path(__file__).resolve().parents[1] / "skills" / "opensearch-skills" / "scripts"
+_LIB_DIR = Path(__file__).resolve().parents[1] / "skills" / "scripts"
 sys.path.insert(0, str(_LIB_DIR))
 
 from lib.evaluate import (

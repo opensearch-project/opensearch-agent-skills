@@ -1,4 +1,4 @@
-"""Tests for skills/opensearch-skills/scripts/lib/operations.py"""
+"""Tests for skills/scripts/lib/operations.py"""
 
 import json
 import sys
@@ -7,7 +7,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-_SCRIPTS_DIR = Path(__file__).resolve().parents[1] / "skills" / "opensearch-skills" / "scripts"
+_SCRIPTS_DIR = Path(__file__).resolve().parents[1] / "skills" / "scripts"
 sys.path.insert(0, str(_SCRIPTS_DIR))
 
 from lib.operations import (

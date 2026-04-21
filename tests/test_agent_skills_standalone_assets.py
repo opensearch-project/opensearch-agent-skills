@@ -1,5 +1,5 @@
 """Tests that the agent skill is fully standalone — UI and sample data are
-bundled inside skills/opensearch-skills/ and resolve without depending on
+bundled inside skills/ and resolve without depending on
 the repo-root opensearch_orchestrator/ tree."""
 
 import re
@@ -8,7 +8,7 @@ from pathlib import Path
 
 import pytest
 
-_SKILL_ROOT = Path(__file__).resolve().parents[1] / "skills" / "opensearch-skills"
+_SKILL_ROOT = Path(__file__).resolve().parents[1] / "skills"
 _SCRIPTS_DIR = _SKILL_ROOT / "scripts"
 _UI_DIR = _SCRIPTS_DIR / "ui"
 

@@ -1,11 +1,11 @@
-"""Tests for skills/opensearch-skills/scripts/lib/search.py"""
+"""Tests for skills/scripts/lib/search.py"""
 
 import sys
 from pathlib import Path
 
 import pytest
 
-_SCRIPTS_DIR = Path(__file__).resolve().parents[1] / "skills" / "opensearch-skills" / "scripts"
+_SCRIPTS_DIR = Path(__file__).resolve().parents[1] / "skills" / "scripts"
 sys.path.insert(0, str(_SCRIPTS_DIR))
 
 from lib.search import (

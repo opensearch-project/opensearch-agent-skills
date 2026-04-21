@@ -4,7 +4,7 @@ This file provides guidance for AI coding agents working on the opensearch-agent
 
 ## Project Overview
 
-A collection of [Agent Skills](https://agentskills.io/specification) for building search applications and analyzing observability data with OpenSearch. Skills are organized in a tree structure under `skills/opensearch-skills/` — users can install the entire tree or individual skills at any level.
+A collection of [Agent Skills](https://agentskills.io/specification) for building search applications and analyzing observability data with OpenSearch. Skills are organized in a tree structure under `skills/` — users can install the entire tree or individual skills at any level.
 
 ## Tech Stack
 
@@ -18,43 +18,42 @@ A collection of [Agent Skills](https://agentskills.io/specification) for buildin
 
 ```
 skills/
-  opensearch-skills/              # Top-level meta-skill (install all)
-    SKILL.md                      # Routes to category skills
-    cli-reference.md              # CLI command reference
-    scripts/                      # Shared scripts, UI, sample data
-      opensearch_ops.py           # Main CLI tool
-      start_opensearch.sh         # Docker bootstrap
-      lib/                        # Core Python modules
-        client.py                 # Connection, auth, preflight
-        operations.py             # Index/model/pipeline ops
-        search.py                 # Query building, UI logic
-        evaluate.py               # Search quality metrics
-        samples.py                # Sample data loading
-        ui.py                     # Search Builder UI server
-      ui/                         # React frontend (index.html, app.jsx, styles.css)
-      sample_data/                # Bundled IMDB sample dataset
-    search/                       # Category: Search
-      SKILL.md                    # Category router
-      opensearch-launchpad/       # Leaf skill: search app builder
-        SKILL.md
-        *.md                      # Reference files (models, strategies, evaluation)
-    observability/                # Category: Observability
-      SKILL.md                    # Category router
-      log-analytics/              # Leaf skill: log querying & analysis
-        SKILL.md
-        log-analytics.md          # Full workflow reference
-        ppl-reference.md          # PPL syntax reference
-      trace-analytics/            # Leaf skill: distributed trace investigation
-        SKILL.md
-        traces.md                 # Trace query templates
-        ppl-reference.md          # PPL syntax reference
-    cloud/                        # Category: Cloud deployment
-      SKILL.md                    # Category router
-      aws-setup/                  # Leaf skill: AWS provisioning & deployment
-        SKILL.md
-        aos/                      # Amazon OpenSearch Service guides
-        aoss/                     # Amazon OpenSearch Serverless guides
-        reference.md              # Cost, security, troubleshooting
+  SKILL.md                        # Top-level meta-skill, routes to categories
+  cli-reference.md                # CLI command reference
+  scripts/                        # Shared scripts, UI, sample data
+    opensearch_ops.py             # Main CLI tool
+    start_opensearch.sh           # Docker bootstrap
+    lib/                          # Core Python modules
+      client.py                   # Connection, auth, preflight
+      operations.py               # Index/model/pipeline ops
+      search.py                   # Query building, UI logic
+      evaluate.py                 # Search quality metrics
+      samples.py                  # Sample data loading
+      ui.py                       # Search Builder UI server
+    ui/                           # React frontend (index.html, app.jsx, styles.css)
+    sample_data/                  # Bundled IMDB sample dataset
+  search/                         # Category: Search
+    SKILL.md                      # Category router
+    opensearch-launchpad/         # Leaf skill: search app builder
+      SKILL.md
+      *.md                        # Reference files (models, strategies, evaluation)
+  observability/                  # Category: Observability
+    SKILL.md                      # Category router
+    log-analytics/                # Leaf skill: log querying & analysis
+      SKILL.md
+      log-analytics.md            # Full workflow reference
+      ppl-reference.md            # PPL syntax reference
+    trace-analytics/              # Leaf skill: distributed trace investigation
+      SKILL.md
+      traces.md                   # Trace query templates
+      ppl-reference.md            # PPL syntax reference
+  cloud/                          # Category: Cloud deployment
+    SKILL.md                      # Category router
+    aws-setup/                    # Leaf skill: AWS provisioning & deployment
+      SKILL.md
+      aos/                        # Amazon OpenSearch Service guides
+      aoss/                       # Amazon OpenSearch Serverless guides
+      reference.md                # Cost, security, troubleshooting
 tests/                            # pytest test suite (no cluster required)
 ```
 

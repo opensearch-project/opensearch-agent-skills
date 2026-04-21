@@ -12,8 +12,8 @@
   "skills": [
     {
       "name": "opensearch-skills",
-      "path": "skills/opensearch-skills",
-      "entryPoint": "skills/opensearch-skills/SKILL.md",
+      "path": "skills",
+      "entryPoint": "skills/SKILL.md",
       "description": "All-in-one skill bundle: build search apps, analyze logs and traces, and deploy to AWS with OpenSearch.",
       "keywords": [
         "opensearch",
@@ -33,8 +33,8 @@
     },
     {
       "name": "opensearch-launchpad",
-      "path": "skills/opensearch-skills/search/opensearch-launchpad",
-      "entryPoint": "skills/opensearch-skills/search/opensearch-launchpad/SKILL.md",
+      "path": "skills/search/opensearch-launchpad",
+      "entryPoint": "skills/search/opensearch-launchpad/SKILL.md",
       "description": "Build search applications from scratch with semantic, hybrid, neural sparse, and agentic search strategies.",
       "keywords": [
         "opensearch",
@@ -52,8 +52,8 @@
     },
     {
       "name": "log-analytics",
-      "path": "skills/opensearch-skills/observability/log-analytics",
-      "entryPoint": "skills/opensearch-skills/observability/log-analytics/SKILL.md",
+      "path": "skills/observability/log-analytics",
+      "entryPoint": "skills/observability/log-analytics/SKILL.md",
       "description": "Query and analyze logs in OpenSearch using PPL and Query DSL for error patterns, anomaly detection, and log investigation.",
       "keywords": [
         "opensearch",
@@ -70,8 +70,8 @@
     },
     {
       "name": "trace-analytics",
-      "path": "skills/opensearch-skills/observability/trace-analytics",
-      "entryPoint": "skills/opensearch-skills/observability/trace-analytics/SKILL.md",
+      "path": "skills/observability/trace-analytics",
+      "entryPoint": "skills/observability/trace-analytics/SKILL.md",
       "description": "Investigate distributed traces and spans in OpenSearch for latency analysis, error debugging, and service dependency mapping.",
       "keywords": [
         "opensearch",
@@ -86,8 +86,8 @@
     },
     {
       "name": "aws-setup",
-      "path": "skills/opensearch-skills/cloud/aws-setup",
-      "entryPoint": "skills/opensearch-skills/cloud/aws-setup/SKILL.md",
+      "path": "skills/cloud/aws-setup",
+      "entryPoint": "skills/cloud/aws-setup/SKILL.md",
       "description": "Deploy OpenSearch search applications to Amazon OpenSearch Service or Amazon OpenSearch Serverless with Bedrock connectors.",
       "keywords": [
         "opensearch",
