@@ -28,10 +28,10 @@ Install using [`npx skills`](https://agentskills.io):
 npx skills add opensearch-project/opensearch-agent-skills
 
 # Install a specific skill
-npx skills add opensearch-project/opensearch-agent-skills@opensearch-launchpad
-npx skills add opensearch-project/opensearch-agent-skills@log-analytics
-npx skills add opensearch-project/opensearch-agent-skills@trace-analytics
-npx skills add opensearch-project/opensearch-agent-skills@aws-setup
+npx skills add opensearch-project/opensearch-agent-skills@opensearch-launchpad --full-depth
+npx skills add opensearch-project/opensearch-agent-skills@log-analytics --full-depth
+npx skills add opensearch-project/opensearch-agent-skills@trace-analytics --full-depth
+npx skills add opensearch-project/opensearch-agent-skills@aws-setup --full-depth
 ```
 
 ### Install options
