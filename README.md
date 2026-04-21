@@ -6,9 +6,14 @@ A collection of [Agent Skills](https://agentskills.io/specification) for buildin
 
 ## Available Skills
 
-| Skill | Description |
-|-------|-------------|
-| **[opensearch-skills](skills/opensearch-skills/)** | Build search apps (semantic, hybrid, neural, agentic) and analyze logs/traces with OpenSearch. Includes local execution and optional AWS deployment. |
+Skills are organized in a tree — install the whole collection or pick individual skills.
+
+| Category | Skill | Description |
+|----------|-------|-------------|
+| **Search** | [opensearch-launchpad](skills/opensearch-skills/search/opensearch-launchpad/) | Build search apps from scratch — BM25, semantic, hybrid, agentic search |
+| **Observability** | [log-analytics](skills/opensearch-skills/observability/log-analytics/) | Query and analyze logs with PPL — error patterns, anomaly detection |
+| **Observability** | [trace-analytics](skills/opensearch-skills/observability/trace-analytics/) | Investigate distributed traces — slow spans, service maps, agent invocations |
+| **Cloud** | [aws-setup](skills/opensearch-skills/cloud/aws-setup/) | Deploy to Amazon OpenSearch Service or Serverless |
 
 > More skills coming soon — contributions welcome! See [DEVELOPER_GUIDE.md](DEVELOPER_GUIDE.md).
 
@@ -16,13 +21,18 @@ A collection of [Agent Skills](https://agentskills.io/specification) for buildin
 
 ## Install
 
-Install any skill using [`npx skills`](https://agentskills.io):
+Install using [`npx skills`](https://agentskills.io):
 
 ```bash
+# Install all skills
 npx skills add opensearch-project/opensearch-agent-skills
-```
 
-This discovers skills under `skills/` and symlinks them into your agent's skill directory (`.claude/skills/`, `.cursor/skills/`, `.kiro/skills/`, etc.).
+# Install a specific skill
+npx skills add opensearch-project/opensearch-agent-skills@opensearch-launchpad
+npx skills add opensearch-project/opensearch-agent-skills@log-analytics
+npx skills add opensearch-project/opensearch-agent-skills@trace-analytics
+npx skills add opensearch-project/opensearch-agent-skills@aws-setup
+```
 
 ### Install options
 
@@ -60,13 +70,33 @@ Your agent reads the skill instructions and runs the scripts directly — no MCP
 
 ```
 skills/
-  opensearch-skills/         # Main skill
-    SKILL.md                 # Skill instructions (entry point)
-    cli-reference.md         # CLI command reference
-    aws/                     # AWS deployment guides (loaded on demand)
-    launchpad/               # Search architecture guides (loaded on demand)
-    observability/            # Log analytics & trace guides (loaded on demand)
-    scripts/                 # Execution scripts
+  opensearch-skills/                  # Top-level meta-skill
+    SKILL.md                          # Routes to category skills
+    cli-reference.md                  # Shared CLI command reference
+    scripts/                          # Shared scripts, UI, sample data
+    search/                           # Category: Search
+      SKILL.md
+      opensearch-launchpad/           # Search app builder
+        SKILL.md
+        *.md                          # Model guides, evaluation, strategies
+    observability/                    # Category: Observability
+      SKILL.md
+      log-analytics/                  # Log querying & analysis
+        SKILL.md
+        log-analytics.md
+        ppl-reference.md
+      trace-analytics/                # Distributed trace investigation
+        SKILL.md
+        traces.md
+        ppl-reference.md
+    cloud/                            # Category: Cloud deployment
+      SKILL.md
+      aws-setup/                      # AWS provisioning & deployment
+        SKILL.md
+        aos/                          # Amazon OpenSearch Service guides
+        aoss/                         # Amazon OpenSearch Serverless guides
+        reference.md
+tests/                                # pytest test suite
 ```
 
 ---
