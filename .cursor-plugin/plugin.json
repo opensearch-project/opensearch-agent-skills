@@ -105,14 +105,5 @@
     "python": ">=3.11",
     "tools": ["uv", "docker"],
     "optional": ["aws-cli"]
-  },
-  "mcpServers": {
-    "opensearch-mcp-server": {
-      "command": "uvx",
-      "args": ["opensearch-mcp-server-py@latest"],
-      "env": {
-        "FASTMCP_LOG_LEVEL": "ERROR"
-      }
-    }
   }
 }
