@@ -2,20 +2,21 @@ name: Sync Skills
 
 # Mirrors skill directories from upstream repos into this one.
 #
-# Every hour the workflow runs `opensearch-skills-sync` (the CLI
-# shipped by sync-bot/), which walks each source repo's history since
-# the last-synced commit and replays new commits that touched the
-# configured subdirectory into a destination directory here. Original
-# authorship is preserved (author field + Co-authored-by trailer) and
-# provenance trailers (Source-Repo / Source-Commit) are appended.
+# The workflow runs `opensearch-skills-sync` (the CLI shipped by
+# sync-bot/) on the schedule below, which walks each source repo's
+# history since the last-synced commit and replays new commits that
+# touched the configured subdirectory into a destination directory
+# here. Original authorship is preserved (author field +
+# Co-authored-by trailer) and provenance trailers (Source-Repo /
+# Source-Commit) are appended.
 #
 # If any source fails the workflow still commits + pushes successful
 # sources, then fails the job at the end so the failure is visible.
 
 on:
   schedule:
-    # Every 20 minutes. Note: GitHub often delays scheduled workflows
-    # under load; treat this as "at least every ~hour" in practice.
+    # Every 20 minutes. GitHub may delay scheduled workflows under
+    # load, so actual cadence can stretch longer.
     - cron: '*/20 * * * *'
   workflow_dispatch:
     inputs:
