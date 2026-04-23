@@ -275,7 +275,7 @@ jobs:
           ---
 
           **Reviewing or editing a synced skill?** Read
-          [\`sync/SYNCED_SKILL_POLICY.md\`](../blob/${BASE}/sync/SYNCED_SKILL_POLICY.md)
+          [\`sync/SYNCED_SKILL_POLICY.md\`](https://github.com/${{ github.repository }}/blob/${BASE}/sync/SYNCED_SKILL_POLICY.md)
           first. TL;DR: fixes belong **upstream**, not on this PR branch —
           any commit pushed here is overwritten on the next sync run.
           EOF
