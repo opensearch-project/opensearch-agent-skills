@@ -1,0 +1,30 @@
+name: Solr -> OpenSearch Migration Advisor CI
+
+# Uses --extra dev only (pytest + flake8); --extra eval is intentionally
+# omitted because it pulls claude-agent-sdk for tests/evals/, which makes
+# real AWS Bedrock / Anthropic calls.
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  test:
+    name: Test (${{ matrix.os }})
+    strategy:
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - uses: astral-sh/setup-uv@v6
+      - name: Install skill (dev extras only)
+        working-directory: skills/solr-opensearch-migration-advisor
+        run: uv sync --frozen --extra dev
+      - name: Run tests
+        working-directory: skills/solr-opensearch-migration-advisor
+        run: uv run pytest tests/ -v
