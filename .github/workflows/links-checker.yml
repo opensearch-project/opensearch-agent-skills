@@ -4,9 +4,13 @@ on:
   push:
     paths:
       - '**/*.md'
+      - 'lychee.toml'
+      - '.github/workflows/links-checker.yml'
   pull_request:
     paths:
       - '**/*.md'
+      - 'lychee.toml'
+      - '.github/workflows/links-checker.yml'
 
 jobs:
   check-links:
@@ -18,10 +22,13 @@ jobs:
       - name: Check links
         uses: lycheeverse/lychee-action@v2
         with:
+          # User agent, timeouts, retries, accepted status codes and host
+          # excludes (including the Docusaurus-SPA awslabs.github.io/mcp/*
+          # workaround) live in lychee.toml so local `lychee` runs and CI
+          # share the same config.
           args: >-
+            --config lychee.toml
             --verbose
             --no-progress
-            --exclude 'localhost'
-            --exclude '127\.0\.0\.1'
             '**/*.md'
           fail: true

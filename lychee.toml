@@ -1,0 +1,48 @@
+# lychee link-checker configuration.
+# Auto-loaded by lycheeverse/lychee-action@v2 when present in the repo root.
+# CLI flags in .github/workflows/links-checker.yml augment (not replace) this.
+
+############################# Requests #############################
+
+# Present a browser-like UA. Some hosts (notably GitHub-Pages-hosted Docusaurus
+# sites) silently flag the default lychee/curl UA and serve degraded responses.
+user_agent = "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+
+# Connect-to-response-finished timeout.
+timeout = 30
+
+# Retry transient failures before declaring a link dead.
+max_retries = 3
+retry_wait_time = 4
+
+# Acceptable status codes. We treat bot-filter responses (403, 429) as "alive"
+# — the link exists, the host just doesn't want unattended HEAD/GET from CI.
+# Adding 404 here would be too permissive; instead we exclude specific
+# statically-unreachable hosts below.
+accept = [
+    "200",
+    "204",
+    "206",
+    "301",
+    "302",
+    "303",
+    "307",
+    "308",
+    "403",
+    "429",
+]
+
+############################# Exclusions ##########################
+
+# URL regexes that should not be statically link-checked.
+exclude = [
+    # Loopback addresses — historically excluded via --exclude CLI flag.
+    '^https?://localhost(:\d+)?(/|$)',
+    '^https?://127\.0\.0\.1(:\d+)?(/|$)',
+
+    # awslabs.github.io/mcp/* — some /docs/* URLs return HTTP 404 to lychee
+    # but load fine in a browser. Root cause TBD (likely trailingSlash / baseUrl
+    # drift in the upstream awslabs/mcp Docusaurus build). Excluding here while
+    # the upstream fix lands.
+    '^https://awslabs\.github\.io/mcp(/|$)',
+]
