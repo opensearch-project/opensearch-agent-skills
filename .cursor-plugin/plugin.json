@@ -2,108 +2,20 @@
   "name": "opensearch-agent-skills",
   "displayName": "OpenSearch Agent Skills",
   "version": "0.2.0",
-  "description": "Use this plugin to build search applications (semantic, hybrid, neural sparse, agentic) and analyze observability data (logs and traces) with OpenSearch. Install all skills at once or pick individual ones — just ask your AI assistant to set up a search app, query logs, investigate traces, or deploy to AWS.",
-  "author": "opensearch-project",
+  "description": "Build and deploy search applications with semantic, hybrid, neural sparse, and agentic search strategies using OpenSearch. Analyze observability data including log analytics with PPL and Query DSL, and distributed trace analysis with OpenTelemetry. Deploy to Amazon OpenSearch Service or OpenSearch Serverless with Bedrock integration for embeddings and RAG. Just ask your AI assistant to set up a search app, query logs, investigate traces, or deploy to AWS.",
+  "author": {
+    "name": "opensearch-project"
+  },
   "license": "Apache-2.0",
   "repository": "https://github.com/opensearch-project/opensearch-agent-skills",
-  "categories": ["search", "observability", "opensearch", "aws"],
-  "skillsDirectory": "skills",
-  "skillEntryFile": "SKILL.md",
-  "skills": [
-    {
-      "name": "opensearch-skills",
-      "path": "skills/opensearch-skills",
-      "entryPoint": "skills/opensearch-skills/SKILL.md",
-      "description": "All-in-one skill bundle: build search apps, analyze logs and traces, and deploy to AWS with OpenSearch.",
-      "keywords": [
-        "opensearch",
-        "search",
-        "semantic-search",
-        "vector-search",
-        "hybrid-search",
-        "neural-sparse",
-        "agentic-search",
-        "RAG",
-        "embeddings",
-        "log-analytics",
-        "observability",
-        "PPL",
-        "OpenTelemetry"
-      ]
-    },
-    {
-      "name": "opensearch-launchpad",
-      "path": "skills/opensearch-skills/search/opensearch-launchpad",
-      "entryPoint": "skills/opensearch-skills/search/opensearch-launchpad/SKILL.md",
-      "description": "Build search applications from scratch with semantic, hybrid, neural sparse, and agentic search strategies.",
-      "keywords": [
-        "opensearch",
-        "search",
-        "semantic-search",
-        "vector-search",
-        "hybrid-search",
-        "neural-sparse",
-        "agentic-search",
-        "RAG",
-        "embeddings",
-        "KNN",
-        "document-processing"
-      ]
-    },
-    {
-      "name": "log-analytics",
-      "path": "skills/opensearch-skills/observability/log-analytics",
-      "entryPoint": "skills/opensearch-skills/observability/log-analytics/SKILL.md",
-      "description": "Query and analyze logs in OpenSearch using PPL and Query DSL for error patterns, anomaly detection, and log investigation.",
-      "keywords": [
-        "opensearch",
-        "log-analytics",
-        "PPL",
-        "observability",
-        "Fluent-Bit",
-        "Fluentd",
-        "Logstash",
-        "syslog",
-        "error-rate",
-        "anomaly-detection"
-      ]
-    },
-    {
-      "name": "trace-analytics",
-      "path": "skills/opensearch-skills/observability/trace-analytics",
-      "entryPoint": "skills/opensearch-skills/observability/trace-analytics/SKILL.md",
-      "description": "Investigate distributed traces and spans in OpenSearch for latency analysis, error debugging, and service dependency mapping.",
-      "keywords": [
-        "opensearch",
-        "trace-analytics",
-        "OpenTelemetry",
-        "distributed-tracing",
-        "spans",
-        "latency",
-        "service-map",
-        "observability"
-      ]
-    },
-    {
-      "name": "aws-setup",
-      "path": "skills/opensearch-skills/cloud/aws-setup",
-      "entryPoint": "skills/opensearch-skills/cloud/aws-setup/SKILL.md",
-      "description": "Deploy OpenSearch search applications to Amazon OpenSearch Service or Amazon OpenSearch Serverless with Bedrock connectors.",
-      "keywords": [
-        "opensearch",
-        "aws",
-        "Amazon-OpenSearch-Service",
-        "OpenSearch-Serverless",
-        "Bedrock",
-        "SigV4",
-        "IAM",
-        "cloud-deployment"
-      ]
+  "keywords": ["search", "observability", "opensearch", "aws"],
+  "mcpServers": {
+    "opensearch-mcp-server": {
+      "command": "uvx",
+      "args": ["opensearch-mcp-server-py@latest"],
+      "env": {
+        "FASTMCP_LOG_LEVEL": "ERROR"
+      }
     }
-  ],
-  "prerequisites": {
-    "python": ">=3.11",
-    "tools": ["uv", "docker"],
-    "optional": ["aws-cli"]
   }
 }
