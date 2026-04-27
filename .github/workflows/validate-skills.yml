@@ -2,11 +2,13 @@ name: Validate Skills Sync (dry-run)
 
 # Runs the skill-sync engine in --dry-run mode on every PR and on every
 # branch push (except main, which is covered by the scheduled Sync Skills
-# workflow).
+# workflow). Also preflight-checks that the configured cron mode (from
+# sync/config.yaml) is compatible with the default branch — so a PR
+# that would break the scheduled cron is red before it merges.
 #
 # Purpose: catch broken sync configuration — unreachable upstreams, wrong
 # branch names, typo'd src_path, etc. — before the change lands on main
-# and the cron starts failing every 5 minutes.
+# and the cron starts failing every 20 minutes.
 #
 # Dry-run contract:
 #   * `opensearch-skills-sync --dry-run` still exits 1 if any source fails
@@ -19,17 +21,21 @@ on:
     # Re-run when the workflow itself or anything the sync depends on changes.
     paths:
       - 'sync/sources/**'
+      - 'sync/config.yaml'
       - 'sync-bot/**'
       - '.github/workflows/validate-skills.yml'
       - '.github/workflows/sync-skills.yml'
+      - '.github/actions/sync-preflight/**'
   push:
     branches-ignore:
       - main
     paths:
       - 'sync/sources/**'
+      - 'sync/config.yaml'
       - 'sync-bot/**'
       - '.github/workflows/validate-skills.yml'
       - '.github/workflows/sync-skills.yml'
+      - '.github/actions/sync-preflight/**'
   # Allows sync-skills.yml to re-dispatch validation against a PR branch
   # after the bot pushes to it (GITHUB_TOKEN pushes don't retrigger pull_request).
   workflow_dispatch:
@@ -54,6 +60,41 @@ jobs:
           # origin/main diffs, not for the upstream repos (which it
           # clones fresh). Keep shallow.
           fetch-depth: 1
+
+      # Single source of truth. Same logic as sync-skills.yml's
+      # Load sync config step — keep them in lockstep.
+      - name: Load sync config
+        id: config
+        run: |
+          set -euo pipefail
+          CONFIG=sync/config.yaml
+          if [[ ! -f "${CONFIG}" ]]; then
+            echo "::error::${CONFIG} is missing. This PR would break the scheduled cron."
+            exit 1
+          fi
+          MODE="$(yq -r '.cron.mode // ""' "${CONFIG}")"
+          STRICT="$(yq -r '.cron.strict_preflight // true' "${CONFIG}")"
+          BOT_NAME="$(yq -r '.bot.name // ""' "${CONFIG}")"
+          BOT_EMAIL="$(yq -r '.bot.email // ""' "${CONFIG}")"
+          for pair in "cron.mode=${MODE}" "bot.name=${BOT_NAME}" "bot.email=${BOT_EMAIL}"; do
+            key="${pair%%=*}"
+            val="${pair#*=}"
+            if [[ -z "${val}" ]]; then
+              echo "::error::${CONFIG} is missing required key '${key}'."
+              exit 1
+            fi
+          done
+          case "${MODE}" in
+            push|pr) ;;
+            *) echo "::error::cron.mode='${MODE}' is invalid (must be push | pr)."; exit 1 ;;
+          esac
+          {
+            echo "mode=${MODE}"
+            echo "strict=${STRICT}"
+            echo "bot_name=${BOT_NAME}"
+            echo "bot_email=${BOT_EMAIL}"
+          } >> "${GITHUB_OUTPUT}"
+          echo "sync config resolved: mode=${MODE} strict=${STRICT} bot=${BOT_NAME} <${BOT_EMAIL}>"
 
       - name: Set up Python
         uses: actions/setup-python@v5
@@ -84,11 +125,23 @@ jobs:
         env:
           # Bot identity is set even in dry-run because the sync creates
           # commits locally (just never pushes them) to compute diffs.
-          SYNC_BOT_NAME: 'opensearch-ci'
-          SYNC_BOT_EMAIL: '83309141+opensearch-ci-bot@users.noreply.github.com'
+          SYNC_BOT_NAME: ${{ steps.config.outputs.bot_name }}
+          SYNC_BOT_EMAIL: ${{ steps.config.outputs.bot_email }}
           # Deliberately NOT setting GH_TOKEN: dry-run skips the issue
           # reporter anyway, and omitting the token makes that guarantee
           # mechanical (no accidental gh-CLI mutations from a PR).
         run: |
           set -euo pipefail
           uv run --project sync-bot opensearch-skills-sync --dry-run
+
+      # Preflight: validate that the configured cron mode from
+      # sync/config.yaml is compatible with the default branch's
+      # protection state. The PR is red until either the config file or
+      # the branch-protection state is fixed.
+      - name: Preflight cron mode against default branch
+        uses: ./.github/actions/sync-preflight
+        with:
+          mode: ${{ steps.config.outputs.mode }}
+          target-branch: ${{ github.event.repository.default_branch }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          strict: ${{ steps.config.outputs.strict }}

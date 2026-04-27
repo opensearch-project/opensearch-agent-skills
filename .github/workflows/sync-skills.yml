@@ -12,6 +12,9 @@ name: Sync Skills
 #
 # If any source fails the workflow still commits + pushes successful
 # sources, then fails the job at the end so the failure is visible.
+#
+# Mode + bot identity come from sync/config.yaml (single source of
+# truth). workflow_dispatch `mode` can override for a one-off run.
 
 on:
   schedule:
@@ -31,19 +34,18 @@ on:
         default: false
       mode:
         description: >-
-          Sync mode. push = land imports directly on the target branch (hub
-          mirror behaviour, used by cron). pr = isolate each source on a
-          `skills-sync/<name>` branch, force-push it, and open/update a PR
-          from that branch into the target branch (one PR per source, one
-          failing source doesn't block others).
+          One-off mode override. Leave empty to use sync/config.yaml.
+          push = land imports directly on the target branch.
+          pr   = open/update one PR per source.
         required: false
         type: choice
-        default: push
+        default: ''
         options:
+          - ''
           - push
           - pr
   # Auto-fire on PRs that add/edit a source YAML or touch the sync
-  # engine. This lets a contributor just commit
+  # engine / config. This lets a contributor just commit
   # `sync/sources/<name>.yaml` and have the mirrored content appear on
   # their branch without any manual dispatch.
   #
@@ -53,8 +55,10 @@ on:
   pull_request:
     paths:
       - 'sync/sources/**'
+      - 'sync/config.yaml'
       - 'sync-bot/**'
       - '.github/workflows/sync-skills.yml'
+      - '.github/actions/sync-preflight/**'
 
 # Prevent overlapping runs on the same ref. Cron and PR runs use
 # different groups so a slow cron doesn't block PR feedback.
@@ -95,6 +99,46 @@ jobs:
           fetch-depth: 0
           persist-credentials: true
 
+      # Single source of truth. Fails loudly if the file is missing or
+      # malformed — we'd rather break one run than let the cron quietly
+      # use stale workflow defaults.
+      - name: Load sync config
+        id: config
+        env:
+          MODE_OVERRIDE: ${{ inputs.mode }}
+        run: |
+          set -euo pipefail
+          CONFIG=sync/config.yaml
+          if [[ ! -f "${CONFIG}" ]]; then
+            echo "::error::${CONFIG} is missing. Every sync-consuming workflow reads this file; restore it before re-running."
+            exit 1
+          fi
+          MODE_FROM_FILE="$(yq -r '.cron.mode // ""' "${CONFIG}")"
+          STRICT="$(yq -r '.cron.strict_preflight // true' "${CONFIG}")"
+          BOT_NAME="$(yq -r '.bot.name // ""' "${CONFIG}")"
+          BOT_EMAIL="$(yq -r '.bot.email // ""' "${CONFIG}")"
+          for pair in "cron.mode=${MODE_FROM_FILE}" "bot.name=${BOT_NAME}" "bot.email=${BOT_EMAIL}"; do
+            key="${pair%%=*}"
+            val="${pair#*=}"
+            if [[ -z "${val}" ]]; then
+              echo "::error::${CONFIG} is missing required key '${key}'."
+              exit 1
+            fi
+          done
+          # workflow_dispatch mode input wins when non-empty.
+          MODE="${MODE_OVERRIDE:-${MODE_FROM_FILE}}"
+          case "${MODE}" in
+            push|pr) ;;
+            *) echo "::error::Resolved mode='${MODE}' is invalid (must be push | pr)."; exit 1 ;;
+          esac
+          {
+            echo "mode=${MODE}"
+            echo "strict=${STRICT}"
+            echo "bot_name=${BOT_NAME}"
+            echo "bot_email=${BOT_EMAIL}"
+          } >> "${GITHUB_OUTPUT}"
+          echo "sync config resolved: mode=${MODE} strict=${STRICT} bot=${BOT_NAME} <${BOT_EMAIL}>"
+
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
@@ -133,20 +177,32 @@ jobs:
             echo "branch=${GITHUB_REF_NAME}" >> "$GITHUB_OUTPUT"
           fi
 
+      # Fail fast if the configured mode is incompatible with the target
+      # branch's protection state. Catches the "cron tries push-mode
+      # against protected main" case (GH006) up front instead of after
+      # the engine has already mutated the working tree. See
+      # .github/actions/sync-preflight/action.yml for the matrix.
+      - name: Preflight (mode vs branch protection)
+        if: ${{ inputs.dry_run != 'true' }}
+        uses: ./.github/actions/sync-preflight
+        with:
+          mode: ${{ steps.config.outputs.mode }}
+          target-branch: ${{ steps.target.outputs.branch }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          strict: ${{ steps.config.outputs.strict }}
+
       - name: Run sync
         id: sync
         env:
-          SYNC_BOT_NAME: 'opensearch-ci'
-          SYNC_BOT_EMAIL: '83309141+opensearch-ci-bot@users.noreply.github.com'
+          SYNC_BOT_NAME: ${{ steps.config.outputs.bot_name }}
+          SYNC_BOT_EMAIL: ${{ steps.config.outputs.bot_email }}
           # `gh` CLI authentication for the in-script issue reporter.
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           # Pass inputs through env to avoid direct interpolation into
           # bash scripts (GitHub security best practice).
           ONLY_INPUT: ${{ inputs.only }}
           DRY_RUN_INPUT: ${{ inputs.dry_run }}
-          # inputs.mode is only set for workflow_dispatch; default to
-          # push for cron and pull_request triggers.
-          MODE_INPUT: ${{ inputs.mode || 'push' }}
+          MODE_INPUT: ${{ steps.config.outputs.mode }}
         run: |
           set -euo pipefail
           ARGS=()

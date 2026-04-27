@@ -1,0 +1,17 @@
+# Skill-sync framework configuration.
+# Read by .github/workflows/sync-skills.yml and validate-skills.yml.
+# workflow_dispatch `mode` input overrides cron.mode for a single run.
+
+cron:
+  # push — fast-forward commits directly onto target branch.
+  # pr   — open/update one PR per source (required for protected branches).
+  mode: pr
+
+  # true  — preflight hard-fails on mode/protection mismatch.
+  # false — preflight warns; sync attempts the push anyway.
+  strict_preflight: true
+
+bot:
+  # git committer identity for imported commits.
+  name: opensearch-ci
+  email: '83309141+opensearch-ci-bot@users.noreply.github.com'

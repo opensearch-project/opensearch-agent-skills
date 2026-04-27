@@ -1,0 +1,172 @@
+name: 'Sync Skills Preflight'
+description: >-
+  Validate that the configured sync mode is compatible with the target
+  branch's protection state before the sync engine does anything
+  destructive. Fails fast when `mode=push` is pointed at a protected
+  branch (which would hit GH006 "protected branch hook declined" on
+  the push step).
+
+  Also surfaces Actions-level permission misconfigurations that commonly
+  break pr-mode (GITHUB_TOKEN lacking write + can_approve_pull_request_reviews).
+
+inputs:
+  mode:
+    description: >-
+      Sync mode to validate: push | pr | dry-run. `push` = land imports
+      directly on target branch. `pr` = open one PR per source. `dry-run`
+      = no mutations at all.
+    required: true
+  target-branch:
+    description: >-
+      Branch the engine would push to (push-mode) or open PRs against
+      (pr-mode). Typically `main`.
+    required: true
+  github-token:
+    description: >-
+      Token with repo read scope. GITHUB_TOKEN is fine. Used to query
+      branch protection status and Actions permissions.
+    required: true
+  strict:
+    description: >-
+      If true (default), fail on any incompatibility. If false, print
+      warnings instead of failing. Use strict=false only for advisory
+      modes like post-run audits.
+    required: false
+    default: 'true'
+
+outputs:
+  protected:
+    description: 'true|false|unknown — whether target-branch reports protected'
+    value: ${{ steps.check.outputs.protected }}
+  compatible:
+    description: 'true|false — whether the supplied mode is compatible with branch state'
+    value: ${{ steps.check.outputs.compatible }}
+
+runs:
+  using: composite
+  steps:
+    - id: check
+      shell: bash
+      env:
+        # Pass inputs through env to avoid direct interpolation into
+        # the bash script (GitHub security best practice — see the
+        # actionlint-workflow-inputs-via-env recipe).
+        MODE: ${{ inputs.mode }}
+        TARGET: ${{ inputs.target-branch }}
+        STRICT: ${{ inputs.strict }}
+        REPO: ${{ github.repository }}
+        GH_TOKEN: ${{ inputs.github-token }}
+      run: |
+        set -euo pipefail
+
+        echo "::group::sync-preflight: inputs"
+        echo "repository:    ${REPO}"
+        echo "mode:          ${MODE}"
+        echo "target-branch: ${TARGET}"
+        echo "strict:        ${STRICT}"
+        echo "::endgroup::"
+
+        # --- 1. Validate mode value -------------------------------------
+        case "${MODE}" in
+          push|pr|dry-run) ;;
+          *)
+            echo "::error::sync-preflight: unknown mode '${MODE}' (must be push | pr | dry-run)"
+            exit 1
+            ;;
+        esac
+
+        # --- 2. Query target branch protection -------------------------
+        # /repos/{owner}/{repo}/branches/{branch} returns `.protected`
+        # (bool) with just `contents: read`. Surface any API error so a
+        # future "preflight silently passed" bug is obvious instead of
+        # hidden by a redirect to /dev/null.
+        #
+        # jq caveat: `.protected // "unknown"` wrongly substitutes when
+        # .protected is present but `false`, because jq's // treats
+        # `false` as a "null-ish" fallback trigger. Use `if has(...)`
+        # to distinguish "missing" from "explicitly false".
+        PROTECTED="unknown"
+        BRANCH_STDERR="$(mktemp)"
+        if BRANCH_JSON="$(gh api "repos/${REPO}/branches/${TARGET}" 2>"${BRANCH_STDERR}")"; then
+          BRANCH_PROTECTED="$(echo "${BRANCH_JSON}" | jq -r 'if has("protected") then .protected else "unknown" end')"
+          if [[ "${BRANCH_PROTECTED}" == "true" || "${BRANCH_PROTECTED}" == "false" ]]; then
+            PROTECTED="${BRANCH_PROTECTED}"
+          fi
+        else
+          # gh api exited non-zero. Show why so operators can fix the
+          # token scope (or whatever is blocking the read). We still
+          # continue — the push step itself will fail loudly on a real
+          # block, so "preflight couldn't read protection" is advisory.
+          echo "::warning::sync-preflight: could not read repos/${REPO}/branches/${TARGET}:"
+          sed 's/^/::warning::sync-preflight:   /' "${BRANCH_STDERR}"
+        fi
+        rm -f "${BRANCH_STDERR}"
+        echo "protected=${PROTECTED}" >> "${GITHUB_OUTPUT}"
+        echo "sync-preflight: target '${TARGET}' protected=${PROTECTED}"
+
+        # --- 3. Compatibility matrix -----------------------------------
+        # push + protected = guaranteed GH006 failure.
+        # pr + protected   = OK (PRs are the point of branch protection).
+        # pr + unprotected = OK (weird but harmless).
+        # dry-run          = always OK.
+        COMPATIBLE="true"
+        VIOLATION=""
+        if [[ "${MODE}" == "push" && "${PROTECTED}" == "true" ]]; then
+          COMPATIBLE="false"
+          VIOLATION="mode=push is incompatible with protected branch '${TARGET}'."
+        fi
+        echo "compatible=${COMPATIBLE}" >> "${GITHUB_OUTPUT}"
+
+        # --- 4. Actions-level permission sanity check ------------------
+        # pr-mode requires can_approve_pull_request_reviews=true and
+        # default_workflow_permissions=write. These are repo-level
+        # settings (Settings -> Actions -> General -> Workflow
+        # permissions). See the gha-pr-permissions-two-layers recipe
+        # for why the user/org-level toggle with the same name is not
+        # enough.
+        if [[ "${MODE}" == "pr" ]]; then
+          ACTIONS_PERMS_JSON="$(gh api "repos/${REPO}/actions/permissions/workflow" 2>/dev/null || true)"
+          if [[ -n "${ACTIONS_PERMS_JSON}" ]]; then
+            DEFAULT_PERMS="$(echo "${ACTIONS_PERMS_JSON}" | jq -r '.default_workflow_permissions // "unknown"')"
+            CAN_APPROVE="$(echo "${ACTIONS_PERMS_JSON}" | jq -r '.can_approve_pull_request_reviews // "unknown"')"
+            echo "sync-preflight: actions default_workflow_permissions=${DEFAULT_PERMS} can_approve_pull_request_reviews=${CAN_APPROVE}"
+            # Only fail when we can *read* the settings AND they are
+            # definitively incompatible. "unknown" means the token
+            # can't see them (e.g. fine-grained PAT or running against
+            # a repo we don't administer) — don't block on that.
+            if [[ "${DEFAULT_PERMS}" != "unknown" && "${CAN_APPROVE}" != "unknown" ]] \
+               && ( [[ "${DEFAULT_PERMS}" != "write" ]] || [[ "${CAN_APPROVE}" != "true" ]] ); then
+              if [[ "${STRICT}" == "true" ]]; then
+                echo "::error::sync-preflight: mode=pr requires Actions workflow permissions set to write AND 'Allow GitHub Actions to create and approve pull requests'. Current: default_workflow_permissions=${DEFAULT_PERMS}, can_approve_pull_request_reviews=${CAN_APPROVE}. Fix: Settings -> Actions -> General -> Workflow permissions, or:"
+                echo "::error::  gh api -X PUT repos/${REPO}/actions/permissions/workflow -F default_workflow_permissions=write -F can_approve_pull_request_reviews=true"
+                exit 1
+              else
+                echo "::warning::sync-preflight: Actions permissions look incompatible with pr-mode (default=${DEFAULT_PERMS}, can_approve=${CAN_APPROVE}) but strict=false, continuing."
+              fi
+            elif [[ "${DEFAULT_PERMS}" == "unknown" || "${CAN_APPROVE}" == "unknown" ]]; then
+              echo "sync-preflight: Actions permissions not readable with current token; skipping that assertion. The push step will surface any real misconfig."
+            fi
+          else
+            echo "::warning::sync-preflight: could not read Actions workflow permissions (token scope?). Skipping that check."
+          fi
+        fi
+
+        # --- 5. Fail or warn on branch-protection incompatibility ------
+        if [[ "${COMPATIBLE}" == "false" ]]; then
+          ERR="sync-preflight: ${VIOLATION}"
+          FIX1="Set cron.mode=pr in sync/config.yaml (or workflow_dispatch input mode=pr) to open PRs instead of pushing directly."
+          FIX2="Or disable branch protection on '${TARGET}' (not recommended for shared repos)."
+          FIX3="Or run with dry_run=true to validate config without mutating."
+          if [[ "${STRICT}" == "true" ]]; then
+            echo "::error::${ERR}"
+            echo "::error::${FIX1}"
+            echo "::error::${FIX2}"
+            echo "::error::${FIX3}"
+            exit 1
+          else
+            echo "::warning::${ERR}"
+            echo "::warning::${FIX1}"
+          fi
+        else
+          echo "sync-preflight: mode=${MODE} + protected=${PROTECTED} -> COMPATIBLE"
+        fi
