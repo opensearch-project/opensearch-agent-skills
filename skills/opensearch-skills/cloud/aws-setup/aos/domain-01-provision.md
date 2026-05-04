@@ -16,16 +16,26 @@ From `.opensearch-deploy-state.json`:
 - `deployment_target`: "domain"
 - `search_strategy`: "agentic" or other
 
-## Step 1: Create Domain
+## Step 1: Get Latest OpenSearch Version
 
-Use the AWS API MCP server. Select the engine version based on `search_strategy` from `.opensearch-deploy-state.json`:
+Before creating the domain, fetch the latest available OpenSearch version:
 
-All strategies use `OpenSearch_3.5` (latest). No version branching needed.
+```
+aws opensearch list-versions
+```
+
+This returns all supported versions. Pick the latest `OpenSearch_X.Y` version (highest major, then minor). Ignore `Elasticsearch_*` versions.
+
+> For agentic search, confirm the selected version is 3.3 or higher.
+
+## Step 2: Create Domain
+
+Use the AWS API MCP server with the version from Step 1:
 
 ```
 aws opensearch create-domain
   --domain-name <domain-name>
-  --engine-version OpenSearch_3.5
+  --engine-version <latest-version-from-step-1>
   --cluster-config InstanceType=t3.medium.search,InstanceCount=1
   --ebs-options EBSEnabled=true,VolumeType=gp3,VolumeSize=100
   --node-to-node-encryption-options Enabled=true
@@ -33,9 +43,9 @@ aws opensearch create-domain
   --domain-endpoint-options EnforceHTTPS=true
 ```
 
-For production, use larger instances (r6g.large.search, 3+ data nodes, 3 dedicated cluster managers).
+For production, use larger instances (r6g.large.search, 3+ data nodes, 3 dedicated leaders).
 
-## Step 2: Enable Fine-Grained Access Control
+## Step 3: Enable Fine-Grained Access Control
 
 ```
 aws opensearch update-domain-config
@@ -47,7 +57,7 @@ Set up:
 - Master user credentials
 - Role-based access control
 
-## Step 3: Configure Network Access
+## Step 4: Configure Network Access
 
 **Public access (development):**
 - Set IP-based access policies
@@ -56,7 +66,7 @@ Set up:
 **VPC access (production):**
 - Deploy within VPC, configure security groups
 
-## Step 4: Wait for Domain Active
+## Step 5: Wait for Domain Active
 
 Poll until domain is active (typically 10-15 minutes):
 
