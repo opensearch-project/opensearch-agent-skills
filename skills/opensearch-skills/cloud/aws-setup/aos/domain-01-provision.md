@@ -18,12 +18,14 @@ From `.opensearch-deploy-state.json`:
 
 ## Step 1: Create Domain
 
-Use the AWS API MCP server:
+Use the AWS API MCP server. Select the engine version based on `search_strategy` from `.opensearch-deploy-state.json`:
+
+All strategies use `OpenSearch_3.5` (latest). No version branching needed.
 
 ```
 aws opensearch create-domain
   --domain-name <domain-name>
-  --engine-version OpenSearch_2.11
+  --engine-version OpenSearch_3.5
   --cluster-config InstanceType=t3.medium.search,InstanceCount=1
   --ebs-options EBSEnabled=true,VolumeType=gp3,VolumeSize=100
   --node-to-node-encryption-options Enabled=true
@@ -31,7 +33,7 @@ aws opensearch create-domain
   --domain-endpoint-options EnforceHTTPS=true
 ```
 
-For production, use larger instances (r6g.large.search, 3+ data nodes, 3 dedicated masters).
+For production, use larger instances (r6g.large.search, 3+ data nodes, 3 dedicated cluster managers).
 
 ## Step 2: Enable Fine-Grained Access Control
 

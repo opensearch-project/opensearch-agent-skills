@@ -2,7 +2,7 @@
 
 This guide configures conversational agents with QueryPlanningTool for natural language search. Only follow this for agentic search strategy.
 
-Agentic search requires OpenSearch 2.11+ and uses Bedrock Claude as the reasoning model.
+Agentic search requires OpenSearch 3.3 on a managed AOS domain and uses Bedrock Claude as the reasoning model.
 
 ## State Input
 
