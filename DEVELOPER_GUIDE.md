@@ -134,6 +134,35 @@ uv run pytest tests/test_agent_skills_evaluate.py::test_ndcg_perfect_ranking -v
 | `test_agent_skills_samples.py` | `lib/samples.py` — file loading (JSON/CSV/TSV), text field inference |
 | `test_agent_skills_search.py` | `lib/search.py` — query building, suggestions, autocomplete, search UI |
 | `test_agent_skills_standalone_assets.py` | Verifies UI assets and sample data are bundled correctly |
+| `test_agent_skills_spec_compliance.py` | Validates every `SKILL.md` against the [agentskills.io spec](https://agentskills.io/specification) — frontmatter fields, naming rules, body line count, file references |
+
+### Skill eval tests (LLM-based)
+
+Eval tests live in `tests/evals/` and use a real LLM to verify that skill instructions produce correct agent behavior. They require `ANTHROPIC_API_KEY` and are **not** run as part of the regular `pytest tests/` suite.
+
+```bash
+# Install eval dependencies
+uv sync --group evals
+
+# Run eval cases (collects results, individual failures don't abort)
+uv run --group evals pytest tests/evals/ --run-eval -v
+
+# Analyze aggregated results and enforce pass-rate thresholds
+uv run --group evals pytest tests/evals/ --run-eval-analysis
+```
+
+Two eval test files:
+
+| File | What it tests |
+|---|---|
+| `tests/evals/test_skill_routing.py` | Top-level router correctly identifies the right leaf skill for a given prompt (≥80% accuracy) |
+| `tests/evals/test_skill_rules.py` | Each leaf skill's key rules are followed — e.g. preflight-check first, no "scales to zero", dotted field quoting (≥80% compliance) |
+
+Golden test cases live in `tests/evals/fixtures/`:
+- `routing.json` — 12 prompt → expected-skill cases (3 per skill)
+- `skill_rules.json` — 11 rule-compliance cases drawn from each skill's "Key Rules" section
+
+CI runs evals weekly (Monday 06:00 UTC) and on any push that touches `skills/**` or `tests/evals/**`. See `.github/workflows/evals.yml`.
 
 ### Writing new tests
 

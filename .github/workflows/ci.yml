@@ -21,9 +21,7 @@ jobs:
       - name: Install UV
         uses: astral-sh/setup-uv@v6
       - name: Run tests
-        run: uv run pytest tests/ -v
-
-  test-macos:
+        run: uv run pytest tests/ --ignore=tests/evals -v
     name: Test on macOS
     runs-on: macOS-latest
     steps:
@@ -36,7 +34,7 @@ jobs:
       - name: Install UV
         uses: astral-sh/setup-uv@v6
       - name: Run tests
-        run: uv run pytest tests/ -v
+        run: uv run pytest tests/ --ignore=tests/evals -v
 
   test-windows:
     name: Test on Windows
@@ -52,4 +50,4 @@ jobs:
         uses: astral-sh/setup-uv@v6
       - name: Run tests
         shell: pwsh
-        run: uv run pytest tests/ -v
+        run: uv run pytest tests/ --ignore=tests/evals -v

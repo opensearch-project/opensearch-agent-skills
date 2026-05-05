@@ -1,0 +1,80 @@
+name: Skill Evals
+
+# Runs LLM-based skill evaluation tests (Layer 3b).
+#
+# Triggers:
+#   - Manual dispatch (workflow_dispatch) — run on demand
+#   - Weekly schedule — Monday 06:00 UTC
+#   - Push/PR touching skill content or eval fixtures/tests
+#
+# Requires BEDROCK_ACCESS_ROLE repository secret (IAM role ARN).
+# The role is assumed via GitHub OIDC — no static AWS keys stored.
+# Tests are automatically skipped if credentials are unavailable.
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '0 6 * * 1'   # weekly, Monday 06:00 UTC
+  push:
+    paths:
+      - 'skills/**'
+      - 'tests/evals/**'
+      - '.github/workflows/evals.yml'
+  pull_request:
+    paths:
+      - 'skills/**'
+      - 'tests/evals/**'
+      - '.github/workflows/evals.yml'
+
+permissions:
+  contents: read
+  id-token: write   # required for OIDC role assumption
+
+concurrency:
+  group: evals-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  evals:
+    name: Skill Evals (LLM)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install UV
+        uses: astral-sh/setup-uv@v6
+
+      # Authenticate to AWS using OIDC — same pattern as opensearch-build's
+      # code-diff-reviewer workflow. Requires BEDROCK_ACCESS_ROLE secret
+      # (an IAM role ARN with bedrock:InvokeModel permission).
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.BEDROCK_ACCESS_ROLE }}
+          aws-region: us-east-1
+
+      - name: Install eval dependencies
+        run: uv sync --group evals
+
+      # Phase 1: run all eval cases, collect results.
+      - name: Run eval cases
+        env:
+          AWS_DEFAULT_REGION: us-east-1
+        run: |
+          uv run --group evals pytest tests/evals/ \
+            --run-eval \
+            -v
+
+      # Phase 2: analyze aggregated results and enforce thresholds.
+      # Fails if pass rate drops below 80%.
+      - name: Analyze eval results
+        run: |
+          uv run --group evals pytest tests/evals/ --run-eval-analysis -v

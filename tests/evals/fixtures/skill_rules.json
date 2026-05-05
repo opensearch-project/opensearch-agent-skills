@@ -1,0 +1,98 @@
+[
+  {
+    "id": "launchpad-preflight-first",
+    "skill": "opensearch-launchpad",
+    "prompt": "Set up a BM25 search index for my e-commerce product data",
+    "rule": "Must run preflight-check before creating any index or loading data",
+    "criteria": "The response must instruct running 'preflight-check' as the first action before creating an index, loading data, or any other operation. It must not jump straight to index creation or data loading.",
+    "rationale": "Phase 1 requires checking cluster status before any other action"
+  },
+  {
+    "id": "launchpad-no-agentic-on-serverless",
+    "skill": "opensearch-launchpad",
+    "prompt": "I want to set up agentic search and deploy it to Amazon OpenSearch Serverless",
+    "rule": "Must warn that agentic search requires a managed domain, not Serverless",
+    "criteria": "The response must clearly state that agentic search cannot be deployed to Amazon OpenSearch Serverless and requires a managed domain instead. It must not suggest Serverless is a valid target for agentic search.",
+    "rationale": "Key rule: agentic search does not deploy to Amazon OpenSearch Serverless"
+  },
+  {
+    "id": "launchpad-no-serverless-scale-to-zero",
+    "skill": "opensearch-launchpad",
+    "prompt": "Does Amazon OpenSearch Serverless scale to zero when not in use?",
+    "rule": "Must not claim Serverless scales to zero",
+    "criteria": "The response must NOT claim that Amazon OpenSearch Serverless scales to zero. It should clarify that Serverless does not scale to zero and always maintains minimum capacity.",
+    "rationale": "Key rule: do not describe Amazon OpenSearch Serverless as scaling to zero"
+  },
+  {
+    "id": "launchpad-present-all-strategies",
+    "skill": "opensearch-launchpad",
+    "prompt": "What search strategies are available? I'm not sure which one to pick.",
+    "rule": "Must present all five search strategies: bm25, dense_vector, neural_sparse, hybrid, agentic",
+    "criteria": "The response must present all five search strategies: BM25 (keyword), dense vector (semantic embeddings), neural sparse, hybrid (keyword + semantic), and agentic. All five must be mentioned.",
+    "rationale": "Phase 2 requires presenting all five strategies"
+  },
+  {
+    "id": "log-analytics-discovery-first",
+    "skill": "log-analytics",
+    "prompt": "Write me a PPL query to find all ERROR logs in my application",
+    "rule": "Must not assume field names — must mention discovering the index mapping or schema first",
+    "criteria": "The response must not assume specific field names like 'level' or 'log.level'. It must mention the need to discover the index mapping or inspect the schema before writing a query, since field names vary by log source.",
+    "rationale": "Key rule: discovery first — never assume field names"
+  },
+  {
+    "id": "log-analytics-ppl-primary",
+    "skill": "log-analytics",
+    "prompt": "I've already checked my index mapping. The index is called 'app-logs', the log level field is 'log.level', the service field is 'service.name', and the timestamp is '@timestamp'. Now show me a PPL query to count errors by service over the last 24 hours.",
+    "rule": "Must use PPL as the primary query language, not Query DSL",
+    "criteria": "The response must provide a PPL (Pipe Processing Language) query as the primary solution. It must use PPL syntax starting with 'source =' and pipe operators. It must not lead with a Query DSL JSON body as the main answer.",
+    "rationale": "Key rule: use PPL as the primary query language. Prompt provides field context so the skill can skip discovery and go straight to PPL."
+  },
+  {
+    "id": "log-analytics-quote-dotted-fields",
+    "skill": "log-analytics",
+    "prompt": "Show me a PPL query that filters by log.level and host.name",
+    "rule": "Must backtick-quote dotted field names in PPL queries",
+    "criteria": "The response must use backtick quotes around dotted field names in PPL queries, writing `log.level` and `host.name` with backticks, not without them. Unquoted dotted field names in PPL are a syntax error.",
+    "rationale": "Key rule: always backtick-quote dotted field names in PPL"
+  },
+  {
+    "id": "trace-analytics-discovery-first",
+    "skill": "trace-analytics",
+    "prompt": "Find all error spans in my trace data",
+    "rule": "Must mention discovering trace indices before querying",
+    "criteria": "The response must mention discovering or looking for trace indices (such as otel-v1-apm-span-*) before writing any query. It must not jump straight to a query without first addressing index discovery.",
+    "rationale": "Key rule: discovery first — look for otel-v1-apm-span-* indices"
+  },
+  {
+    "id": "trace-analytics-quote-dotted-fields",
+    "skill": "trace-analytics",
+    "prompt": "Show me a PPL query for agent invocations using the gen_ai operation name field",
+    "rule": "Must backtick-quote the dotted field name attributes.gen_ai.operation.name",
+    "criteria": "The response must use backtick quotes around the dotted field name attributes.gen_ai.operation.name in the PPL query, writing it as `attributes.gen_ai.operation.name`. Unquoted dotted field names in PPL are a syntax error.",
+    "rationale": "Key rule: always backtick-quote dotted field names"
+  },
+  {
+    "id": "aws-setup-validate-credentials-first",
+    "skill": "aws-setup",
+    "prompt": "Provision an Amazon OpenSearch Service domain for my search app",
+    "rule": "Must validate AWS credentials before starting provisioning",
+    "criteria": "The response must include a step to validate AWS credentials (e.g., running 'aws sts get-caller-identity') before starting any provisioning steps. It must not jump straight to creating resources without credential validation.",
+    "rationale": "Key rule: always validate AWS credentials before starting"
+  },
+  {
+    "id": "aws-setup-no-agentic-on-serverless",
+    "skill": "aws-setup",
+    "prompt": "I want to deploy agentic search to Amazon OpenSearch Serverless",
+    "rule": "Must warn that agentic search requires a managed domain, not Serverless",
+    "criteria": "The response must clearly state that agentic search cannot be deployed to Amazon OpenSearch Serverless and requires a managed domain instead. It must not suggest Serverless is a valid deployment target for agentic search.",
+    "rationale": "Key rule: agentic search does not deploy to Amazon OpenSearch Serverless"
+  },
+  {
+    "id": "aws-setup-no-serverless-scale-to-zero",
+    "skill": "aws-setup",
+    "prompt": "Tell me about Amazon OpenSearch Serverless pricing and scaling behavior",
+    "rule": "Must not claim Serverless scales to zero",
+    "criteria": "The response must NOT claim that Amazon OpenSearch Serverless scales to zero. It should accurately describe the pricing model (OCU-based) and clarify that Serverless does not scale to zero.",
+    "rationale": "Key rule: do not describe Amazon OpenSearch Serverless as scaling to zero"
+  }
+]

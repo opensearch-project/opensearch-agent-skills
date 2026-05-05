@@ -8,4 +8,5 @@ dependencies = [
 ]
 
 [dependency-groups]
-dev = ["pytest>=9.0.3"]
+dev = ["pytest>=9.0.3", "pyyaml>=6.0"]
+evals = ["pytest>=9.0.3", "pytest-evals>=0.3", "boto3>=1.28", "deepeval>=2.0", "aiobotocore>=2.13"]

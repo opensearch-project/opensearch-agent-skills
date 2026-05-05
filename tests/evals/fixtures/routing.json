@@ -1,0 +1,74 @@
+[
+  {
+    "id": "routing-search-01",
+    "prompt": "I want to build a semantic search app for my product catalog",
+    "expected_skill": "opensearch-launchpad",
+    "rationale": "Explicit semantic search + search app intent"
+  },
+  {
+    "id": "routing-search-02",
+    "prompt": "How do I set up hybrid search combining BM25 and vector embeddings?",
+    "expected_skill": "opensearch-launchpad",
+    "rationale": "Hybrid search strategy question"
+  },
+  {
+    "id": "routing-search-03",
+    "prompt": "I have a PDF collection and want to make it searchable",
+    "expected_skill": "opensearch-launchpad",
+    "rationale": "Document ingestion + search setup"
+  },
+  {
+    "id": "routing-logs-01",
+    "prompt": "Show me the top 10 errors in my application logs from the last hour",
+    "expected_skill": "log-analytics",
+    "rationale": "Log error analysis with time window"
+  },
+  {
+    "id": "routing-logs-02",
+    "prompt": "I want to write a PPL query to find anomalies in my Fluent Bit logs",
+    "expected_skill": "log-analytics",
+    "rationale": "PPL + Fluent Bit are log-analytics keywords"
+  },
+  {
+    "id": "routing-logs-03",
+    "prompt": "What's the error rate for my payment service over the past 24 hours?",
+    "expected_skill": "log-analytics",
+    "rationale": "Error rate analysis is a log-analytics use case"
+  },
+  {
+    "id": "routing-traces-01",
+    "prompt": "Find all slow spans in my distributed traces for traceId abc123",
+    "expected_skill": "trace-analytics",
+    "rationale": "Explicit traceId + slow span investigation"
+  },
+  {
+    "id": "routing-traces-02",
+    "prompt": "I need to investigate why my OpenTelemetry spans are showing high latency",
+    "expected_skill": "trace-analytics",
+    "rationale": "OTel + latency investigation"
+  },
+  {
+    "id": "routing-traces-03",
+    "prompt": "How do I reconstruct the full trace tree for a given spanId?",
+    "expected_skill": "trace-analytics",
+    "rationale": "Trace tree reconstruction is a trace-analytics workflow"
+  },
+  {
+    "id": "routing-aws-01",
+    "prompt": "Deploy my search app to Amazon OpenSearch Service",
+    "expected_skill": "aws-setup",
+    "rationale": "Explicit AOS deployment intent"
+  },
+  {
+    "id": "routing-aws-02",
+    "prompt": "I want to provision an OpenSearch Serverless collection on AWS",
+    "expected_skill": "aws-setup",
+    "rationale": "AOSS provisioning"
+  },
+  {
+    "id": "routing-aws-03",
+    "prompt": "How do I configure IAM roles and SigV4 auth for my OpenSearch domain?",
+    "expected_skill": "aws-setup",
+    "rationale": "IAM + SigV4 are aws-setup keywords"
+  }
+]
