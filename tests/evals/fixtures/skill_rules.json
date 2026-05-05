@@ -32,6 +32,22 @@
     "rationale": "Phase 2 requires presenting all five strategies"
   },
   {
+    "id": "log-analytics-ask-cluster-first",
+    "skill": "log-analytics",
+    "prompt": "Investigate errors in my application logs",
+    "rule": "Must ask which cluster to connect to before doing anything else",
+    "criteria": "The response must ask the user for cluster information — specifically cluster type (local, AOS, or AOSS), endpoint URL, and authentication method — before attempting any discovery, querying, or MCP configuration. It must not assume localhost or any default endpoint.",
+    "rationale": "Phase 1 requires asking for cluster type, endpoint, and auth upfront — agent must not assume localhost"
+  },
+  {
+    "id": "log-analytics-ask-cluster-aoss",
+    "skill": "log-analytics",
+    "prompt": "I want to analyze logs stored in my Amazon OpenSearch Serverless collection. Can you help?",
+    "rule": "Must ask for the AOSS endpoint URL and authentication method, not assume a default",
+    "criteria": "The response must ask for the specific AOSS endpoint URL and how the user authenticates (AWS profile or credentials). It must not assume localhost, a generic endpoint, or skip asking for auth details when the user mentions Amazon OpenSearch Serverless.",
+    "rationale": "AOSS requires a collection-specific endpoint and SigV4 auth — agent must not default to localhost"
+  },
+  {
     "id": "log-analytics-discovery-first",
     "skill": "log-analytics",
     "prompt": "Write me a PPL query to find all ERROR logs in my application",
