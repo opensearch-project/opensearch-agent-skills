@@ -5,22 +5,35 @@ name: Skill Evals
 # Triggers:
 #   - Manual dispatch (workflow_dispatch) — run on demand
 #   - Weekly schedule — Monday 06:00 UTC
-#   - Push/PR touching skill content or eval fixtures/tests
+#   - Push to main touching skill content or eval fixtures/tests
+#   - pull_request_target with 'safe to test' label — allows fork PRs to run
+#     evals after a maintainer reviews and labels the PR. Uses the base repo
+#     context so BEDROCK_ACCESS_ROLE secret is available.
+#
+# Security note: pull_request_target runs in the base repo context (has secrets)
+# but checks out the PR head. This is safe here because the eval tests only read
+# skill markdown files — they do not build or execute untrusted code from the PR.
 #
 # Requires BEDROCK_ACCESS_ROLE repository secret (IAM role ARN).
 # The role is assumed via GitHub OIDC — no static AWS keys stored.
-# Tests are automatically skipped if credentials are unavailable.
 
 on:
   workflow_dispatch:
   schedule:
     - cron: '0 6 * * 1'   # weekly, Monday 06:00 UTC
   push:
+    branches: [main]
     paths:
       - 'skills/**'
       - 'tests/evals/**'
       - '.github/workflows/evals.yml'
   pull_request:
+    paths:
+      - 'skills/**'
+      - 'tests/evals/**'
+      - '.github/workflows/evals.yml'
+  pull_request_target:
+    types: [labeled]
     paths:
       - 'skills/**'
       - 'tests/evals/**'
@@ -39,10 +52,20 @@ jobs:
     name: Skill Evals (LLM)
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    # For pull_request_target: only run when a maintainer adds 'safe to test' label.
+    # For all other triggers (push, schedule, workflow_dispatch, pull_request from
+    # org members): always run.
+    if: |
+      github.event_name != 'pull_request_target' ||
+      contains(github.event.pull_request.labels.*.name, 'safe to test')
 
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          # For pull_request_target, check out the PR head so evals run against
+          # the contributor's skill changes, not the base branch.
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
 
       - name: Set up Python
         uses: actions/setup-python@v5
