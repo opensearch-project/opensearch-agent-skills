@@ -103,6 +103,8 @@ For Amazon OpenSearch Serverless (AOSS) — [User Guide](https://github.com/open
 - Fall back to Query DSL for complex aggregations PPL doesn't support well.
 - Always backtick-quote dotted field names in PPL: `` `log.level` ``, `` `host.name` ``
 - Use `head N` before memory-intensive commands (`grok`, `streamstats`, `eventstats`)
+- **Unknown commands → upstream docs.** If a PPL command or function isn't in [ppl-reference.md](../ppl-reference.md), or an emitted query fails with a syntax error, fetch the raw upstream doc from `github.com/opensearch-project/sql` under `docs/user/ppl/` before answering. See [ppl-reference.md](../ppl-reference.md) "Looking Up PPL Documentation" for exact URL patterns.
+- **Verify queries when an endpoint is available — best-effort cascade.** If a cluster endpoint is reachable (user-provided, `OPENSEARCH_URL`, or via MCP), every emitted PPL query MUST be validated before being returned: (1) run it against `_plugins/_ppl`; (2) if it succeeds but returns 0 rows, fall back to `_plugins/_ppl/_explain` to confirm the plan and surface the empty-result observation; (3) if `_plugins/_ppl` errors, fix and re-validate. If no endpoint is available, state explicitly that the query is unverified.
 
 ## Workflow
 
@@ -155,4 +157,4 @@ Build PPL queries using the actual field names discovered. Common analytics:
 | File | Content |
 |---|---|
 | [log-analytics.md](log-analytics.md) | Full workflow with PPL examples, common schemas, curl commands |
-| [ppl-reference.md](../ppl-reference.md) | PPL syntax — 50+ commands, 14 function categories |
+| [ppl-reference.md](../ppl-reference.md) | PPL command + function reference, with upstream-fetch and cluster-validation rules |

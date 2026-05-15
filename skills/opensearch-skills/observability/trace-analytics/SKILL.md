@@ -103,6 +103,8 @@ For Amazon OpenSearch Serverless (AOSS):
 - Always backtick-quote dotted field names: `` `attributes.gen_ai.operation.name` ``
 - Use PPL as the primary query language.
 - Use `head N` to limit results on large trace indices.
+- **Unknown commands → upstream docs.** If a PPL command or function isn't in [ppl-reference.md](../ppl-reference.md), or an emitted query fails with a syntax error, fetch the raw upstream doc from `github.com/opensearch-project/sql` under `docs/user/ppl/` before answering. See [ppl-reference.md](../ppl-reference.md) "Looking Up PPL Documentation" for exact URL patterns.
+- **Verify queries when an endpoint is available — best-effort cascade.** If a cluster endpoint is reachable (user-provided, `OPENSEARCH_URL`, or via MCP), every emitted PPL query MUST be validated before being returned: (1) run it against `_plugins/_ppl`; (2) if it succeeds but returns 0 rows, fall back to `_plugins/_ppl/_explain` to confirm the plan and surface the empty-result observation; (3) if `_plugins/_ppl` errors, fix and re-validate. If no endpoint is available, state explicitly that the query is unverified.
 
 ## Workflow
 
@@ -149,4 +151,4 @@ Based on user intent, build PPL queries:
 | File | Content |
 |---|---|
 | [traces.md](traces.md) | Trace query templates, field reference, curl examples |
-| [ppl-reference.md](../ppl-reference.md) | PPL syntax — 50+ commands, 14 function categories |
+| [ppl-reference.md](../ppl-reference.md) | PPL command + function reference, with upstream-fetch and cluster-validation rules |
