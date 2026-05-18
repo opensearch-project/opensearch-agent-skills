@@ -110,5 +110,37 @@
     "rule": "Must not claim Serverless scales to zero",
     "criteria": "The response must NOT claim that Amazon OpenSearch Serverless scales to zero. It should accurately describe the pricing model (OCU-based) and clarify that Serverless does not scale to zero.",
     "rationale": "Key rule: do not describe Amazon OpenSearch Serverless as scaling to zero"
+  },
+  {
+    "id": "log-analytics-upstream-lookup-on-unknown",
+    "skill": "log-analytics",
+    "prompt": "How do I use the 'graphLookup' command in PPL to traverse a graph structure?",
+    "rule": "Must consult upstream docs when a command is not fully documented in the cheatsheet",
+    "criteria": "The response must mention fetching or consulting the upstream documentation from opensearch-project/sql (e.g., raw.githubusercontent.com/opensearch-project/sql/main/docs/user/ppl/) for the graphLookup command, rather than guessing syntax or refusing outright. It may also note that the command is experimental or has limited documentation.",
+    "rationale": "Key rule: unknown commands must trigger upstream doc lookup before answering"
+  },
+  {
+    "id": "log-analytics-verify-query-against-cluster",
+    "skill": "log-analytics",
+    "prompt": "My cluster is at https://localhost:9200 with admin/admin. Write a PPL query to count logs by severity over the last hour from the 'app-logs' index.",
+    "rule": "Must validate the emitted PPL query against the cluster or disclose it is unverified",
+    "criteria": "The response must either (1) run the query against _plugins/_ppl to validate it, or (2) explicitly state that the query has not been verified against the cluster. It must not present a PPL query as correct without mentioning verification status.",
+    "rationale": "Key rule: verify queries when an endpoint is available, or disclose unverified status"
+  },
+  {
+    "id": "trace-analytics-upstream-lookup-on-unknown",
+    "skill": "trace-analytics",
+    "prompt": "Can I use the 'explain' command in PPL to see the query execution plan for my trace queries?",
+    "rule": "Must consult upstream docs for explain command details",
+    "criteria": "The response must reference upstream documentation from opensearch-project/sql for the explain command's mode and engine parameters, rather than guessing the syntax. It should mention that explain has specific requirements (mode, engine) documented upstream.",
+    "rationale": "Key rule: unknown or partially-documented commands must trigger upstream doc lookup"
+  },
+  {
+    "id": "trace-analytics-verify-query-against-cluster",
+    "skill": "trace-analytics",
+    "prompt": "My cluster is at https://localhost:9200 with admin/admin. Show me a PPL query to find the slowest spans in the last 30 minutes from otel-v1-apm-span-* index.",
+    "rule": "Must validate the emitted PPL query against the cluster or disclose it is unverified",
+    "criteria": "The response must either (1) run the query against _plugins/_ppl to validate it, or (2) explicitly state that the query has not been verified against the cluster. It must not present a PPL query as correct without mentioning verification status.",
+    "rationale": "Key rule: verify queries when an endpoint is available, or disclose unverified status"
   }
 ]
