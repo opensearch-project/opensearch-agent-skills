@@ -116,7 +116,7 @@ For Amazon OpenSearch Serverless (AOSS):
 
 | Target | Guide |
 |---|---|
-| Serverless collection | [aoss/serverless-01-provision.md](aoss/serverless-01-provision.md) |
+| Serverless collection | [aoss/aoss-nextgen-provisioning/SKILL.md](aoss/aoss-nextgen-provisioning/SKILL.md) |
 | Managed domain | [aos/domain-01-provision.md](aos/domain-01-provision.md) |
 
 ### Step 2 — Deploy Search Configuration

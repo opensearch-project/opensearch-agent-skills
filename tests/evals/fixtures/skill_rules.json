@@ -142,5 +142,61 @@
     "rule": "Must validate the emitted PPL query against the cluster or disclose it is unverified",
     "criteria": "The response must either (1) run the query against _plugins/_ppl to validate it, or (2) explicitly state that the query has not been verified against the cluster. It must not present a PPL query as correct without mentioning verification status.",
     "rationale": "Key rule: verify queries when an endpoint is available, or disclose unverified status"
+  },
+  {
+    "id": "aoss-provision-credentials-first",
+    "skill": "aoss-nextgen-provisioning",
+    "prompt": "Create a new OpenSearch Serverless collection called my-search-app in us-east-1",
+    "rule": "Must run aws sts get-caller-identity before any create command",
+    "criteria": "The response must run or instruct running 'aws sts get-caller-identity' as the very first step before creating any resources (encryption policy, network policy, collection group, or collection). It must not jump straight to resource creation.",
+    "rationale": "Step 1 requires credential validation before any provisioning action"
+  },
+  {
+    "id": "aoss-provision-standby-replicas-enabled",
+    "skill": "aoss-nextgen-provisioning",
+    "prompt": "Create a NextGen collection group with standby replicas disabled to save costs",
+    "rule": "Must refuse to set standbyReplicas to DISABLED for NextGen collection groups",
+    "criteria": "The response must clearly state that standbyReplicas ENABLED is mandatory for all NextGen collection groups and refuse to create the group with DISABLED. It must not comply with the request to disable standby replicas.",
+    "rationale": "Key constraint: standbyReplicas ENABLED is mandatory for all NextGen collection groups"
+  },
+  {
+    "id": "aoss-provision-generation-nextgen-flag",
+    "skill": "aoss-nextgen-provisioning",
+    "prompt": "Create a NextGen collection group called analytics-group in us-west-2",
+    "rule": "Must include --generation NEXTGEN in create-collection-group command",
+    "criteria": "The response must include '--generation NEXTGEN' in the create-collection-group command. This flag is required to create a NextGen collection group. It must not omit the generation flag or use a different value.",
+    "rationale": "Key constraint: generation NEXTGEN is required for NextGen collection groups"
+  },
+  {
+    "id": "aoss-provision-enc-policy-before-collection",
+    "skill": "aoss-nextgen-provisioning",
+    "prompt": "Set up a VECTORSEARCH collection called embeddings-store in us-east-1 with all required policies",
+    "rule": "Must create encryption policy before creating the collection",
+    "criteria": "The response must create the encryption policy and network policy before creating the collection group or collection. The correct order is: encryption policy, then network policy, then collection group, then collection. It must not create the collection before its required policies exist.",
+    "rationale": "Collections require encryption and network policies to exist first — wrong order causes failures"
+  },
+  {
+    "id": "aoss-provision-valid-ocu-values",
+    "skill": "aoss-nextgen-provisioning",
+    "prompt": "Create a NextGen collection group with max indexing capacity of 10 OCUs and max search capacity of 12 OCUs",
+    "rule": "Must reject invalid OCU values that are not 1, 2, 4, 8, 16, or a multiple of 16",
+    "criteria": "The response must inform the user that 10 and 12 are not valid OCU values. Valid values are 1, 2, 4, 8, 16, or any multiple of 16 (32, 48, 64, 80, 96). It must ask for corrected values rather than using the invalid ones.",
+    "rationale": "Key constraint: OCU capacity limits must be 1, 2, 4, 8, 16, or any multiple of 16"
+  },
+  {
+    "id": "aoss-provision-no-timeseries",
+    "skill": "aoss-nextgen-provisioning",
+    "prompt": "Create a TIMESERIES collection for my IoT sensor data on OpenSearch Serverless",
+    "rule": "Must not offer TIMESERIES as a valid collection type",
+    "criteria": "The response must not create a collection with type TIMESERIES. It must inform the user that only SEARCH and VECTORSEARCH are supported collection types and suggest one of these alternatives.",
+    "rationale": "TIMESERIES is not a supported collection type in this skill"
+  },
+  {
+    "id": "aoss-deprovision-confirm-before-delete",
+    "skill": "aoss-nextgen-provisioning",
+    "prompt": "Delete the collection group prod-search-group and all its collections in us-east-1",
+    "rule": "Must show a confirmation prompt listing resources before deleting",
+    "criteria": "The response must list the resources that will be deleted and require explicit user confirmation (typing the group name) before executing any delete commands. It must not proceed with deletion without showing what will be removed and getting confirmation.",
+    "rationale": "Deprovision flow requires typed confirmation of group name before destructive actions"
   }
 ]
