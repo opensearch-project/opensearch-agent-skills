@@ -83,7 +83,7 @@ jobs:
       github.event.pull_request.head.repo.full_name == github.repository
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
         with:
           # On cron / workflow_dispatch this checks out the branch the
           # workflow was dispatched on. On pull_request we need the PR
@@ -96,12 +96,12 @@ jobs:
           persist-credentials: true
 
       - name: Set up Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
         with:
           python-version: '3.11'
 
       - name: Install UV
-        uses: astral-sh/setup-uv@v6
+        uses: astral-sh/setup-uv@d0cc045d04ccac9d8b7881df0226f9e82c39688e # v6
 
       - name: Install sync-bot (locked)
         # --frozen: CI fails if sync-bot/uv.lock is stale relative to
@@ -111,7 +111,7 @@ jobs:
         run: uv sync --frozen
 
       - name: Cache upstream clones
-        uses: actions/cache@v4
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
         with:
           path: .sync-cache
           key: sync-cache-${{ runner.os }}-${{ hashFiles('sync/sources/*.yaml') }}
