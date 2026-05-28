@@ -52,6 +52,19 @@ npx skills add opensearch-project/opensearch-agent-skills --all
 npx skills add opensearch-project/opensearch-agent-skills --list
 ```
 
+### Claude Community Marketplace (Claude Code)
+
+```bash
+# Add the community marketplace (one-time setup)
+/plugin marketplace add anthropics/claude-plugins-community
+
+# Install the plugin
+/plugin install opensearch-agent-skills@claude-community
+
+# Reload to apply
+/reload-plugins
+```
+
 After installing, try:
 
 > *"I want to build a semantic search app with OpenSearch"*
