@@ -109,7 +109,8 @@ def _resolve_asset(path: str) -> Path | None:
         return None
     clean = path.lstrip("/") or "index.html"
     target = (SEARCH_UI_STATIC_DIR / clean).resolve()
-    if target.is_file() and str(target).startswith(str(SEARCH_UI_STATIC_DIR)):
+    static_resolved = SEARCH_UI_STATIC_DIR.resolve()
+    if target.is_file() and str(target).startswith(str(static_resolved)):
         return target
     return None
 

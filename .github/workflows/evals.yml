@@ -25,33 +25,35 @@ on:
     branches: [main]
     paths:
       - 'skills/**'
+      - 'scripts/**'
       - 'tests/evals/**'
       - '.github/workflows/evals.yml'
   pull_request:
     paths:
       - 'skills/**'
+      - 'scripts/**'
       - 'tests/evals/**'
       - '.github/workflows/evals.yml'
   pull_request_target:
     types: [labeled]
     paths:
       - 'skills/**'
+      - 'scripts/**'
       - 'tests/evals/**'
       - '.github/workflows/evals.yml'
-
-permissions:
-  contents: read
-  id-token: write   # required for OIDC role assumption
 
 concurrency:
   group: evals-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
-  evals:
+  eval:
     name: Skill Evals (LLM)
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 25
+    permissions:
+      contents: read
+      id-token: write   # required for OIDC role assumption
     # For pull_request_target: only run when a maintainer adds 'safe to test' label.
     # For all other triggers (push, schedule, workflow_dispatch, pull_request from
     # org members): always run.
@@ -101,3 +103,77 @@ jobs:
       - name: Analyze eval results
         run: |
           uv run --group evals pytest tests/evals/ --run-eval-analysis -v
+
+      # Phase 3: run workflow benchmark and compare against stored baseline.
+      # Fails if any dimension regresses >10% from baseline.
+      - name: Run workflow benchmark
+        env:
+          AWS_DEFAULT_REGION: us-east-1
+        run: |
+          uv run --group evals python scripts/run_benchmark.py \
+            --runs 1 \
+            --tag "ci-${{ github.sha }}" \
+            --output tests/evals/results/ci-run.json
+
+      - name: Compare against baseline
+        run: |
+          uv run --group evals python scripts/compare_baseline.py \
+            --baseline tests/evals/results/baseline.json \
+            --current tests/evals/results/ci-run.json \
+            --threshold 0.10
+
+  update-baseline:
+    name: Update Baseline (main only)
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    needs: eval
+    permissions:
+      contents: write   # needed to commit updated baseline
+      id-token: write
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+
+    steps:
+      - name: Checkout main
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install UV
+        uses: astral-sh/setup-uv@v6
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.BEDROCK_ACCESS_ROLE }}
+          aws-region: us-east-1
+
+      - name: Install eval dependencies
+        run: uv sync --group evals
+
+      - name: Run benchmark
+        env:
+          AWS_DEFAULT_REGION: us-east-1
+        run: |
+          uv run --group evals python scripts/run_benchmark.py \
+            --runs 1 \
+            --tag "baseline-${{ github.sha }}" \
+            --output tests/evals/results/ci-run.json
+
+      - name: Update baseline if improved
+        run: |
+          uv run --group evals python scripts/update_baseline.py \
+            --baseline tests/evals/results/baseline.json \
+            --current tests/evals/results/ci-run.json
+
+      - name: Commit updated baseline
+        run: |
+          git diff --quiet tests/evals/results/baseline.json && exit 0
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add tests/evals/results/baseline.json
+          git commit -m "chore: update eval baseline (all dimensions improved)"
+          git push
+

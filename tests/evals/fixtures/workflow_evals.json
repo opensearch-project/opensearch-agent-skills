@@ -1,0 +1,162 @@
+[
+  {
+    "id": "bm25-full-info",
+    "workflow": "bm25",
+    "prompt": "Set up BM25 search on my 'products' index with the built-in IMDB data. OpenSearch is already running locally.",
+    "context": { "cluster_status": "available", "data_source": "builtin_imdb", "strategy": "bm25" },
+    "criteria_correctness": "The response must instruct running preflight-check first, then load-sample with builtin_imdb, then create-index, and finally launch-ui. Commands must be syntactically valid opensearch_ops.py commands. Preflight is a required first step per skill rules.",
+    "criteria_completeness": "The response must cover all required steps: (1) preflight-check, (2) load-sample --type builtin_imdb, (3) create-index with appropriate mappings, (4) index-bulk or reindex, (5) launch-ui. Preflight is expected and counts toward completeness.",
+    "criteria_turn_efficiency": "The response should execute the full BM25 setup without asking unnecessary questions since all info is provided (cluster running, data source known, strategy chosen). Should complete in 1-2 messages.",
+    "criteria_autonomy": "Should not ask for: cluster status (stated available), data source (stated IMDB), search strategy (stated BM25), or confirmation to proceed."
+  },
+  {
+    "id": "bm25-minimal",
+    "workflow": "bm25",
+    "prompt": "I want keyword search on my data.",
+    "context": { "cluster_status": "unknown", "data_source": "unknown", "strategy": "bm25" },
+    "criteria_correctness": "The response must mention preflight-check and ask about the data source. It should recognize 'keyword search' as BM25.",
+    "criteria_completeness": "The response must identify what's needed: cluster status and data source. It should confirm BM25 is the right strategy for keyword search.",
+    "criteria_turn_efficiency": "Should batch all needed questions (cluster status + data source) in one message rather than asking one per turn.",
+    "criteria_autonomy": "Questions ARE needed here since info is missing, but they must be batched. Should not ask about search strategy since user said 'keyword search' which maps to BM25."
+  },
+  {
+    "id": "dense-full-info",
+    "workflow": "dense_vector",
+    "prompt": "Set up semantic search using sentence-transformers/all-mpnet-base-v2 on index 'docs'. My cluster is already running locally with data loaded in 'docs'.",
+    "context": { "cluster_status": "available", "index_exists": true, "model": "huggingface/sentence-transformers/all-mpnet-base-v2" },
+    "criteria_correctness": "Must include preflight-check first, then: deploy-model with the correct model name (huggingface/sentence-transformers/all-mpnet-base-v2), create an ingest pipeline with text_embedding processor, and set up knn_vector mapping with dimension 768. Must use correct command names from cli-reference.md.",
+    "criteria_completeness": "Must cover: (1) preflight-check, (2) deploy-model, (3) create ingest pipeline with embedding processor, (4) create index with knn_vector field (dim 768), (5) reindex or bulk-index through pipeline, (6) create search pipeline or configure neural search, (7) launch-ui.",
+    "criteria_turn_efficiency": "Should proceed without asking unnecessary questions since model, index, and cluster status are all provided. Should lay out the full plan and execute.",
+    "criteria_autonomy": "Should not ask for: model choice (provided), index name (provided), cluster status (stated running). May briefly present the plan before executing."
+  },
+  {
+    "id": "dense-model-choice",
+    "workflow": "dense_vector",
+    "prompt": "I want semantic search but not sure which embedding model to use. My data is English product descriptions, about 200 words each. Cluster is running.",
+    "context": { "cluster_status": "available", "data_source": "product_descriptions", "model": "unknown" },
+    "criteria_correctness": "Must recommend appropriate models from the supported list (e.g., all-mpnet-base-v2 for quality, all-MiniLM-L6-v2 for speed) with trade-offs explained.",
+    "criteria_completeness": "Must mention: (1) at least 2 model options with trade-offs (dimension, speed, quality), (2) recommendation based on 200-word English descriptions, (3) explain that model choice affects index dimension.",
+    "criteria_turn_efficiency": "Should present model options with a clear recommendation in one message, not ask multiple rounds of clarifying questions.",
+    "criteria_autonomy": "Should provide a recommendation, not just list options without guidance. One question about model preference is acceptable after presenting options."
+  },
+  {
+    "id": "hybrid-full-info",
+    "workflow": "hybrid",
+    "prompt": "Set up hybrid search (BM25 + dense vector) with 0.3/0.7 weights on 'products'. Use all-MiniLM-L6-v2. Cluster running, data already in the index.",
+    "context": { "cluster_status": "available", "index_exists": true, "model": "huggingface/sentence-transformers/all-MiniLM-L6-v2", "weights": [0.3, 0.7] },
+    "criteria_correctness": "Must include preflight-check first, then: deploy-model with all-MiniLM-L6-v2, create ingest pipeline with text_embedding processor, create hybrid search pipeline with weights [0.3, 0.7], and attach to the index. Must use correct command names from cli-reference.md.",
+    "criteria_completeness": "Must cover: (1) preflight-check, (2) deploy model, (3) create ingest pipeline with text_embedding, (4) create index with knn_vector (dim 384 for MiniLM-L6), (5) create search pipeline with hybrid weights 0.3/0.7, (6) reindex data through ingest pipeline, (7) launch-ui. Preflight is a required step.",
+    "criteria_turn_efficiency": "All information is provided. Should execute the full hybrid setup without asking additional questions. Complete in 1-2 messages.",
+    "criteria_autonomy": "Should not ask for: model (provided), weights (provided), index name (provided), strategy confirmation. Should proceed directly."
+  },
+  {
+    "id": "hybrid-minimal",
+    "workflow": "hybrid",
+    "prompt": "I want the best of both keyword and semantic search for my e-commerce site.",
+    "context": { "cluster_status": "unknown", "strategy_hint": "hybrid" },
+    "criteria_correctness": "Must recognize this as a hybrid search request. Should explain that hybrid combines BM25 (keyword) with vector search (semantic).",
+    "criteria_completeness": "Must explain: (1) hybrid search concept, (2) ask about cluster/data, (3) ask about model preference or recommend one, (4) mention weight tuning is possible.",
+    "criteria_turn_efficiency": "Should batch questions about cluster status, data source, and model preference in one message after explaining hybrid.",
+    "criteria_autonomy": "Questions needed (cluster, data, model), but must be batched. Should not require multiple rounds of single questions."
+  },
+  {
+    "id": "sparse-full-info",
+    "workflow": "neural_sparse",
+    "prompt": "Set up neural sparse search on my 'articles' index using opensearch-neural-sparse-encoding-doc-v2-distill. Cluster is running, articles index has data.",
+    "context": { "cluster_status": "available", "index_exists": true, "model": "amazon/neural-sparse/opensearch-neural-sparse-encoding-doc-v2-distill" },
+    "criteria_correctness": "Must include preflight-check first, then: deploy the sparse model, create an ingest pipeline with sparse_encoding processor, create index with rank_features field, and set up neural_sparse search. Must use correct command names from cli-reference.md.",
+    "criteria_completeness": "Must cover: (1) preflight-check, (2) deploy sparse model, (3) create ingest pipeline with sparse_encoding processor, (4) create index with rank_features field, (5) reindex through pipeline, (6) configure search, (7) launch-ui.",
+    "criteria_turn_efficiency": "All info provided. Should proceed without unnecessary questions.",
+    "criteria_autonomy": "Should not ask for model choice, index name, or cluster status since all are provided."
+  },
+  {
+    "id": "agentic-conv-full-info",
+    "workflow": "agentic",
+    "prompt": "I want to set up conversational agentic search on my existing index called 'products'. I have AWS credentials configured in my environment (us-east-1). Please set it up.",
+    "context": { "cluster_status": "available", "index_exists": true, "aws_creds_in_env": true },
+    "criteria_correctness": "Must include preflight-check as a first step AND then use setup-agentic-search composite command with --index products --agent-type conversational --region us-east-1. Alternatively, listing the individual steps (deploy-agentic-model, create-conversational-agent, deploy-rag-model, create-conversational-agent-pipeline) is also acceptable. Must use correct command names and flags.",
+    "criteria_completeness": "Must cover: (1) preflight-check, (2) the full agentic setup — either via setup-agentic-search composite OR the individual 4 steps (deploy model, create agent, deploy RAG, create pipeline). Must reference the 'products' index.",
+    "criteria_turn_efficiency": "Should provide the full execution plan (preflight + setup commands) without asking for information already provided (AWS region, credentials, index name, agent type). Complete in 1-2 messages.",
+    "criteria_autonomy": "Should not ask for: AWS credentials (in env), region (us-east-1), index name (products), agent type (conversational stated). May include preflight-check as a required first step — that is expected, not a question."
+  },
+  {
+    "id": "agentic-flow-full-info",
+    "workflow": "agentic",
+    "prompt": "Set up a flow agent for agentic search on index 'articles'. AWS creds are in my env, region us-west-2. I want stateless low-latency queries.",
+    "context": { "cluster_status": "available", "index_exists": true, "aws_creds_in_env": true },
+    "criteria_correctness": "Must include preflight-check as a first step AND then use setup-agentic-search composite command with --index articles --agent-type flow --region us-west-2. Alternatively, listing the individual steps (deploy-agentic-model, create-flow-agent, create-flow-agentic-pipeline) is also acceptable. Must use correct command names and flags.",
+    "criteria_completeness": "Must cover: (1) preflight-check, (2) the full agentic setup — either via setup-agentic-search composite OR the individual 3 steps (deploy model, create flow agent, create flow pipeline). Must reference the 'articles' index and region us-west-2.",
+    "criteria_turn_efficiency": "Should provide the full execution plan (preflight + setup commands) without asking additional questions. All information is provided. Complete in 1-2 messages.",
+    "criteria_autonomy": "Should not ask for agent type (user said 'flow agent' and 'stateless'), region (provided), credentials (in env), or index name (provided). Preflight-check is a required step, not a question."
+  },
+  {
+    "id": "agentic-missing-info",
+    "workflow": "agentic",
+    "prompt": "I want agentic search on my data.",
+    "context": { "cluster_status": "unknown", "index_exists": "unknown", "aws_creds_in_env": "unknown" },
+    "criteria_correctness": "Must identify this as an agentic search request and identify all missing prerequisites before attempting setup.",
+    "criteria_completeness": "Must identify all missing prerequisites: (1) cluster availability, (2) target index, (3) AWS credentials/region, (4) agent type preference (flow vs conversational).",
+    "criteria_turn_efficiency": "Should batch ALL needed questions in ONE message rather than asking one per turn.",
+    "criteria_autonomy": "Questions ARE needed here, but they must be BATCHED in one message. Asking one question per message is the anti-pattern."
+  },
+  {
+    "id": "recovery-creds-expired",
+    "workflow": "agentic",
+    "prompt": "I was setting up conversational agentic search. The model deployed successfully (model_id: abc123) and agent was created (agent_id: xyz789), but when I ran verify-agentic-setup it said 'connector_live: false, ExpiredTokenException'. How do I fix this?",
+    "context": { "partial_state": { "model_deployed": true, "model_id": "abc123", "agent_created": true, "agent_id": "xyz789", "creds_expired": true } },
+    "criteria_correctness": "Must identify this as an expired credentials problem. Must NOT suggest re-deploying the model or re-creating the agent. Must suggest refreshing credentials and updating the connector.",
+    "criteria_completeness": "Must: (1) explain that creds expired in the connector, (2) suggest refreshing AWS creds, (3) provide command to update connector or re-verify, (4) note that model and agent are fine and should be reused.",
+    "criteria_turn_efficiency": "Should provide the complete recovery plan in 1 turn since all diagnostic info is provided.",
+    "criteria_autonomy": "Should not ask 'what model did you deploy?' or 'what agent type?' since model_id, agent_id, and error are all provided."
+  },
+  {
+    "id": "recovery-dim-mismatch",
+    "workflow": "dense_vector",
+    "prompt": "I deployed all-mpnet-base-v2 (model_id: m789) and created the ingest pipeline. But when I ran verify-search-pipeline it said 'embedding_populated: false, mapper_parsing_exception: vector dimension mismatch, expected 384 got 768'. What's wrong?",
+    "context": { "partial_state": { "model_deployed": true, "model_id": "m789", "pipeline_created": true, "index_dim": 384, "model_dim": 768 } },
+    "criteria_correctness": "Must identify that the index was created with dimension 384 but all-mpnet-base-v2 outputs 768. Must suggest either recreating the index with dim 768 or switching to a 384-dim model like all-MiniLM-L6-v2.",
+    "criteria_completeness": "Must: (1) explain the mismatch (index expects 384, model outputs 768), (2) provide at least one fix option, (3) note that the model and pipeline don't need re-creation if index is fixed.",
+    "criteria_turn_efficiency": "Should provide diagnosis and fix in 1 turn.",
+    "criteria_autonomy": "All diagnostic info is in the error message. Should not ask clarifying questions."
+  },
+  {
+    "id": "recovery-resume-after-fix",
+    "workflow": "hybrid",
+    "prompt": "I was setting up hybrid search. Model deployed (id: m456), ingest pipeline created, but search pipeline creation failed because I had a typo in the weights. I've fixed the issue. The model is deployed, ingest pipeline is attached to 'products'. How do I continue?",
+    "context": { "partial_state": { "model_deployed": true, "model_id": "m456", "ingest_pipeline": true, "search_pipeline": false, "index": "products" } },
+    "criteria_correctness": "Must resume from creating the search pipeline. Must NOT re-deploy the model or recreate the ingest pipeline.",
+    "criteria_completeness": "Must: (1) acknowledge model and ingest pipeline are done, (2) provide the create-pipeline command for the search pipeline with hybrid weights, (3) suggest verify-search-pipeline after, (4) then bulk-index/launch-ui.",
+    "criteria_turn_efficiency": "Should provide remaining steps in 1 turn without asking what was already done (user stated it).",
+    "criteria_autonomy": "Should not ask about model or ingest pipeline status since user confirmed they're done."
+  },
+  {
+    "id": "docproc-pdf",
+    "workflow": "document_processing",
+    "prompt": "I have a folder of PDFs at ./research-papers/ that I want to make searchable with semantic search. Cluster is running.",
+    "context": { "cluster_status": "available", "data_source": "pdf_folder", "strategy": "dense_vector" },
+    "criteria_correctness": "Must mention Docling for PDF processing, explain chunking strategy options, and propose a pipeline that processes PDFs into searchable chunks with embeddings.",
+    "criteria_completeness": "Must cover: (1) Docling for PDF extraction, (2) chunking strategy (size, overlap), (3) embedding model for semantic search, (4) index mapping with text + vector fields, (5) ingestion workflow.",
+    "criteria_turn_efficiency": "Should present the full document processing plan. May ask one question about chunking preference or model choice.",
+    "criteria_autonomy": "Should recommend a chunking strategy and model rather than asking multiple rounds of questions."
+  },
+  {
+    "id": "switch-strategy",
+    "workflow": "cross_cutting",
+    "prompt": "I set up BM25 search on 'products' but search quality isn't great for natural language queries. I want to upgrade to hybrid search. What needs to change?",
+    "context": { "current_strategy": "bm25", "target_strategy": "hybrid", "index": "products" },
+    "criteria_correctness": "Must explain the incremental migration from BM25 to hybrid: deploy a model, add ingest pipeline, add vector field to mapping, reindex, add search pipeline with hybrid weights.",
+    "criteria_completeness": "Must cover: (1) deploy an embedding model, (2) add ingest pipeline, (3) update index mapping or create new index with vector field, (4) reindex data through pipeline, (5) create hybrid search pipeline with weights, (6) explain that existing BM25 functionality is preserved in hybrid.",
+    "criteria_turn_efficiency": "Should explain the full migration path in 1-2 turns. May ask about model preference.",
+    "criteria_autonomy": "Should provide actionable steps, not just conceptual explanation. Should recommend a model rather than only asking."
+  },
+  {
+    "id": "evaluate-quality",
+    "workflow": "cross_cutting",
+    "prompt": "My hybrid search is set up on 'products' but results don't seem relevant for some queries. How do I evaluate and improve search quality?",
+    "context": { "strategy": "hybrid", "index": "products", "issue": "relevance" },
+    "criteria_correctness": "Must reference the evaluation workflow (Phase 4.5) and suggest concrete evaluation steps like running test queries, checking nDCG/precision, and tuning weights.",
+    "criteria_completeness": "Must cover: (1) running evaluation with test queries, (2) metrics to look at (nDCG, precision, recall), (3) possible improvements (weight tuning, different model, field boosting), (4) how to compare before/after.",
+    "criteria_turn_efficiency": "Should provide the evaluation approach in 1-2 turns.",
+    "criteria_autonomy": "Should provide concrete steps to evaluate, not just ask 'what queries are failing?'"
+  }
+]

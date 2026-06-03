@@ -69,6 +69,21 @@ def call_skill(skill_md: str, prompt: str, client, model_id: str = _BEDROCK_MODE
 
     Calls Bedrock using the Messages API (anthropic_version bedrock-2023-05-31),
     matching the pattern used in opensearch-build's AIReleaseNotesGenerator.
+
+    Returns just the response text for backward compatibility.
+    Use call_skill_with_usage() for token tracking.
+    """
+    text, _ = call_skill_with_usage(skill_md, prompt, client, model_id)
+    return text
+
+
+def call_skill_with_usage(
+    skill_md: str, prompt: str, client, model_id: str = _BEDROCK_MODEL_ID
+) -> tuple[str, dict]:
+    """Simulate an agent with skill_md loaded as the system prompt.
+
+    Returns (response_text, token_usage) where token_usage is:
+        {"input_tokens": int, "output_tokens": int, "total_tokens": int}
     """
     body = json.dumps({
         "anthropic_version": "bedrock-2023-05-31",
@@ -83,4 +98,14 @@ def call_skill(skill_md: str, prompt: str, client, model_id: str = _BEDROCK_MODE
         accept="application/json",
     )
     response_body = json.loads(response["body"].read())
-    return response_body["content"][0]["text"]
+    text = response_body["content"][0]["text"]
+
+    usage = response_body.get("usage", {})
+    input_tokens = usage.get("input_tokens", 0)
+    output_tokens = usage.get("output_tokens", 0)
+    token_usage = {
+        "input_tokens": input_tokens,
+        "output_tokens": output_tokens,
+        "total_tokens": input_tokens + output_tokens,
+    }
+    return text, token_usage

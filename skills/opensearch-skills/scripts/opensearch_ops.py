@@ -32,6 +32,8 @@ Commands:
     create-conversational-agent Create a conversational agent with memory (multi-turn)
     create-flow-agentic-pipeline Create and attach a flow agent search pipeline
     create-conversational-agent-pipeline Create and attach a conversational agent pipeline with RAG
+    check-agentic-setup    Diagnose an existing agentic search setup
+    setup-agentic-search   Full agentic search setup in one command (composite, supports --resume)
     search-docs            Search documentation via DuckDuckGo (default: opensearch.org)
 """
 
@@ -337,6 +339,178 @@ def cmd_create_conversational_agent_pipeline(args):
     print(create_conversational_agent_pipeline(args.name, args.agent_id, args.index, args.model_id))
 
 
+def cmd_check_agentic_setup(args):
+    """Diagnose an existing agentic search setup on an index."""
+    from lib.client import create_client
+
+    client = create_client()
+    index = args.index
+    checks = {"index": index, "status": []}
+
+    # Check 1: Index exists
+    try:
+        exists = client.indices.exists(index=index)
+        checks["status"].append({"check": "index_exists", "ok": exists})
+    except Exception as e:
+        checks["status"].append({"check": "index_exists", "ok": False, "error": str(e)})
+
+    # Check 2: Search pipeline attached
+    search_pipeline = ""
+    try:
+        settings = client.indices.get_settings(index=index)
+        idx_settings = settings.get(index, {}).get("settings", {}).get("index", {})
+        search_pipeline = idx_settings.get("search", {}).get("default_pipeline", "")
+        checks["status"].append({
+            "check": "search_pipeline_attached",
+            "ok": bool(search_pipeline),
+            "pipeline": search_pipeline,
+        })
+    except Exception as e:
+        checks["status"].append({"check": "search_pipeline_attached", "ok": False, "error": str(e)})
+
+    # Check 3: Pipeline exists and has agent processor
+    if search_pipeline:
+        try:
+            pipeline_resp = client.transport.perform_request(
+                "GET", f"/_search/pipeline/{search_pipeline}"
+            )
+            pipeline_body = pipeline_resp.get(search_pipeline, {})
+            processors = pipeline_body.get("response_processors", [])
+            has_agent = any("retrieval_augmented_generation" in p or "ml_inference" in p for p in processors)
+            agent_id = ""
+            for p in processors:
+                if "retrieval_augmented_generation" in p:
+                    agent_id = p["retrieval_augmented_generation"].get("agent_id", "")
+                elif "ml_inference" in p:
+                    agent_id = p["ml_inference"].get("agent_id", "")
+            checks["status"].append({
+                "check": "pipeline_has_agent",
+                "ok": has_agent,
+                "agent_id": agent_id,
+            })
+        except Exception as e:
+            checks["status"].append({"check": "pipeline_has_agent", "ok": False, "error": str(e)})
+
+    # Check 4: Model deployed (if we found an agent, check its model)
+    agent_id_found = next((s.get("agent_id") for s in checks["status"] if s.get("agent_id")), "")
+    if agent_id_found:
+        try:
+            agent_resp = client.transport.perform_request("GET", f"/_plugins/_ml/agents/{agent_id_found}")
+            model_id = agent_resp.get("model_id", "")
+            checks["status"].append({"check": "agent_exists", "ok": True, "agent_id": agent_id_found, "model_id": model_id})
+            if model_id:
+                model_resp = client.transport.perform_request("GET", f"/_plugins/_ml/models/{model_id}")
+                model_state = model_resp.get("model_state", "UNKNOWN")
+                checks["status"].append({"check": "model_deployed", "ok": model_state == "DEPLOYED", "model_id": model_id, "state": model_state})
+        except Exception as e:
+            checks["status"].append({"check": "agent_or_model", "ok": False, "error": str(e)})
+
+    checks["all_ok"] = all(s.get("ok", False) for s in checks["status"])
+    print(json.dumps(checks, indent=2))
+
+
+def cmd_setup_agentic_search(args):
+    """Composite command: set up full agentic search in one shot.
+
+    For conversational agent: deploy model -> create agent -> deploy RAG model -> create pipeline
+    For flow agent: deploy model -> create agent -> create pipeline
+
+    Supports --resume with --model-id and/or --agent-id to skip completed steps.
+    """
+    from lib.operations import (
+        deploy_agentic_model, deploy_rag_model,
+        create_flow_agent, create_conversational_agent,
+        create_flow_agentic_pipeline, create_conversational_agent_pipeline,
+    )
+
+    access_key = args.access_key or os.getenv("AWS_ACCESS_KEY_ID", "")
+    secret_key = args.secret_key or os.getenv("AWS_SECRET_ACCESS_KEY", "")
+    session_token = args.session_token or os.getenv("AWS_SESSION_TOKEN", "")
+    region = args.region
+    index = args.index
+    agent_type = args.agent_type
+    model_name = args.model_name
+
+    # Resume support: skip steps that already completed
+    resume_model_id = getattr(args, "model_id", None) or ""
+    resume_agent_id = getattr(args, "agent_id", None) or ""
+
+    results = {"agent_type": agent_type, "index": index, "steps": []}
+
+    # Step 1: Deploy agentic model (skip if resuming with model_id)
+    if resume_model_id:
+        model_id = resume_model_id
+        print(f"Step 1: Reusing existing model {model_id} (--resume)", file=sys.stderr)
+        results["steps"].append({"step": "deploy-agentic-model", "model_id": model_id, "skipped": True})
+    else:
+        print(f"Step 1: Deploying agentic model ({model_name}) in {region}...", file=sys.stderr)
+        model_id = deploy_agentic_model(access_key, secret_key, region, session_token, model_name)
+        results["steps"].append({"step": "deploy-agentic-model", "model_id": model_id})
+        if model_id.startswith("Error"):
+            results["error"] = model_id
+            results["resume_hint"] = "Fix the error and retry. No --resume needed (step 1 failed)."
+            print(json.dumps(results, indent=2))
+            return
+
+    # Step 2: Create agent (skip if resuming with agent_id)
+    if resume_agent_id:
+        agent_id = resume_agent_id
+        print(f"Step 2: Reusing existing agent {agent_id} (--resume)", file=sys.stderr)
+        results["steps"].append({"step": f"create-{agent_type}-agent", "agent_id": agent_id, "skipped": True})
+    else:
+        agent_name = f"agentic-search-{agent_type}-{index}"
+        print(f"Step 2: Creating {agent_type} agent '{agent_name}'...", file=sys.stderr)
+        if agent_type == "conversational":
+            agent_result = create_conversational_agent(agent_name, model_id)
+        else:
+            agent_result = create_flow_agent(agent_name, model_id)
+
+        try:
+            agent_data = json.loads(agent_result)
+            agent_id = agent_data.get("agent_id", "")
+        except (json.JSONDecodeError, TypeError):
+            agent_id = ""
+        results["steps"].append({"step": f"create-{agent_type}-agent", "result": agent_result, "agent_id": agent_id})
+        if not agent_id:
+            results["error"] = f"Failed to create agent: {agent_result}"
+            results["resume_hint"] = f"Retry with: --model-id {model_id}"
+            print(json.dumps(results, indent=2))
+            return
+
+    # Step 3 (conversational only): Deploy RAG model
+    rag_model_id = ""
+    if agent_type == "conversational":
+        print(f"Step 3: Deploying RAG model for pipeline...", file=sys.stderr)
+        rag_model_id = deploy_rag_model(access_key, secret_key, region, session_token, model_name)
+        results["steps"].append({"step": "deploy-rag-model", "model_id": rag_model_id})
+        if rag_model_id.startswith("Error"):
+            results["error"] = rag_model_id
+            results["resume_hint"] = f"Retry with: --model-id {model_id} --agent-id {agent_id}"
+            print(json.dumps(results, indent=2))
+            return
+
+    # Step 4: Create pipeline
+    pipeline_name = f"agentic-search-pipeline-{index}"
+    step_num = 4 if agent_type == "conversational" else 3
+    print(f"Step {step_num}: Creating {agent_type} search pipeline on '{index}'...", file=sys.stderr)
+    if agent_type == "conversational":
+        pipeline_result = create_conversational_agent_pipeline(pipeline_name, agent_id, index, rag_model_id)
+    else:
+        pipeline_result = create_flow_agentic_pipeline(pipeline_name, agent_id, index)
+    results["steps"].append({"step": "create-pipeline", "result": pipeline_result})
+
+    results["success"] = True
+    results["summary"] = {
+        "agentic_model_id": model_id,
+        "agent_id": agent_id,
+        "pipeline_name": pipeline_name,
+    }
+    if rag_model_id:
+        results["summary"]["rag_model_id"] = rag_model_id
+
+    print(json.dumps(results, indent=2))
+
+
 def main():
     parser = argparse.ArgumentParser(description="OpenSearch operations CLI (standalone)", allow_abbrev=False)
     sub = parser.add_subparsers(dest="command", required=True)
@@ -481,6 +655,23 @@ def main():
     p.add_argument("--index", required=True, help="Index name")
     p.add_argument("--model-id", required=True, help="Deployed LLM model ID for RAG")
 
+    # check-agentic-setup
+    p = sub.add_parser("check-agentic-setup", help="Diagnose agentic search setup on an index")
+    p.add_argument("--index", required=True, help="Index to check")
+
+    # setup-agentic-search (composite)
+    p = sub.add_parser("setup-agentic-search", help="Full agentic search setup in one command")
+    p.add_argument("--index", required=True, help="Target index name")
+    p.add_argument("--agent-type", required=True, choices=["flow", "conversational"],
+                   help="Agent type: flow (stateless) or conversational (multi-turn)")
+    p.add_argument("--access-key", default="")
+    p.add_argument("--secret-key", default="")
+    p.add_argument("--region", default="us-east-1")
+    p.add_argument("--session-token", default="")
+    p.add_argument("--model-name", default="us.anthropic.claude-sonnet-4-20250514-v1:0")
+    p.add_argument("--model-id", default="", help="Resume: skip model deployment, reuse this model ID")
+    p.add_argument("--agent-id", default="", help="Resume: skip agent creation, reuse this agent ID")
+
     args = parser.parse_args()
 
     dispatch = {
@@ -505,6 +696,8 @@ def main():
         "create-conversational-agent": cmd_create_conversational_agent,
         "create-flow-agentic-pipeline": cmd_create_flow_agentic_pipeline,
         "create-conversational-agent-pipeline": cmd_create_conversational_agent_pipeline,
+        "check-agentic-setup": cmd_check_agentic_setup,
+        "setup-agentic-search": cmd_setup_agentic_search,
         "search-docs": cmd_search_docs,
     }
 

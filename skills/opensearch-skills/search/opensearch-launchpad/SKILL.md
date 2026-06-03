@@ -112,13 +112,23 @@ See [cli-reference.md](../../cli-reference.md) for the full command reference.
 
 ## Key Rules
 
-- Ask **one** preference question per message.
-- **Never skip Phase 1** (sample document collection).
-- Show architecture proposals to the user before execution.
-- Follow the phases **in order** — do not jump ahead.
-- When a step fails, present the error and wait for guidance.
+### Autonomy & Efficiency
+- **If the user provides all necessary information** (index name, search strategy, model, cluster status, credentials), **proceed directly** to planning and execution. Do not ask for information already stated.
+- **Batch missing questions**: If information IS missing, ask all needed questions in ONE message — never one question per message across multiple turns.
+- **Skip Phase 2** if the user's prompt already specifies the search strategy.
+- **Skip plan approval** for straightforward setups where the user has stated what they want. Only present the plan for approval when there are meaningful architectural decisions the user hasn't addressed.
+
+### Recovery & Error Handling
+- When a step fails, **diagnose the error and provide concrete fix commands** — do not just say "an error occurred, what would you like to do?"
+- When the user describes a partial setup (some steps done, some failed), **resume from where it failed**. Do not redo completed steps. Reuse existing IDs (model_id, agent_id, pipeline names).
+- When credentials expire, the fix is to refresh credentials and update the connector — **never re-deploy a model** that is already registered.
+
+### Correctness
+- **Never skip Phase 1** (preflight check) — always verify cluster is available first. However, if the user states "cluster is running" or "OpenSearch is already running", treat that as a passed preflight and proceed without waiting for output.
+- **Only use commands documented in [cli-reference.md](../../cli-reference.md)**. Do not invent flags or arguments. If unsure about exact syntax, read the CLI reference first.
 - Do not describe **Amazon OpenSearch Serverless** as scaling to zero.
 - **Agentic search** does not deploy to **Amazon OpenSearch Serverless** — use a **managed domain**.
+- Follow the phases **in order** unless the user's context allows skipping (e.g., cluster already running with data = skip sample loading).
 
 ## Workflow Phases
 
@@ -134,18 +144,25 @@ uv run python scripts/opensearch_ops.py preflight-check
 - **`status: "auth_required"`** — Ask for credentials, then retry with `--auth-mode custom`.
 - **`status: "no_cluster"`** — Start one: `bash scripts/start_opensearch.sh`
 
-Once available, ask for the data source. Use `load-sample` to load data.
+Once available:
+- If the user **already has data in an index** (stated in their prompt), skip sample loading.
+- If the user **specifies a data source** (file path, URL, builtin_imdb), load it directly with `load-sample`.
+- Otherwise, ask for the data source.
 
 If the user provides PDF, DOCX, PPTX, or XLSX files, use Docling to process them. Read [document_processing_guide.md](document_processing_guide.md) for the workflow.
 
 ### Phase 2 — Gather Preferences
 
-Ask **one at a time**: search strategy and deployment preference. Present all five strategies:
+**Skip this phase** if the user already specified their search strategy in the prompt.
+
+If the strategy is unclear, present all five options and ask the user to choose:
 - `bm25` (keyword)
 - `dense_vector` (semantic via embeddings)
 - `neural_sparse` (semantic via learned sparse representations)
 - `hybrid` (combines keyword + semantic)
 - `agentic` (LLM-driven multi-step retrieval, requires OpenSearch 3.2+)
+
+Recognize natural language equivalents: "keyword search" = BM25, "semantic search" = dense_vector, "best of both" = hybrid, "AI-powered search" / "conversational search" = agentic.
 
 ### Phase 3 — Plan
 
@@ -157,13 +174,41 @@ Design a search architecture. Read the relevant knowledge files:
 - [agentic_search_guide.md](agentic_search_guide.md)
 - [document_processing_guide.md](document_processing_guide.md)
 
-Present the plan and wait for user approval.
+**Fast-path**: If the user specified strategy, model, and index name — present a brief plan summary and proceed to execution in the same message. No separate approval turn needed.
+
+**Standard path**: If there are open architectural decisions (model choice, weights, field mappings), present the plan and wait for approval.
 
 ### Phase 4 — Execute
 
 Execute the plan using `opensearch_ops.py` commands. When launching the UI, present the URL (default: `http://127.0.0.1:8765`).
 
-**For Agentic Search:** Ask for AWS credentials for Bedrock, then ask about agent type (Flow vs Conversational). See [cli-reference.md](../../cli-reference.md) for agentic setup commands.
+**For Dense Vector / Hybrid Search:** Execute these steps in sequence. Use exact command syntax from [cli-reference.md](../../cli-reference.md):
+
+1. `deploy-model --name "huggingface/sentence-transformers/<model>"` → get model_id
+2. `create-pipeline --name <pipeline> --index <index> --type ingest --body '{...text_embedding processor with model_id and field_map...}'`
+3. `create-index --name <index> --body '{...knn_vector field with correct dimension...}'`
+4. For hybrid: `create-pipeline --name <search-pipeline> --index <index> --type search --hybrid --weights '[0.3, 0.7]'`
+5. `index-bulk --index <index> --source-file <path>`
+6. `launch-ui --index <index>`
+
+**For Agentic Search:** Use the composite command to set up the full pipeline in one step:
+
+```bash
+uv run python scripts/opensearch_ops.py setup-agentic-search \
+  --index <index_name> --agent-type <flow|conversational> --region <aws_region>
+```
+
+This handles all steps automatically (deploy model → create agent → deploy RAG model → create pipeline). AWS credentials are read from environment variables. If a step fails, the output includes a `resume_hint` with the exact command to retry using `--model-id` and/or `--agent-id` to skip completed steps.
+
+If AWS credentials and agent type are already in the user's prompt, proceed directly. Otherwise ask for both in **one message**. See [cli-reference.md](../../cli-reference.md) for all options.
+
+**Verification after multi-step setup (dense/hybrid/agentic):** After completing pipeline setup, run diagnostics:
+
+```bash
+uv run python scripts/opensearch_ops.py check-agentic-setup --index <index_name>
+```
+
+This checks: index exists, pipeline attached, agent registered, model deployed. If any check fails, diagnose the issue and provide the fix command.
 
 After the UI is running:
 > "Your search app is live! Here's what you can do next:"
