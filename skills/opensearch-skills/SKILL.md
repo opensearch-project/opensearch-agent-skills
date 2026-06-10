@@ -5,7 +5,9 @@ description: >
   Use this skill when the user mentions OpenSearch, search app, index setup,
   search architecture, semantic search, vector search, hybrid search, BM25,
   dense vector, sparse vector, agentic search, RAG, embeddings, KNN, PDF
-  ingestion, document processing, or any related search topic. Also use for
+  ingestion, document processing, ml_inference processor, ingest pipeline
+  with LLM, auto-embedding, document enrichment at index time, query
+  rewriting, multilingual routing, or any related search topic. Also use for
   log analytics and observability — when the user wants to set up log
   ingestion, query logs with PPL, analyze error patterns, set up index
   lifecycle policies, investigate traces, or check stack health. Activate
@@ -19,7 +21,7 @@ metadata:
 
 # OpenSearch Skills
 
-This is the top-level skill for OpenSearch. It contains three category skills that can also be installed and used independently:
+This is the top-level skill for OpenSearch. It contains category skills that can also be installed and used independently:
 
 | Category | Skill | Install individually |
 |---|---|---|
@@ -35,6 +37,8 @@ Route to the right skill based on user intent:
 | User Intent | Skill |
 |---|---|
 | Build a search app, set up an index, choose a search strategy | [opensearch-launchpad](search/opensearch-launchpad/SKILL.md) |
+| Auto-enrich documents at index time (auto-embedding, classification, NER, PII redaction) | [opensearch-launchpad](search/opensearch-launchpad/SKILL.md) → read `ml_inference_ingest_guide.md` |
+| LLM-powered query rewriting or grounded RAG answer synthesis at search time | [opensearch-launchpad](search/opensearch-launchpad/SKILL.md) → read `ml_inference_search_pipeline_guide.md` |
 | Analyze logs, query with PPL, discover error patterns | [log-analytics](observability/log-analytics/SKILL.md) |
 | Investigate traces, debug spans, analyze service maps | [trace-analytics](observability/trace-analytics/SKILL.md) |
 | Deploy to AWS, provision a domain or collection | [aws-setup](cloud/aws-setup/SKILL.md) |

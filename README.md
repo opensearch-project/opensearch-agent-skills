@@ -10,7 +10,7 @@ Skills are organized in a tree — install the whole collection or pick individu
 
 | Category | Skill | Description |
 |----------|-------|-------------|
-| **Search** | [opensearch-launchpad](skills/opensearch-skills/search/opensearch-launchpad/) | Build search apps from scratch — BM25, semantic, hybrid, agentic search |
+| **Search** | [opensearch-launchpad](skills/opensearch-skills/search/opensearch-launchpad/) | Build search apps from scratch — BM25, semantic, hybrid, agentic search; LLM-powered query rewriting and grounded RAG |
 | **Observability** | [log-analytics](skills/opensearch-skills/observability/log-analytics/) | Query and analyze logs with PPL — error patterns, anomaly detection |
 | **Observability** | [trace-analytics](skills/opensearch-skills/observability/trace-analytics/) | Investigate distributed traces — slow spans, service maps, agent invocations |
 | **Cloud** | [aws-setup](skills/opensearch-skills/cloud/aws-setup/) | Deploy to Amazon OpenSearch Service or Serverless |
@@ -91,7 +91,7 @@ skills/
       SKILL.md
       opensearch-launchpad/           # Search app builder
         SKILL.md
-        *.md                          # Model guides, evaluation, strategies
+        *.md                          # Model guides, evaluation, strategies, ingest pipelines
     observability/                    # Category: Observability
       SKILL.md
       log-analytics/                  # Log querying & analysis

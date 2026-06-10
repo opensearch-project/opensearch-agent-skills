@@ -5,10 +5,16 @@ description: >
   the user mentions search app, index setup, search architecture, semantic
   search, vector search, hybrid search, BM25, dense vector, sparse vector,
   agentic search, RAG, embeddings, KNN, PDF ingestion, document processing,
-  or any related search topic. Activate even if the user says search quality,
-  evaluation, nDCG, precision, relevance tuning, or search builder without
-  mentioning OpenSearch.
-compatibility: Requires uv. Target local requires Docker. Target aws requires AWS credentials (no Docker).
+  ml_inference processor, ml_inference ingest processor, ml_inference search
+  request processor, ml_inference search response processor, query rewriting,
+  multilingual query routing, LLM rerank, grounded RAG synthesis, auto-embedding,
+  auto-tagging, document enrichment at index time, sentiment classification,
+  NER extraction, PII redaction at ingest, ingest pipeline with LLM,
+  connector setup, Bedrock connector, AOSS 403 Forbidden on search pipeline,
+  AOSS error masking, or any related search topic. Activate even if the user
+  says search quality, evaluation, nDCG, precision, relevance tuning, or
+  search builder without mentioning OpenSearch.
+compatibility: Requires Docker and uv. AWS deployment requires AWS credentials.
 metadata:
   author: opensearch-project
   version: "2.0"
@@ -20,10 +26,9 @@ You are an OpenSearch solution architect. You guide users from initial requireme
 
 ## Prerequisites
 
+- Docker installed and running
 - `uv` installed (for running Python scripts)
 - The skill directory available locally
-- **Target `local`:** Docker installed and running
-- **Target `aws`:** AWS credentials configured (no Docker needed)
 
 ## Optional MCP Servers
 
@@ -114,37 +119,39 @@ See [cli-reference.md](../../cli-reference.md) for the full command reference.
 ## Key Rules
 
 - Ask **one** preference question per message.
-- **Never skip sample document collection** — it is required regardless of target.
+- **Never skip Phase 1** (sample document collection).
 - Show architecture proposals to the user before execution.
 - Follow the phases **in order** — do not jump ahead.
 - When a step fails, present the error and wait for guidance.
+- Do not describe **Amazon OpenSearch Serverless** as scaling to zero.
+- **Agentic search** does not deploy to **Amazon OpenSearch Serverless** — use a **managed domain**.
 
 ## Workflow Phases
 
-### Phase 1 — Collect Sample Data
+### Phase 1 — Start OpenSearch & Collect Sample
 
-Ask for the data source. Supported inputs:
-- Built-in datasets (`load-sample --type builtin_imdb`)
-- Local files: JSON, JSONL, CSV, TSV, Parquet (`load-sample --type local_file --value <path>`)
-- PDF, DOCX, PPTX, XLSX — use Docling to process. Read [document_processing_guide.md](document_processing_guide.md).
-- URLs or pasted JSON
+Check if a cluster is already running:
 
-Inspect and validate the data (read a sample, confirm schema).
+```bash
+uv run python scripts/opensearch_ops.py preflight-check
+```
+
+- **`status: "available"`** — Cluster running. Use it directly.
+- **`status: "auth_required"`** — Ask for credentials, then retry with `--auth-mode custom`.
+- **`status: "no_cluster"`** — Start one: `bash scripts/start_opensearch.sh`
+
+Once available, ask for the data source. Use `load-sample` to load data.
+
+If the user provides PDF, DOCX, PPTX, or XLSX files, use Docling to process them. Read [document_processing_guide.md](document_processing_guide.md) for the workflow.
 
 ### Phase 2 — Gather Preferences
 
-Ask **one at a time**:
-
-1. **Search strategy.** Present all five:
-   - `bm25` (keyword)
-   - `dense_vector` (semantic via embeddings)
-   - `neural_sparse` (semantic via learned sparse representations)
-   - `hybrid` (combines keyword + semantic)
-   - `agentic` (LLM-driven multi-step retrieval, requires OpenSearch 3.2+)
-
-2. **Target.** Where should the search app run?
-   - `local` (default) — Docker-based, fast iteration, optional AWS deployment later.
-   - `aws` — Deploy directly to Amazon OpenSearch Serverless. No Docker needed.
+Ask **one at a time**: search strategy and deployment preference. Present all five strategies:
+- `bm25` (keyword)
+- `dense_vector` (semantic via embeddings)
+- `neural_sparse` (semantic via learned sparse representations)
+- `hybrid` (combines keyword + semantic)
+- `agentic` (LLM-driven multi-step retrieval, requires OpenSearch 3.2+)
 
 ### Phase 3 — Plan
 
@@ -153,52 +160,30 @@ Design a search architecture. Read the relevant knowledge files:
 - [dense_vector_models.md](dense_vector_models.md)
 - [sparse_vector_models.md](sparse_vector_models.md)
 - [opensearch_semantic_search_guide.md](opensearch_semantic_search_guide.md)
-- [agentic_search_guide.md](agentic_search_guide.md)
+- [ml_inference_search_pipeline_guide.md](ml_inference_search_pipeline_guide.md) — for LLM-powered query rewriting (multilingual routing, intent detection, spell correction), per-hit LLM re-ranking, or grounded RAG answer synthesis at response time. **Prefer this over `agentic_search_guide.md` for single-shot RAG** — it's significantly simpler and works on AOSS NextGen.
+- [agentic_search_guide.md](agentic_search_guide.md) — only when the user genuinely needs multi-step reasoning, query decomposition, or tool orchestration. For straightforward "search + LLM-synthesized answer" use cases, the `ml_inference` response processor above is the right pick.
 - [document_processing_guide.md](document_processing_guide.md)
+
+**If the user wants per-document LLM enrichment at index time** (auto-tagging, NER, sentiment, summarization, PII redaction, auto-embedding with a non-trivial model), hand off to the [ingestion/ml-inference-ingest](../../ingestion/ml-inference-ingest/SKILL.md) skill before continuing this workflow. That skill returns to Phase 4 here once ingest is set up.
 
 Present the plan and wait for user approval.
 
 ### Phase 4 — Execute
 
-Execute the plan against the chosen target. Both targets end with the Search Builder UI connected and running.
+Execute the plan using `opensearch_ops.py` commands. When launching the UI, present the URL (default: `http://127.0.0.1:8765`).
 
-#### Target: `local`
+**For Agentic Search:** Ask for AWS credentials for Bedrock, then ask about agent type (Flow vs Conversational). See [cli-reference.md](../../cli-reference.md) for agentic setup commands.
 
-1. Start or connect to local cluster:
-   ```bash
-   uv run python scripts/opensearch_ops.py preflight-check
-   ```
-   - `"available"` → use it. `"auth_required"` → ask for credentials. `"no_cluster"` → `bash scripts/start_opensearch.sh`
-2. Create index, load data, configure pipelines using `opensearch_ops.py` commands.
-3. Launch the UI:
-   ```bash
-   uv run python scripts/opensearch_ops.py launch-ui --index <index-name>
-   ```
-4. Present: http://127.0.0.1:8765
+After the UI is running:
+> "Your search app is live! Here's what you can do next:"
+> 1. **Evaluate search quality** (Phase 4.5)
+> 2. **Deploy to Amazon OpenSearch Service** — use the `aws-setup` skill
+> 3. **Done for now** — Keep experimenting with the Search Builder UI.
 
-**For Agentic Search:** Ask for AWS credentials for Bedrock, then ask about agent type (Flow vs Conversational). See [cli-reference.md](../../cli-reference.md).
-
-After the UI is running, offer:
-> 1. **Evaluate search quality** (Phase 5)
-> 2. **Deploy to AWS** (Phase 6)
-> 3. **Done for now**
-
-#### Target: `aws`
-
-Hand off to [aws-setup](../../cloud/aws-setup/SKILL.md) skill — it handles provisioning, creating the index, loading data, and launching the UI connected to the AWS endpoint.
-
-After the UI is running, offer:
-> 1. **Evaluate search quality** (Phase 5)
-> 2. **Done for now**
-
-### Phase 5 — Evaluate (Optional)
+### Phase 4.5 — Evaluate (Optional)
 
 Read and follow [evaluation_guide.md](evaluation_guide.md). If HIGH severity findings exist, offer to restart from Phase 3.
 
-### Phase 6 — Deploy to AWS (Optional, target: `local` only)
+### Phase 5 — Deploy to AWS (Optional)
 
-For users who iterated locally and now want to deploy to AWS.
-
-Hand off to [aws-setup](../../cloud/aws-setup/SKILL.md) skill — it handles provisioning, deploying the search config, and launching the UI connected to the AWS endpoint.
-
-**End state (both targets):** Search Builder UI at http://127.0.0.1:8765 connected to the endpoint.
+Refer the user to the [aws-setup](../../cloud/aws-setup/SKILL.md) skill for the full deployment workflow.
