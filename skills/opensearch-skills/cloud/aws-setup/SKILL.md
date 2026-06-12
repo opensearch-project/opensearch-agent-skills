@@ -93,9 +93,8 @@ For Amazon OpenSearch Serverless (AOSS):
 
 ## Key Rules
 
-- Do not describe **Amazon OpenSearch Serverless** as scaling to zero.
-- **Agentic search** does not deploy to **Serverless V1** — use a **managed domain** or **Serverless NextGen**.
-- **Serverless NextGen (V2)** supports only **flow agents** — conversational agents require a managed domain.
+- **Agentic search** does not deploy to **Serverless Classic** — use a **managed domain** or **Serverless NextGen**.
+- **Serverless NextGen** supports only **flow agents** — conversational agents require a managed domain.
 - Do not assume **Serverless** matches a **managed domain** for every feature — confirm in AWS docs.
 - Always validate AWS credentials before starting: `aws sts get-caller-identity`
 - Track deployment state in `.opensearch-deploy-state.json` at the workspace root.
@@ -103,7 +102,7 @@ For Amazon OpenSearch Serverless (AOSS):
 
 ## Deployment Target Selection
 
-Default deployment target is **Serverless NextGen** for all strategies except conversational agentic search. Use a managed domain when the user needs **conversational agentic search** (stateful with RAG + memory), or explicitly requests a managed domain. Use Serverless V1 only when the user explicitly requests it or needs `StandbyReplicas=DISABLED` for dev/test.
+Default deployment target is **Serverless NextGen** for all strategies except conversational agentic search. Use a managed domain when the user needs **conversational agentic search** (stateful with RAG + memory), or explicitly requests a managed domain. Use Serverless Classic only when the user explicitly requests it or needs `StandbyReplicas=DISABLED` for dev/test.
 
 | Strategy | Target | Collection Type | Why |
 |---|---|---|---|
@@ -113,7 +112,7 @@ Default deployment target is **Serverless NextGen** for all strategies except co
 | `hybrid` | Serverless NextGen | VECTORSEARCH | Combines BM25 + vector with GPU acceleration |
 | `agentic` (flow) | Serverless NextGen | SEARCH | Stateless query planning, low latency, managed infra |
 | `agentic` (conversational) | Domain | — | Stateful with RAG + memory, multi-turn conversations |
-| Any (V1 requested) | Serverless V1 | — | Standard SDK, `StandbyReplicas=DISABLED` for dev/test |
+| Any (Classic requested) | Serverless Classic | — | Standard SDK, `StandbyReplicas=DISABLED` for dev/test |
 
 ## Workflow
 
