@@ -1,0 +1,51 @@
+name: Hackathon - submission idea
+description: Submit your idea and team to the OpenSearch Agent-Skills Hackathon
+title: "[Hackathon] <project title>"
+labels: ['hackathon, untriaged']
+body:
+  - type: checkboxes
+    id: charter_reviewed
+    attributes:
+      label: Prerequisites
+      description: Before submitting a Hackathon project idea, please review the following
+      options:
+        - label: I have reviewed and accept the [Official Rules](https://opensearch.org/events/agent-skills-hackathon-us-2026/official-rules/).
+          required: true
+        - label: I have reviewed and accept the [Code of Conduct](https://opensearch.org/code-of-conduct/).
+          required: true
+
+  - type: input
+    id: name
+    attributes:
+      label: "Submission name"
+      description: "Name of the Agent Skills Hackathon submission"
+      placeholder: e.g., Launchpad, Agent Smith, Trinity
+    validations:
+      required: true
+
+  - type: textarea
+    id: team_members
+    attributes:
+      label: "Who is on this hackathon project team"
+      description: "Please tag in each member's GitHub username, including your own"
+      placeholder: e.g., @username
+    validations:
+      required: true
+
+  - type: textarea
+    id: project_description
+    attributes:
+      label: "What are you building?"
+      description: "Please describe your idea and what this agent skill is going to accomplish"
+      placeholder: "e.g., This will allow Neo to use OpenSearch to evade Agent Smith. Trinity will run X, Y, Z processes concurrently to ensure his safe passage and avoid being refactored"
+    validations:
+      required: true
+
+  - type: textarea
+    id: additional_info
+    attributes:
+      label: "Additional Information"
+      description: "Any additional information you'd like to share about your proposed project"
+      placeholder: e.g., example use cases, benefits, etc.
+    validations:
+      required: false
