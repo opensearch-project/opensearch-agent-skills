@@ -364,7 +364,7 @@ Processors run in sequence. The second processor can read fields written by the 
 |---|---|---|---|
 | `model_config` override | Y | Y | Y |
 | `model_input` field | Y | Y | N Not supported |
-| Error messages | Full detail | Full detail | All 4xx masked as 403 |
+| Error messages | Full detail | Full detail | Full detail |
 | Pipeline creation | Immediate | Immediate | Eventually consistent (~30s) |
 | Connector auth | Optional | IAM role required | IAM role mandatory |
 | `_simulate` | Y | Y | Y (best debugging tool on AOSS) |

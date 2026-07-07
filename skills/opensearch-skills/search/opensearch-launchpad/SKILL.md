@@ -10,10 +10,9 @@ description: >
   multilingual query routing, LLM rerank, grounded RAG synthesis, auto-embedding,
   auto-tagging, document enrichment at index time, sentiment classification,
   NER extraction, PII redaction at ingest, ingest pipeline with LLM,
-  connector setup, Bedrock connector, AOSS 403 Forbidden on search pipeline,
-  AOSS error masking, or any related search topic. Activate even if the user
-  says search quality, evaluation, nDCG, precision, relevance tuning, or
-  search builder without mentioning OpenSearch.
+  connector setup, Bedrock connector, or any related search topic. Activate
+  even if the user says search quality, evaluation, nDCG, precision, relevance
+  tuning, or search builder without mentioning OpenSearch.
 compatibility: Requires uv. Target local requires Docker. Target aws requires AWS credentials (no Docker).
 metadata:
   author: opensearch-project

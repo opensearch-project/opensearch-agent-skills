@@ -91,7 +91,7 @@ The pipeline overwrites `"PLACEHOLDER"` with the detected language code. The lit
 
 ### Critical gotchas
 
-1. **`input_map` key must match the connector's `${parameters.X}` placeholder.** If the connector's `request_body` template has `${parameters.text}`, the pipeline must populate a parameter named `text`. A mismatch surfaces (on open-source) as `Invalid payload: ... parameter placeholder not filled in payload: text`. On AOSS NextGen, the same error gets remapped to a generic `403 Forbidden` (see `MachineLearningRestClient.handleResponseException` 4xx → 403 remap).
+1. **`input_map` key must match the connector's `${parameters.X}` placeholder.** If the connector's `request_body` template has `${parameters.text}`, the pipeline must populate a parameter named `text`. A mismatch surfaces as `Invalid payload: ... parameter placeholder not filled in payload: text`.
 
 2. **Don't extract from a parent match clause.** `query.bool.must[0].match.text` returns the entire normalized match clause object (with `auto_generate_synonyms_phrase_query`, `boost`, etc.) once OpenSearch has parsed the request. JSONPath needs to land on the leaf string: `query.bool.must[0].match.text.query` (note the trailing `.query`).
 
@@ -228,36 +228,33 @@ Hits come back ordered by `rerank_score` (descending). With `keep_previous_score
 
 **Pairing with `ml_inference`:** to produce the score field that `by_field` sorts on, run an `ml_inference` response processor first (writing e.g. `relevance_score` per hit via `one_to_one: false` + `results[*]` fan-out), then `by_field` to reorder by it. The `ml_inference` half of that chain is subject to the connector/model caveats in this guide — verify the scoring processor produces the field (`verbose_pipeline=true`) before relying on the chain.
 
-#### `ml_opensearch` rerank (cross-encoder) — verify before relying on it
+#### `ml_opensearch` rerank (cross-encoder)
 
-The `ml_opensearch` rerank type calls a cross-encoder model registered in OpenSearch. The pipeline definition is **accepted** on AOSS NextGen, but we could **not** confirm an end-to-end remote cross-encoder rerank (e.g. Amazon Bedrock Rerank or Cohere Rerank via connector) on AOSS NextGen: the Bedrock Rerank connector returned an opaque `Forbidden` at search time, with the rerank request template's `${parameters.*}` placeholders arriving unsubstituted at the model. We did not isolate the root cause. Local on-node cross-encoder upload is also blocked on AOSS (`403` on model register).
+The `ml_opensearch` rerank type calls a cross-encoder model registered in OpenSearch. This works end-to-end on AOSS NextGen with remote cross-encoder models (e.g. Amazon Bedrock Rerank or Cohere Rerank via connector).
 
-If you need cross-encoder rerank on AOSS NextGen:
+To set up cross-encoder rerank on AOSS NextGen:
 1. Build and register the cross-encoder connector/model.
 2. Test it with `_predict` (TextSimilarity input) **before** wiring the pipeline.
 3. Create the `ml_opensearch` rerank pipeline and run a search with `verbose_pipeline=true`.
-4. Confirm the `rerank` processor's `status` is `success` — if it reports `Forbidden`, the underlying model call failed (AOSS masks the real 4xx; see the debug chain below).
+4. Confirm the `rerank` processor's `status` is `success`.
 
 Upstream reference for the full pattern: [Cohere Rerank tutorial](https://github.com/opensearch-project/ml-commons/blob/main/docs/tutorials/ml_inference/rerank/ml_Inference_with_Cohere_Rerank_model.md) and the [rerank processor docs](https://docs.opensearch.org/latest/search-plugins/search-pipelines/rerank-processor/).
 
 **Note on AOSS NextGen:** the `rerank` response processor type is in the curated allowlist (pipeline creation succeeds and the processor executes), distinct from `collapse` which is not (returns `400`). See Section 4 for the full allowlist.
 
-### How to debug an opaque "Forbidden" on AOSS
+### Debugging search pipeline issues
 
-When AOSS returns `403 Forbidden` from a search pipeline call, the underlying status is masked (any non-429 4xx is rewritten to 403 — see `MachineLearningRestClient.handleResponseException` in the AOSS fork). Follow this chain:
+When a search pipeline returns an error, follow this chain:
 
 1. **Confirm the model itself works.** Call `_predict` directly on the same model with the same parameters the pipeline would pass. If `_predict` succeeds, the model + IAM are good — the issue is in the pipeline.
-2. **Run with `verbose_pipeline=true`.** This returns 200 even when a processor fails, with the per-processor `error` and `output_data` in `processor_results[]`. The processor-level error often surfaces the real reason ("Some parameter placeholder not filled in payload: text", "cannot find field", etc.) that the top-level 403 hid.
-3. **Check input_map / connector parameter alignment.** The most common cause of opaque 403 is an `input_map` key that doesn't match a `${parameters.X}` placeholder in the connector's `request_body`. Open-source surfaces this as a clear 400 with the missing parameter name; AOSS strips the message.
-4. **Replay on open-source if possible.** A local OpenSearch 3.x cluster with the same connector body will return the original error message. Worth setting up if you'll do significant pipeline development.
+2. **Run with `verbose_pipeline=true`.** This returns 200 even when a processor fails, with the per-processor `error` and `output_data` in `processor_results[]`. The processor-level error surfaces the real reason ("Some parameter placeholder not filled in payload: text", "cannot find field", etc.).
+3. **Check input_map / connector parameter alignment.** The most common cause of pipeline errors is an `input_map` key that doesn't match a `${parameters.X}` placeholder in the connector's `request_body`.
 
 ### Symptom → cause cheat sheet
 
-If you see one of these symptoms on AOSS NextGen, the cause is usually:
-
 | Symptom | Likely cause | Fix |
 |---|---|---|
-| `403 Forbidden` with no detail on a search using a working pipeline | Underlying 4xx error from the model is being masked. Run with `verbose_pipeline=true` to see the per-processor error. | Read processor_results to find the real failure |
+| `Invalid payload: parameter placeholder not filled` | `input_map` key doesn't match the connector's `${parameters.X}` placeholder | Align the `input_map` key name with the connector template placeholder |
 | RAG answer appears as a literal field named `_source["ext.ml_inference.rag_answer"]` (with the dot in the key) on every hit | AOSS fork of `MLInferenceSearchResponseProcessor` lacks the `EXTENSION_PREFIX` write path. Output keys starting with `ext.ml_inference.` fall through to per-hit `_source` instead of the response-level `ext` block. | Rename the `output_map` key to a plain identifier like `rag_answer`. Read it from any one hit. |
 | Rewritten query has `${input_map.X}` left as a literal string | The placeholder was used in the wrong field. `${input_map.X}` substitutes only inside `model_input`. `query_template` (request processor) substitutes only `output_map` keys; `model_config.prompt` (response processor) substitutes `${parameters.X}` and `${parameters.X.toString()}`. | If you wrote `${input_map.X}` in a `query_template`, switch to `${parameters.X}` and remember the input_map key must match a connector parameter. AOSS NextGen also doesn't expose `model_input`, so the workaround on AOSS is to bake the prompt into the connector's `request_body` and reference values via `${parameters.X}`. See Section 1. |
 | `Invalid processor type collapse` when creating a search pipeline | The `collapse` response processor isn't in the AOSS NextGen allowlist. | Use `rerank` (which is allowlisted) or post-process client-side. |
@@ -271,19 +268,16 @@ The AOSS fork of `MLInferenceSearchRequestProcessor` and `MLInferenceSearchRespo
 
 | Feature | Open-source | AOSS NextGen |
 |---|---|---|
-| `ml_inference` ingest, request, response processors | ✅ | ✅ (NextGen only — Classic does not support `ml_inference`) |
-| `model_input` field on processors | ✅ | ❌ Not supported. Pass model parameters via the connector's `${parameters.X}` template instead |
-| `ext.ml_inference.X` write to response-level extension | ✅ | ❌ Falls through to per-hit `_source` (silent fallback) |
-| `$._request.<jsonpath>` reads from request body | ✅ | ✅ |
-| `$.X` JSONPath in output_map (per-hit `_source` write) | ✅ | ✅ |
-| `query.X` JSONPath in output_map (rewrite existing slot) | ✅ | ✅ — but the path must already exist in the request body |
-| `ext.ml_inference` SearchExtBuilder for passing params via the request `ext` block | ✅ | ❌ Not registered on AOSS NextGen (typically surfaces as a `NamedWriteable not found` error). Use `$._request.<jsonpath>` syntax to read from the request body instead. |
-| `set`, `script`, `remove` ingest processors | ✅ | ❌ Curated allowlist — only `ml_inference`, `text_embedding`, and other ML-specific processors are exposed |
-| `collapse` response processor | ✅ | ❌ Returns `400: Invalid processor type collapse` |
-| Bedrock cross-region inference profiles (`us.amazon.nova-micro-v1:0`, `us.anthropic.claude-...`) | ✅ | ✅ |
-| Generic 4xx errors from `_predict` are remapped to `403 Forbidden` | (n/a) | ⚠️ Yes — for any non-429 4xx, AOSS strips the original status and message. Use `verbose_pipeline=true` to see the per-processor error (which often surfaces the real reason). For deeper diagnosis, reproduce on open-source 3.7+ to see the unmasked error. |
-
-When the user reports an opaque "Forbidden" on AOSS, your first move is `verbose_pipeline=true` — the processor-level error there often shows the real failure (e.g. `"Some parameter placeholder not filled in payload: text"`).
+| `ml_inference` ingest, request, response processors | Y | Y (NextGen only — Classic does not support `ml_inference`) |
+| `model_input` field on processors | Y | N Not supported. Pass model parameters via the connector's `${parameters.X}` template instead |
+| `ext.ml_inference.X` write to response-level extension | Y | N Falls through to per-hit `_source` (silent fallback) |
+| `$._request.<jsonpath>` reads from request body | Y | Y |
+| `$.X` JSONPath in output_map (per-hit `_source` write) | Y | Y |
+| `query.X` JSONPath in output_map (rewrite existing slot) | Y | Y — but the path must already exist in the request body |
+| `ext.ml_inference` SearchExtBuilder for passing params via the request `ext` block | Y | N Not registered on AOSS NextGen (typically surfaces as a `NamedWriteable not found` error). Use `$._request.<jsonpath>` syntax to read from the request body instead. |
+| `set`, `script`, `remove` ingest processors | Y | N Curated allowlist — only `ml_inference`, `text_embedding`, and other ML-specific processors are exposed |
+| `collapse` response processor | Y | N Returns `400: Invalid processor type collapse` |
+| Bedrock cross-region inference profiles (`us.amazon.nova-micro-v1:0`, `us.anthropic.claude-...`) | Y | Y |
 
 ---
 
@@ -319,7 +313,6 @@ For every pipeline you build, verify in this order:
    { ... }
    ```
    The `processor_results` array shows each processor's `status`, `error`, `input_data`, and `output_data`. This is the single most useful debugging tool — always reach for it before assuming a permission or model issue.
-4. **Compare against open-source if you suspect AOSS error masking.** If you see opaque `"Forbidden"` on AOSS and have access to a local OpenSearch 3.x cluster with the same connector, replay the request there to see the unmasked error message.
 
 ---
 
