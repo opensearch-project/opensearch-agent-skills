@@ -3,7 +3,7 @@
 Use this guide when the user wants to call a machine learning model **at query time or response time** — query rewriting, intent detection, multilingual routing, query expansion, LLM re-ranking, or grounded RAG answer synthesis. The same `ml_inference` processor handles all of these via two variants: **search request** processor and **search response** processor.
 
 > Related guides
-> - For ingest-time enrichment (auto-embeddings, classification at index time), see [`ingestion/ml-inference-ingest/`](../../ingestion/ml-inference-ingest/SKILL.md) instead.
+> - For ingest-time enrichment (auto-embeddings, classification at index time), see [`ml_inference_ingest_guide.md`](ml_inference_ingest_guide.md) instead.
 > - For the simpler pre-built `neural` query (text → kNN), see [`opensearch_semantic_search_guide.md`](opensearch_semantic_search_guide.md). Use `ml_inference` request processor only when you need advanced behavior `neural` query can't express.
 > - For agentic search (LLM-driven multi-step retrieval), see [`agentic_search_guide.md`](agentic_search_guide.md). `ml_inference` is a lighter, single-shot tool — use it when you need predictable inline LLM enrichment, not multi-step planning.
 
@@ -345,7 +345,7 @@ When a user asks for query-time or response-time LLM enrichment:
 
 ## 8. Verified Examples (AOSS V2 Beta — Claude Sonnet 4.6)
 
-All examples verified end-to-end on a live AOSS V2 collection (us-east-1) using the same connector and model described in [`ingestion/ml-inference-ingest/verified_examples.md`](verified_examples.md).
+All examples verified end-to-end on a live AOSS V2 collection (us-east-1) using the same connector and model described in [`verified_examples.md`](verified_examples.md).
 
 ### 8a. Search Response Processor — Per-Hit Sentiment + NER
 
