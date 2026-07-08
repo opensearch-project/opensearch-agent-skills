@@ -341,7 +341,7 @@ The `ml_inference` processor works across all three platforms, but each has uniq
 | **`verbose_pipeline=true`** | ✅ Works | ✅ Works | ✅ Works — **use this as primary debug tool** since errors are masked |
 | **`_simulate` (ingest)** | ✅ Full error details | ✅ Full error details | ✅ Better error surface than live ingest (use for debugging) |
 | **Rerank `by_field`** | ✅ Works | ✅ Works | ✅ Verified working |
-| **Rerank `ml_opensearch`** | ✅ Works | ✅ Works | ⚠️ Documented but unverified on AOSS |
+| **Rerank `ml_opensearch`** | ✅ Works | ✅ Works | ✅ Verified working
 | **Max model timeout** | Configurable | Configurable | Default limits apply |
 
 ### Platform-Specific Tips
