@@ -12,6 +12,7 @@ sys.path.insert(0, str(_SCRIPTS_DIR))
 from lib.samples import (
     _load_records_from_file,
     _infer_text_fields,
+    _validate_url,
     load_sample_from_file,
     load_sample_from_paste,
 )
@@ -208,6 +209,59 @@ def test_load_sample_from_paste_text_field_detection():
 
     assert "title" in result["text_fields"]
     assert "code" not in result["text_fields"]
+
+
+# ---------------------------------------------------------------------------
+# _validate_url — SSRF prevention
+# ---------------------------------------------------------------------------
+def test_validate_url_rejects_file_scheme():
+    with pytest.raises(ValueError, match="http or https"):
+        _validate_url("file:///etc/passwd")
+
+
+def test_validate_url_rejects_ftp_scheme():
+    with pytest.raises(ValueError, match="http or https"):
+        _validate_url("ftp://example.com/data.csv")
+
+
+def test_validate_url_rejects_no_scheme():
+    with pytest.raises(ValueError, match="http or https"):
+        _validate_url("/etc/passwd")
+
+
+def test_validate_url_rejects_loopback(monkeypatch):
+    monkeypatch.setattr(
+        "socket.getaddrinfo",
+        lambda *a, **kw: [(None, None, None, None, ("127.0.0.1", 443))],
+    )
+    with pytest.raises(ValueError, match="restricted address"):
+        _validate_url("https://localhost/secret")
+
+
+def test_validate_url_rejects_private_ip(monkeypatch):
+    monkeypatch.setattr(
+        "socket.getaddrinfo",
+        lambda *a, **kw: [(None, None, None, None, ("10.0.0.1", 443))],
+    )
+    with pytest.raises(ValueError, match="restricted address"):
+        _validate_url("https://internal.corp/data")
+
+
+def test_validate_url_rejects_link_local(monkeypatch):
+    monkeypatch.setattr(
+        "socket.getaddrinfo",
+        lambda *a, **kw: [(None, None, None, None, ("169.254.169.254", 80))],
+    )
+    with pytest.raises(ValueError, match="restricted address"):
+        _validate_url("http://169.254.169.254/latest/meta-data/")
+
+
+def test_validate_url_allows_public_ip(monkeypatch):
+    monkeypatch.setattr(
+        "socket.getaddrinfo",
+        lambda *a, **kw: [(None, None, None, None, ("93.184.216.34", 443))],
+    )
+    _validate_url("https://example.com/data.json")  # should not raise
 
 
 # ---------------------------------------------------------------------------

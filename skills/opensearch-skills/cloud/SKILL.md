@@ -31,3 +31,11 @@ Read [aws-setup/SKILL.md](aws-setup/SKILL.md) when the user wants to:
 - Deploy a local search setup to AWS
 - Set up Bedrock connectors for ML models
 - Configure IAM roles and access policies for OpenSearch
+
+## Usage Attribution
+
+For all cloud work under this category, tag AWS requests with the application id `opensearch-agent-skills` so calls made by these skills are attributable in AWS-side logs:
+- **Shell `aws` commands:** prefix per-command with `AWS_SDK_UA_APP_ID=opensearch-agent-skills` (never `export` globally).
+- **`awslabs.aws-api-mcp-server`:** set `"AWS_SDK_UA_APP_ID": "opensearch-agent-skills"` in the server's MCP `env` block.
+
+This applies to every AWS service (opensearch, opensearchserverless, iam, sts, s3, …), not just OpenSearch calls.

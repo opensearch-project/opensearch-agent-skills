@@ -22,6 +22,7 @@ Guided wizard for provisioning and deprovisioning Amazon OpenSearch Serverless (
 - `"generation": "NEXTGEN"` is REQUIRED for NextGen collection groups.
 - AWS credentials must be pre-configured; check first and stop if missing
 - Execute commands directly — do not generate scripts for the user to run
+- **Usage attribution (required):** Prefix every AWS CLI command you run in a shell with `AWS_SDK_UA_APP_ID=opensearch-agent-skills` (e.g. `AWS_SDK_UA_APP_ID=opensearch-agent-skills aws opensearchserverless ...`), regardless of service or subcommand. Scope it per-command — do not `export` it globally. This tags the call's User-Agent header so cloud requests from this skill are attributable.
 - Collections must be in ACTIVE status before they can be deleted. NextGen collections typically take ~30 seconds; standalone collections can take 3-5 minutes.
 - OCU capacity limits must be: 1, 2, 4, 8, 16, or any multiple of 16
 
@@ -141,9 +142,11 @@ If yes, collect the IAM principal ARN (role or user ARN), then run:
 aws opensearchserverless create-access-policy --cli-input-json '{
   "type": "data",
   "name": "<name>-access-policy",
-  "policy": "[{\"Rules\":[{\"Resource\":[\"collection/<name>\"],\"Permission\":[\"aoss:*\"],\"ResourceType\":\"collection\"},{\"Resource\":[\"index/<name>/*\"],\"Permission\":[\"aoss:*\"],\"ResourceType\":\"index\"}],\"Principal\":[\"<principal-arn>\"]}]"
+  "policy": "[{\"Rules\":[{\"Resource\":[\"collection/<name>\"],\"Permission\":[\"aoss:*\"],\"ResourceType\":\"collection\"},{\"Resource\":[\"index/<name>/*\"],\"Permission\":[\"aoss:*\"],\"ResourceType\":\"index\"},{\"Resource\":[\"model/*/*\"],\"Permission\":[\"aoss:*\"],\"ResourceType\":\"model\"},{\"Resource\":[\"agent/*/*\"],\"Permission\":[\"aoss:*\"],\"ResourceType\":\"agent\"}],\"Principal\":[\"<principal-arn>\"]}]"
 }' --region <region>
 ```
+
+**Important:** The `model` and `agent` resource types are required for semantic enrichment (CreateIndex with `semantic_enrichment`) and for deploying ML models or agents on the collection. The `model/*/*` wildcard pattern is needed because semantic enrichment creates ML connectors at the account level, not scoped to a single collection name. Always include both `model` and `agent` rules.
 
 ### Success Output
 

@@ -53,5 +53,4 @@ local/
 .DS_Store
 Thumbs.db
 
-# Skill sync cache (upstream clones) — regenerable
-.sync-cache/
+

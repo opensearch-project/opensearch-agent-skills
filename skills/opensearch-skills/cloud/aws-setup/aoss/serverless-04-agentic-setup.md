@@ -1,8 +1,8 @@
 # Amazon OpenSearch Serverless NextGen — Configure Flow Agent Search
 
-This guide configures flow agent agentic search on a V2 serverless collection.
+This guide configures flow agent agentic search on a serverless nextgen collection.
 
-Only **flow agents** are supported on V2 serverless. Flow agents are stateless — each query is independently planned and executed via `QueryPlanningTool`. For conversational agents (stateful with RAG + memory), use a managed domain instead.
+Only **flow agents** are supported on serverless nextgen. Flow agents are stateless — each query is independently planned and executed via `QueryPlanningTool`. For conversational agents (stateful with RAG + memory), use a managed domain instead.
 
 ## Prerequisites
 
@@ -112,7 +112,7 @@ POST <collection-endpoint>/_plugins/_ml/agents/_register
 ```
 
 Notes:
-- `type` must be `flow` — conversational agents are not supported on V2 serverless
+- `type` must be `flow` — conversational agents are not supported on serverless nextgen
 - Only `QueryPlanningTool` is needed — it handles index mapping introspection internally
 - `response_filter` tells the tool how to extract the LLM response from the Bedrock Converse output
 - No `llm` block needed — the model is referenced inside the tool's `parameters`

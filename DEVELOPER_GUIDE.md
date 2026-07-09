@@ -2,11 +2,6 @@
 
 This guide covers how to contribute new skills, local development, testing, and conventions.
 
-Two ways to contribute a skill:
-
-1. **Author it here** — write a skill directly in this repo under `skills/`. See *Contributing a New Skill* below.
-2. **Mirror it from an upstream repo** — register a YAML source under `sync/sources/` and the sync framework replays the upstream history into `skills/` every hour. See *Mirroring an Upstream Skill* further down.
-
 ---
 
 ## Contributing a New Skill
@@ -183,94 +178,6 @@ CI runs evals weekly (Monday 06:00 UTC) and on any push that touches `skills/**`
 ### CI
 
 GitHub Actions runs the full test suite on every push and PR across Linux, macOS, and Windows. See `.github/workflows/ci.yml`.
-
----
-
-## Mirroring an Upstream Skill
-
-Some skills live in their home project's repo (e.g. an integration skill shipped alongside the tool it wraps). Rather than duplicating the content here and letting it rot, this repo can **sync subdirectories from upstream repos** directly into `skills/` on a schedule, preserving per-commit authorship and history. Synced skills sit side-by-side with skills authored here — from an agent's perspective they're all just entries under `skills/`.
-
-### How it works (1-minute version)
-
-- One YAML file per upstream source under `sync/sources/` declares `url`, `branch`, `src_path`, `dest_path`.
-- A scheduled GitHub Action (`Sync Skills`) runs every hour.
-- For each source, the engine enumerates upstream commits that touched `src_path` since the last-synced SHA, replays each as its own commit here via `git format-patch | git am --directory=<dest_path>`, prefixes the subject with `[<source-name>]`, and appends `Source-Repo` / `Source-Commit` / `Co-authored-by` trailers. The original author and date survive — the GitHub contributor graph credits upstream authors.
-- `sync/state.json` tracks the last-synced SHA per source so subsequent runs are incremental.
-- Each source is isolated: a failure in one (bad patch, spec violation, upstream outage) opens a tracking issue and does not block the others.
-
-Full engine semantics are documented in [`sync/README.md`](sync/README.md). Engine source + tests live in [`sync-bot/`](sync-bot/).
-
-### Adding a new upstream source
-
-The entire flow is: drop one YAML file, open a PR.
-
-1. Create `sync/sources/<short-name>.yaml`:
-
-   ```yaml
-   # Sync source: <short-name>
-   name: <short-name>                              # unique id (state key + commit-subject prefix)
-   url: https://github.com/<org>/<repo>.git
-   branch: main
-   src_path: skills/<upstream-skill-dir>           # subdir in upstream to mirror
-   dest_path: skills/<upstream-skill-dir>          # where it lands here (sibling of authored skills)
-   ```
-
-   Rules:
-   - `name` must be unique across `sync/sources/` (hard error otherwise).
-   - `dest_path`'s **leaf** directory name must equal the upstream `SKILL.md`'s `name:` field — the Agent Skills Spec validator enforces this and rolls back the import on mismatch.
-   - Files are processed in lexicographic order, so filenames double as a sync-order knob.
-
-2. Commit the YAML on a branch, push, open a PR.
-
-3. `Sync Skills` auto-fires on PRs that touch `sync/sources/**`. It replays the upstream history into `dest_path`, pushes those commits onto your PR branch, and re-runs CI + dry-run spec validation against the post-sync HEAD. Review the replayed commits, then merge.
-
-PRs opened from forks skip the auto-push (GitHub denies write tokens to forks) but still run dry-run validation, so config mistakes surface before merge. The fork owner can still preview the replayed commits before merge by dispatching `Sync Skills` on their own fork against the PR branch — that run executes under the fork's write-scoped token and pushes the imports onto the PR branch:
-
-```bash
-gh workflow run sync-skills.yml \
-  --repo <you>/opensearch-agent-skills \
-  --ref <your-pr-branch> \
-  -f only=<new-source-name>
-```
-
-Note: enabling "Allow edits and access to secrets by maintainers" on the PR does **not** unblock this — that toggle applies to human pushes; `pull_request`-event workflow tokens from forks are read-only regardless.
-
-### Running the sync locally
-
-The engine is a standalone [uv](https://docs.astral.sh/uv/)-managed Python package under `sync-bot/`.
-
-```bash
-# Dry run (prints planned imports, writes nothing)
-uv run --project sync-bot opensearch-skills-sync --dry-run
-
-# Full sync (writes state.json + creates commits)
-uv run --project sync-bot opensearch-skills-sync
-
-# Sync a single source
-uv run --project sync-bot opensearch-skills-sync --only <source-name>
-
-# Custom sources directory (useful for experimentation)
-uv run --project sync-bot opensearch-skills-sync --sources-dir path/to/sources
-```
-
-Tests for the engine itself:
-
-```bash
-uv run --project sync-bot pytest
-```
-
-A dedicated CI workflow (`sync-bot-ci.yml`) runs these tests on Linux and macOS against the pinned `uv.lock` — independently of the skill-contents test suite.
-
-### Resetting a source
-
-To force a full re-import of an upstream (e.g. you changed `src_path` or the upstream did a history rewrite), delete that source's entry from `sync/state.json.sources` and commit. The next run treats it as a first-time sync and replays the upstream history bounded by the blob-filtered clone.
-
-### Conventions for synced skills
-
-- **Do not hand-edit** files in a synced skill's directory. Which skills are synced is declared in `sync/sources/*.yaml` — check there before editing. Changes to a synced skill will be overwritten on the next sync, or — worse — cause `git am` conflicts that abort the source. Fix issues upstream and let the sync pull them in.
-- **Synced commits are prefixed** with `[<source-name>]` in the subject line (LLVM-monorepo style) so mixed history is greppable: `git log --oneline | grep '^\w* \[anthropic-skill-creator\]'`.
-- **Sync-bot commits** (state.json advances, framework housekeeping) are authored by `opensearch-ci-bot` with a stable noreply email. Content commits keep their upstream author.
-- `sync/state.json` is committed to the repo. Do not add it to `.gitignore` — incremental sync depends on it being in HEAD.
 
 ---
 

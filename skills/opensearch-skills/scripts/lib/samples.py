@@ -1,11 +1,14 @@
 """Sample data loading for OpenSearch search builder."""
 
 import csv
+import ipaddress
 import json
 import os
+import socket
 import sys
 import urllib.request
 from pathlib import Path
+from urllib.parse import urlparse
 
 from .client import create_client
 
@@ -100,8 +103,24 @@ def load_sample_from_file(file_path: str) -> str:
     }, ensure_ascii=False, default=str)
 
 
+def _validate_url(url: str) -> None:
+    """Validate URL to prevent SSRF and local file disclosure."""
+    parsed = urlparse(url)
+    if parsed.scheme not in ("http", "https"):
+        raise ValueError(f"URL scheme must be http or https, got: {parsed.scheme!r}")
+    hostname = parsed.hostname
+    if not hostname:
+        raise ValueError("URL must include a hostname")
+    # Resolve hostname and reject private/loopback/link-local addresses
+    for info in socket.getaddrinfo(hostname, parsed.port or 443, proto=socket.IPPROTO_TCP):
+        addr = ipaddress.ip_address(info[4][0])
+        if addr.is_private or addr.is_loopback or addr.is_link_local or addr.is_reserved:
+            raise ValueError(f"URL resolves to a restricted address: {addr}")
+
+
 def load_sample_from_url(url: str) -> str:
     try:
+        _validate_url(url)
         req = urllib.request.Request(url, headers={"User-Agent": "opensearch-skills/1.0"})
         with urllib.request.urlopen(req, timeout=30) as resp:
             content = resp.read().decode("utf-8", errors="replace")

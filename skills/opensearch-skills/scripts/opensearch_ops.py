@@ -20,9 +20,9 @@ Commands:
     create-pipeline        Create and attach an ingest/search pipeline
     index-doc              Index a single document
     index-bulk             Bulk index documents from sample data
-    launch-ui              Launch the Search Builder UI
-    connect-ui             Connect Search UI to a remote endpoint
+    launch-ui              Launch the Search Builder UI (local or remote endpoint)
     search                 Run a search query
+    submit-feedback        Submit anonymous skill feedback
     load-sample            Load sample data (file, URL, builtin IMDB)
     cleanup                Stop UI and clean up
     read-knowledge         Read a knowledge base reference file
@@ -123,17 +123,16 @@ def cmd_index_bulk(args):
 
 
 def cmd_launch_ui(args):
-    from lib import client as client_lib
     from lib.ui import launch_ui
 
-    user = (getattr(args, "username", None) or "").strip()
-    pwd = (getattr(args, "password", None) or "").strip()
-    if user and pwd:
-        os.environ[client_lib.OPENSEARCH_AUTH_MODE_ENV] = client_lib.OPENSEARCH_AUTH_MODE_CUSTOM
-        os.environ[client_lib.OPENSEARCH_USER_ENV] = user
-        os.environ[client_lib.OPENSEARCH_PASSWORD_ENV] = pwd
-
-    result = launch_ui(args.index or "")
+    result = launch_ui(
+        index_name=args.index or "",
+        endpoint=args.endpoint or "",
+        aws_region=args.aws_region or "",
+        aws_service=args.aws_service or "",
+        username=args.username or "",
+        password=args.password or "",
+    )
     print(result)
     if "started" in result.lower() or "running" in result.lower():
         # Keep process alive while UI is running
@@ -146,18 +145,24 @@ def cmd_launch_ui(args):
             print("\nStopping UI server.", file=sys.stderr)
 
 
-def cmd_connect_ui(args):
-    from lib.ui import connect_ui
-    print(connect_ui(
-        endpoint=args.endpoint,
-        port=args.port,
-        use_ssl=not args.no_ssl,
-        username=args.username or "",
-        password=args.password or "",
-        aws_region=args.aws_region or "",
-        aws_service=args.aws_service or "",
-        index_name=args.index or "",
-    ))
+def cmd_submit_feedback(args):
+    from lib.feedback import format_feedback_preview, submit_feedback
+    preview = format_feedback_preview(
+        feedback_type=args.type,
+        skill_name=args.skill,
+        context=args.context or "",
+        comment=args.comment or "",
+        rating=args.rating or "",
+    )
+    print(preview)
+    result = submit_feedback(
+        feedback_type=args.type,
+        skill_name=args.skill,
+        context=args.context or "",
+        comment=args.comment or "",
+        rating=args.rating or "",
+    )
+    print(result)
 
 
 def cmd_search(args):
@@ -197,10 +202,13 @@ def cmd_cleanup(args):
 
 
 def cmd_read_knowledge(args):
-    knowledge_dir = os.path.join(
-        os.path.dirname(__file__), "..", "references", "knowledge"
+    knowledge_dir = os.path.realpath(
+        os.path.join(os.path.dirname(__file__), "..", "references", "knowledge")
     )
-    target = os.path.join(knowledge_dir, args.file)
+    target = os.path.realpath(os.path.join(knowledge_dir, args.file))
+    if not target.startswith(knowledge_dir + os.sep) and target != knowledge_dir:
+        print(f"Error: path escapes knowledge directory: {args.file}", file=sys.stderr)
+        sys.exit(1)
     if not os.path.isfile(target):
         available = os.listdir(knowledge_dir) if os.path.isdir(knowledge_dir) else []
         print(f"File not found: {args.file}. Available: {available}", file=sys.stderr)
@@ -389,27 +397,19 @@ def main():
     # launch-ui
     p = sub.add_parser("launch-ui", help="Launch Search Builder UI")
     p.add_argument("--index", default="")
-    p.add_argument(
-        "--username",
-        default="",
-        help="OpenSearch username (sets custom auth for this process; same as OPENSEARCH_USER)",
-    )
-    p.add_argument(
-        "--password",
-        default="",
-        help="OpenSearch password (sets custom auth for this process; same as OPENSEARCH_PASSWORD)",
-    )
+    p.add_argument("--endpoint", default="", help="Remote endpoint host (omit for local cluster)")
+    p.add_argument("--aws-region", default="", help="AWS region (enables SigV4 auth)")
+    p.add_argument("--aws-service", default="", help="AWS service: 'aoss' or 'es'")
+    p.add_argument("--username", default="", help="Basic auth username (non-AWS remote)")
+    p.add_argument("--password", default="", help="Basic auth password (non-AWS remote)")
 
-    # connect-ui
-    p = sub.add_parser("connect-ui", help="Connect UI to remote endpoint")
-    p.add_argument("--endpoint", required=True)
-    p.add_argument("--port", type=int, default=443)
-    p.add_argument("--no-ssl", action="store_true")
-    p.add_argument("--username", default="")
-    p.add_argument("--password", default="")
-    p.add_argument("--aws-region", default="")
-    p.add_argument("--aws-service", default="")
-    p.add_argument("--index", default="")
+    # submit-feedback
+    p = sub.add_parser("submit-feedback", help="Submit anonymous skill feedback")
+    p.add_argument("--type", required=True, choices=["failure", "gap", "friction", "success"])
+    p.add_argument("--skill", required=True, help="Skill name (e.g. opensearch-launchpad)")
+    p.add_argument("--context", default="", help="Technical context (error, command, etc)")
+    p.add_argument("--comment", default="", help="User comment")
+    p.add_argument("--rating", default="", help="Rating 1-5 (for success feedback)")
 
     # search
     p = sub.add_parser("search", help="Run a search query")
@@ -493,9 +493,9 @@ def main():
         "index-doc": cmd_index_doc,
         "index-bulk": cmd_index_bulk,
         "launch-ui": cmd_launch_ui,
-        "connect-ui": cmd_connect_ui,
         "compare-ui": cmd_compare_ui,
         "search": cmd_search,
+        "submit-feedback": cmd_submit_feedback,
         "load-sample": cmd_load_sample,
         "cleanup": cmd_cleanup,
         "read-knowledge": cmd_read_knowledge,

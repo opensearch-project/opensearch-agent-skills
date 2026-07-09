@@ -112,4 +112,3 @@ uv run pytest tests/test_agent_skills_evaluate.py::test_ndcg_perfect_ranking -v
 - The main CLI (`opensearch_ops.py`) uses PEP 723 inline script dependencies and is designed to be run directly by AI agents via `uv run`.
 - The React UI (`scripts/ui/`) is served by a lightweight Python HTTP server (`lib/ui.py`) on port 8765.
 - MCP server integration is optional and configured per-IDE.
-- **Skill sync framework** (`sync/`, `sync-bot/`): skills can be authored in this repo under `skills/`, or mirrored from an upstream project's repo via a YAML source under `sync/sources/`. A scheduled GitHub Actions workflow replays upstream commits (preserving authorship via `Co-authored-by` trailers) into `skills/` every hour. Do not hand-edit synced skills — check `sync/sources/` before modifying files under `skills/`. See [DEVELOPER_GUIDE.md](DEVELOPER_GUIDE.md) ("Mirroring an Upstream Skill") and [`sync/README.md`](sync/README.md) for details.

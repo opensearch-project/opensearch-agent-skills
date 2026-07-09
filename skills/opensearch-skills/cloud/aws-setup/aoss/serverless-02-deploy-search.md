@@ -254,17 +254,16 @@ After index creation (all paths):
    - Dense Vector: use `neural` query with `model_id`
    - BM25: use standard `match` queries
 
-## Connect Search UI to AWS Endpoint
+## Launch Search UI with AWS Endpoint
 
-After deployment is complete, switch the local Search Builder UI to query the AWS collection:
+After deployment is complete, launch the Search Builder UI pointing at the AWS collection:
 
-```
-Call connect_search_ui_to_endpoint(
-  endpoint="<collection-endpoint>",
-  port=443,
-  use_ssl=true,
-  index_name="<index-name>"
-)
+```bash
+uv run python scripts/opensearch_ops.py launch-ui \
+  --index <index-name> \
+  --endpoint <collection-endpoint> \
+  --aws-region <region> \
+  --aws-service aoss
 ```
 
 The UI header badge will change from "Local" to "AWS Cloud" with a green connection indicator.

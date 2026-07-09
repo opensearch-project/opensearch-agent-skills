@@ -122,9 +122,9 @@
   {
     "id": "aws-setup-collection-type-for-dense-vector",
     "skill": "aws-setup",
-    "prompt": "I want to deploy dense vector search to Serverless V2. What collection type should I use?",
+    "prompt": "I want to deploy dense vector search to Serverless NextGen. What collection type should I use?",
     "rule": "Must recommend VECTORSEARCH collection type for dense vector",
-    "criteria": "The response must state that dense vector search requires a VECTORSEARCH collection type on Serverless V2. It must not suggest using a SEARCH type collection for dense vector or kNN workloads.",
+    "criteria": "The response must state that dense vector search requires a VECTORSEARCH collection type on Serverless NextGen. It must not suggest using a SEARCH type collection for dense vector or kNN workloads.",
     "rationale": "Collection type constraint: VECTORSEARCH needed for dense/hybrid, SEARCH for BM25/sparse/agentic"
   },
   {
@@ -228,7 +228,23 @@
     "skill": "aws-setup",
     "prompt": "I want to deploy flow agent agentic search for a collection called my-search-app in us-east-1. Provision the infrastructure, deploy the agent search, test it, then show me how to clean up. Show the full workflow with exact commands and API calls.",
     "rule": "Must show the full chained workflow: provision → deploy agent (with data access policy for model/agent) → test → deprovision",
-    "criteria": "The response must show the complete workflow in order: 1) Credential validation with aws sts get-caller-identity, 2) Collection provisioning including encryption policy, network policy, collection group with NextGen/v2, and the correct collection type auto-selected for agentic search (SEARCH), 3) Data access policy that grants the connector IAM role access to all four ResourceTypes (collection, index, model, agent) — this is critical for pipeline-based agentic queries to work, 4) Model registration with inline Bedrock connector returning a model_id, 5) Flow agent creation using that model_id in QueryPlanningTool, 6) Search pipeline creation with agentic_query_translator using the agent_id, 7) An agentic search query test using the pipeline, 8) Deprovision/cleanup steps that remove resources in reverse dependency order. All steps must be present and correctly chained — outputs from earlier steps must feed into later steps. The collection type and model must not be explicitly told by the user — the skill must determine them from the strategy.",
+    "criteria": "The response must show the complete workflow in order: 1) Credential validation with aws sts get-caller-identity, 2) Collection provisioning including encryption policy, network policy, collection group with NextGen, and the correct collection type auto-selected for agentic search (SEARCH), 3) Data access policy that grants the connector IAM role access to all four ResourceTypes (collection, index, model, agent) — this is critical for pipeline-based agentic queries to work, 4) Model registration with inline Bedrock connector returning a model_id, 5) Flow agent creation using that model_id in QueryPlanningTool, 6) Search pipeline creation with agentic_query_translator using the agent_id, 7) An agentic search query test using the pipeline, 8) Deprovision/cleanup steps that remove resources in reverse dependency order. All steps must be present and correctly chained — outputs from earlier steps must feed into later steps. The collection type and model must not be explicitly told by the user — the skill must determine them from the strategy.",
     "rationale": "Validates the skill can guide an agent through the full lifecycle with correct collection type detection and the critical data access policy for model/agent permissions"
+  },
+  {
+    "id": "aoss-provisioning-usage-attribution",
+    "skill": "aoss-nextgen-provisioning",
+    "prompt": "Create an AOSS collection called my-search (SEARCH) in us-east-1. Show me the exact commands you would run.",
+    "rule": "Must prefix shell AWS CLI commands with AWS_SDK_UA_APP_ID=opensearch-agent-skills, per-command",
+    "criteria": "The aws CLI commands in the response must be prefixed per-command with 'AWS_SDK_UA_APP_ID=opensearch-agent-skills' (e.g. 'AWS_SDK_UA_APP_ID=opensearch-agent-skills aws opensearchserverless create-collection ...'). The variable must be set inline on each command, not exported globally with a separate 'export' statement. It is acceptable if not every single command is prefixed, but the collection-related commands must clearly carry the prefix.",
+    "rationale": "Usage attribution: cloud requests from this skill must carry the app/opensearch-agent-skills application id in the User-Agent header"
+  },
+  {
+    "id": "aws-setup-usage-attribution",
+    "skill": "aws-setup",
+    "prompt": "How do I make sure AWS calls made while deploying OpenSearch are attributed to this tooling? I run some commands in the shell and some through the AWS API MCP server.",
+    "rule": "Must set AWS_SDK_UA_APP_ID=opensearch-agent-skills for both the shell path (per-command prefix) and the MCP path (env block in the aws-api-mcp-server config)",
+    "criteria": "The response must explain both mechanisms: (1) for shell aws commands, prefix each command with 'AWS_SDK_UA_APP_ID=opensearch-agent-skills' (not a global export); and (2) for calls through awslabs.aws-api-mcp-server, set \"AWS_SDK_UA_APP_ID\": \"opensearch-agent-skills\" in that server's env block in the MCP configuration. Both the shell and MCP mechanisms must be mentioned.",
+    "rationale": "Usage attribution must cover all cloud requests across both execution paths (shell CLI and MCP-routed calls)"
   }
 ]

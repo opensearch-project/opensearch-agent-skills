@@ -16,7 +16,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
-from .client import create_client, can_connect
+from .client import create_client, create_remote_client, can_connect
 from .search import (
     autocomplete,
     extract_index_field_specs,
@@ -42,9 +42,9 @@ _CONTENT_TYPES = {
     ".svg": "image/svg+xml",
 }
 
-# Mutable state
+# Mutable state — set once at launch time, immutable for the lifetime of the server.
 _default_index = ""
-_endpoint_override = {}  # {host, port, use_ssl, auth, aws_region, aws_service}
+_endpoint_override = {}  # {host, port, use_ssl, username, password, aws_region, aws_service}
 _comparison_config = {
     "comparison_enabled": False,
     "baseline_index": "",
@@ -53,15 +53,7 @@ _comparison_config = {
 
 
 def set_comparison_mode(baseline_index: str, improved_index: str) -> str:
-    """Configure the UI server for comparison mode.
-
-    Args:
-        baseline_index: The first index name.
-        improved_index: The second index name.
-
-    Returns:
-        Success message or error string.
-    """
+    """Configure the UI server for comparison mode."""
     global _comparison_config
     if not baseline_index or not improved_index:
         return "Both baseline and improved index names are required."
@@ -74,11 +66,7 @@ def set_comparison_mode(baseline_index: str, improved_index: str) -> str:
 
 
 def clear_comparison_mode() -> str:
-    """Disable comparison mode and clear stored index names.
-
-    Returns:
-        Confirmation message.
-    """
+    """Disable comparison mode and clear stored index names."""
     global _comparison_config
     _comparison_config = {
         "comparison_enabled": False,
@@ -91,7 +79,6 @@ def clear_comparison_mode() -> str:
 def _get_client():
     override = _endpoint_override
     if override.get("host"):
-        from .client import create_remote_client
         return create_remote_client(
             endpoint=override["host"],
             port=override.get("port", 443),
@@ -114,9 +101,25 @@ def _resolve_asset(path: str) -> Path | None:
     return None
 
 
+_ALLOWED_HOSTNAMES = ("127.0.0.1", "localhost")
+
+
 class _UIHandler(BaseHTTPRequestHandler):
     def log_message(self, format, *args):
         pass  # Suppress request logging
+
+    def _is_allowed_origin(self) -> str | None:
+        """Return the Origin if it's from a loopback address, else None."""
+        origin = self.headers.get("Origin", "")
+        if not origin:
+            return None
+        try:
+            parsed = urlparse(origin)
+            if parsed.hostname in _ALLOWED_HOSTNAMES:
+                return origin
+        except Exception:
+            pass
+        return None
 
     def _send_json(self, data: dict, status: int = 200):
         body = json.dumps(data, default=str, ensure_ascii=False).encode("utf-8")
@@ -124,15 +127,23 @@ class _UIHandler(BaseHTTPRequestHandler):
         self.send_header("Content-Type", "application/json; charset=utf-8")
         self.send_header("Content-Length", str(len(body)))
         self.send_header("Cache-Control", "no-store")
-        self.send_header("Access-Control-Allow-Origin", "*")
+        origin = self._is_allowed_origin()
+        if origin:
+            self.send_header("Access-Control-Allow-Origin", origin)
+            self.send_header("Vary", "Origin")
         self.end_headers()
         self.wfile.write(body)
 
     def do_OPTIONS(self):
+        origin = self._is_allowed_origin()
+        if not origin:
+            self.send_error(403, "Forbidden: origin not allowed")
+            return
         self.send_response(204)
-        self.send_header("Access-Control-Allow-Origin", "*")
+        self.send_header("Access-Control-Allow-Origin", origin)
         self.send_header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
         self.send_header("Access-Control-Allow-Headers", "Content-Type")
+        self.send_header("Vary", "Origin")
         self.end_headers()
 
     def do_GET(self):
@@ -357,8 +368,7 @@ def _get_backend_info() -> dict:
         endpoint = override["host"]
         backend_type = "aws" if override.get("aws_region") else "remote"
         try:
-            client = _get_client()
-            ok, _ = can_connect(client)
+            ok, _ = can_connect(_get_client())
             connected = ok
         except Exception:
             connected = False
@@ -366,8 +376,7 @@ def _get_backend_info() -> dict:
     from .client import OPENSEARCH_HOST, OPENSEARCH_PORT
     endpoint = f"{OPENSEARCH_HOST}:{OPENSEARCH_PORT}"
     try:
-        client = _get_client()
-        ok, _ = can_connect(client)
+        ok, _ = can_connect(_get_client())
         connected = ok
     except Exception:
         connected = False
@@ -392,10 +401,55 @@ def _kill_existing_ui() -> None:
         pass
 
 
-def launch_ui(index_name: str = "") -> str:
-    global _default_index
+def launch_ui(
+    index_name: str = "",
+    endpoint: str = "",
+    aws_region: str = "",
+    aws_service: str = "",
+    username: str = "",
+    password: str = "",
+) -> str:
+    """Launch the Search Builder UI.
+
+    Args:
+        index_name: Default index to search.
+        endpoint: Remote endpoint host. If empty, uses local cluster.
+        aws_region: AWS region (triggers SigV4 auth via boto3 credential chain).
+        aws_service: AWS service type ('aoss' or 'es').
+        username: Basic auth username (for non-AWS remote clusters).
+        password: Basic auth password (for non-AWS remote clusters).
+    """
+    global _default_index, _endpoint_override
+
     if index_name:
         _default_index = index_name
+
+    # Set endpoint override from explicit parameters
+    if endpoint:
+        # Auto-detect AWS service/region from endpoint hostname
+        if not aws_service and aws_region:
+            if ".aoss." in endpoint:
+                aws_service = "aoss"
+            elif ".es." in endpoint or ".aos." in endpoint:
+                aws_service = "es"
+        if not aws_region and (".aoss." in endpoint or ".es." in endpoint):
+            m = re.search(r"\.([a-z]{2}-[a-z]+-\d+)\.", endpoint)
+            if m:
+                aws_region = m.group(1)
+                if not aws_service:
+                    aws_service = "aoss" if ".aoss." in endpoint else "es"
+
+        _endpoint_override = {
+            "host": endpoint,
+            "port": 443 if (aws_region and aws_service) else 443,
+            "use_ssl": True,
+            "username": username,
+            "password": password,
+            "aws_region": aws_region,
+            "aws_service": aws_service,
+        }
+    else:
+        _endpoint_override = {}
 
     if not SEARCH_UI_STATIC_DIR.exists():
         return (
@@ -424,6 +478,8 @@ def launch_ui(index_name: str = "") -> str:
         msg = f"Search Builder UI started at: {url}"
         if _default_index:
             msg += f"\nDefault index: {_default_index}"
+        if endpoint:
+            msg += f"\nEndpoint: {endpoint}"
         return msg
 
     except OSError as e:
@@ -431,61 +487,6 @@ def launch_ui(index_name: str = "") -> str:
             url = f"http://{SEARCH_UI_HOST}:{SEARCH_UI_PORT}"
             return f"Search Builder UI already running at: {url}"
         return f"Failed to start Search UI: {e}"
-
-
-def connect_ui(
-    endpoint: str,
-    port: int = 443,
-    use_ssl: bool = True,
-    username: str = "",
-    password: str = "",
-    aws_region: str = "",
-    aws_service: str = "",
-    index_name: str = "",
-) -> str:
-    global _default_index, _endpoint_override
-
-    if not endpoint:
-        return "Error: endpoint is required."
-
-    # Auto-detect AWS service from endpoint
-    if not aws_service and aws_region:
-        if ".aoss." in endpoint:
-            aws_service = "aoss"
-        elif ".es." in endpoint or ".aos." in endpoint:
-            aws_service = "es"
-    if not aws_region and (".aoss." in endpoint or ".es." in endpoint):
-        m = re.search(r"\.([a-z]{2}-[a-z]+-\d+)\.", endpoint)
-        if m:
-            aws_region = m.group(1)
-            if not aws_service:
-                aws_service = "aoss" if ".aoss." in endpoint else "es"
-
-    _endpoint_override = {
-        "host": endpoint, "port": port, "use_ssl": use_ssl,
-        "username": username, "password": password,
-        "aws_region": aws_region, "aws_service": aws_service,
-    }
-
-    # Verify connectivity
-    try:
-        from .client import create_remote_client
-        client = create_remote_client(
-            endpoint, port, use_ssl, username, password, aws_region, aws_service
-        )
-        ok, _ = can_connect(client)
-        if not ok:
-            _endpoint_override = {}
-            return f"Error: Could not connect to {endpoint}:{port}."
-    except Exception as e:
-        _endpoint_override = {}
-        return f"Error connecting: {e}"
-
-    if index_name:
-        _default_index = index_name
-
-    auth_mode = f"SigV4 ({aws_service}/{aws_region})" if aws_region else "basic" if username else "none"
-    return f"Search UI connected to {endpoint} (auth: {auth_mode})"
 
 
 def cleanup_ui() -> str:

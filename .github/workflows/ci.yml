@@ -3,8 +3,6 @@ name: CI
 on:
   push:
   pull_request:
-  # Allows sync-skills.yml to re-dispatch CI against a PR branch after
-  # the bot pushes to it (GITHUB_TOKEN pushes don't retrigger pull_request).
   workflow_dispatch:
 
 jobs:
