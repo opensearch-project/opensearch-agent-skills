@@ -5,9 +5,14 @@ description: >
   the user mentions search app, index setup, search architecture, semantic
   search, vector search, hybrid search, BM25, dense vector, sparse vector,
   agentic search, RAG, embeddings, KNN, PDF ingestion, document processing,
-  or any related search topic. Activate even if the user says search quality,
-  evaluation, nDCG, precision, relevance tuning, or search builder without
-  mentioning OpenSearch.
+  ml_inference processor, ml_inference ingest processor, ml_inference search
+  request processor, ml_inference search response processor, query rewriting,
+  multilingual query routing, LLM rerank, grounded RAG synthesis, auto-embedding,
+  auto-tagging, document enrichment at index time, sentiment classification,
+  NER extraction, PII redaction at ingest, ingest pipeline with LLM,
+  connector setup, Bedrock connector, or any related search topic. Activate
+  even if the user says search quality, evaluation, nDCG, precision, relevance
+  tuning, or search builder without mentioning OpenSearch.
 compatibility: Requires uv. Target local requires Docker. Target aws requires AWS credentials (no Docker).
 metadata:
   author: opensearch-project
@@ -154,6 +159,8 @@ Design a search architecture. Read the relevant knowledge files:
 - [sparse_vector_models.md](sparse_vector_models.md)
 - [opensearch_semantic_search_guide.md](opensearch_semantic_search_guide.md)
 - [agentic_search_guide.md](agentic_search_guide.md)
+- [ml_inference_ingest_guide.md](ml_inference_ingest_guide.md)
+- [ml_inference_search_pipeline_guide.md](ml_inference_search_pipeline_guide.md)
 - [document_processing_guide.md](document_processing_guide.md)
 
 Present the plan and wait for user approval.
