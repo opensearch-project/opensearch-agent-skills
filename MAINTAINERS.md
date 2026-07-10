@@ -9,3 +9,4 @@ This document contains a list of maintainers in this repo. See [opensearch-proje
 | Arjun kumar Giri  | [arjunkumargiri](https://github.com/arjunkumargiri)       | Amazon      |
 | Sarat Vemulapalli | [saratvemulapalli](https://github.com/saratvemulapalli)   | Amazon      |
 | Sean Zheng        | [sean-zheng-amazon](https://github.com/sean-zheng-amazon) | Amazon      |
+| Fen Qin           | [fen-qin](https://github.com/fen-qin)                     | Amazon      |
