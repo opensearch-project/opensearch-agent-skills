@@ -1,13 +1,16 @@
 ---
 name: cloud
 description: >
-  Deploy OpenSearch search applications to AWS. Use this skill when the user
-  wants to provision an OpenSearch domain or serverless collection on AWS,
-  deploy search configurations, set up Bedrock connectors, configure IAM
-  roles for OpenSearch, or migrate a local setup to Amazon OpenSearch Service
-  or Serverless. Activate even if the user says AOS, AOSS, OpenSearch Service,
-  serverless collection, Bedrock connector, SigV4, or AWS deployment.
-compatibility: Requires AWS credentials (IAM role or access keys).
+  Deploy OpenSearch search applications to managed cloud providers. Use this
+  skill when the user wants to provision an OpenSearch domain or serverless
+  collection on AWS, provision a managed OpenSearch service on Aiven, deploy
+  search configurations, set up Bedrock connectors, configure IAM roles for
+  OpenSearch, or migrate a local setup to a managed OpenSearch. Activate even
+  if the user says AOS, AOSS, OpenSearch Service, serverless collection,
+  Bedrock connector, SigV4, AWS deployment, Aiven, or managed OpenSearch.
+compatibility: >
+  AWS deployment requires AWS credentials (IAM role or access keys). Aiven
+  deployment requires the Aiven MCP server and an Aiven API token.
 metadata:
   author: opensearch-project
   version: "2.0"
@@ -15,13 +18,14 @@ metadata:
 
 # Cloud
 
-Category skill for deploying OpenSearch to cloud infrastructure.
+Category skill for deploying OpenSearch to managed cloud infrastructure.
 
 ## Skills
 
 | Skill | Description |
 |---|---|
 | [aws-setup](aws-setup/SKILL.md) | Provision and configure Amazon OpenSearch Service domains and Serverless collections, then deploy search configurations |
+| [aiven-setup](aiven-setup/SKILL.md) | Provision a managed Aiven for OpenSearch service, then deploy search configurations to it |
 | [managed-ingestion-service](managed-ingestion-service/SKILL.md) | Ingest chunks at scale via OSIS pipelines with optional ASE (semantic_enrichment) |
 
 ## When to Use
@@ -32,6 +36,12 @@ Read [aws-setup/SKILL.md](aws-setup/SKILL.md) when the user wants to:
 - Deploy a local search setup to AWS
 - Set up Bedrock connectors for ML models
 - Configure IAM roles and access policies for OpenSearch
+
+Read [aiven-setup/SKILL.md](aiven-setup/SKILL.md) when the user wants to:
+- Provision a managed OpenSearch service on Aiven
+- Deploy a local search setup to Aiven for OpenSearch
+- Manage or monitor Aiven-hosted OpenSearch (metrics, logs, service state)
+- Deploy across AWS, GCP, Azure, DigitalOcean, or UpCloud via Aiven
 
 Read [managed-ingestion-service/SKILL.md](managed-ingestion-service/SKILL.md) when the user wants to:
 - Ingest JSONL chunks into an AOS domain or AOSS collection at scale via OSIS

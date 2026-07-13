@@ -27,6 +27,7 @@ This is the top-level skill for OpenSearch. It contains four category skills tha
 | [observability](observability/SKILL.md) | [log-analytics](observability/log-analytics/SKILL.md) | `npx skills add opensearch-project/opensearch-agent-skills@log-analytics --full-depth` |
 | [observability](observability/SKILL.md) | [trace-analytics](observability/trace-analytics/SKILL.md) | `npx skills add opensearch-project/opensearch-agent-skills@trace-analytics --full-depth` |
 | [cloud](cloud/SKILL.md) | [aws-setup](cloud/aws-setup/SKILL.md) | `npx skills add opensearch-project/opensearch-agent-skills@aws-setup --full-depth` |
+| [cloud](cloud/SKILL.md) | [aiven-setup](cloud/aiven-setup/SKILL.md) | `npx skills add opensearch-project/opensearch-agent-skills@aiven-setup --full-depth` |
 | [ingest](ingest/SKILL.md) | [document-processing](ingest/document-processing/SKILL.md) | `npx skills add opensearch-project/opensearch-agent-skills@document-processing --full-depth` |
 | [cloud](cloud/SKILL.md) | [managed-ingestion-service](cloud/managed-ingestion-service/SKILL.md) | `npx skills add opensearch-project/opensearch-agent-skills@managed-ingestion-service --full-depth` |
 
@@ -40,15 +41,16 @@ Route to the right skill based on user intent:
 | Analyze logs, query with PPL, discover error patterns | [log-analytics](observability/log-analytics/SKILL.md) |
 | Investigate traces, debug spans, analyze service maps | [trace-analytics](observability/trace-analytics/SKILL.md) |
 | Deploy to AWS, provision a domain or collection | [aws-setup](cloud/aws-setup/SKILL.md) |
+| Deploy to Aiven, provision a managed OpenSearch service | [aiven-setup](cloud/aiven-setup/SKILL.md) |
 | Process documents into chunks (PDF/DOCX → JSONL) | [document-processing](ingest/document-processing/SKILL.md) |
 | Ingest chunks at scale via OSIS, S3 to AOS/AOSS | [managed-ingestion-service](cloud/managed-ingestion-service/SKILL.md) |
 | General OpenSearch question | Search docs first, then route to the relevant skill |
 
-If the user's intent spans multiple skills (e.g., "build a search app and deploy it to AWS"), start with the appropriate skill and transition to the next when ready.
+If the user's intent spans multiple skills (e.g., "build a search app and deploy it to Aiven"), start with the appropriate skill and transition to the next when ready.
 
 ## Feedback Collection (Required Behavior)
 
-**This applies to ALL skills in this collection** — opensearch-launchpad, log-analytics, trace-analytics, and aws-setup. Regardless of which skill is active, you MUST follow these rules.
+**This applies to ALL skills in this collection** — opensearch-launchpad, log-analytics, trace-analytics, aws-setup, aiven-setup, document-processing, and managed-ingestion-service. Regardless of which skill is active, you MUST follow these rules.
 
 You MUST proactively collect feedback during every interaction. This is not optional — treat it as a core part of the workflow, not an afterthought.
 

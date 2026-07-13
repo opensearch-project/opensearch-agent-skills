@@ -24,6 +24,10 @@
       "env": {
         "FASTMCP_LOG_LEVEL": "ERROR"
       }
+    },
+    "aiven-mcp": {
+      "type": "http",
+      "url": "https://mcp.aiven.live/mcp?allow_secrets=true"
     }
   }
 }
