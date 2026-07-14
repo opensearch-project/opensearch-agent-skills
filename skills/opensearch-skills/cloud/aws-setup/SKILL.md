@@ -91,6 +91,13 @@ For Amazon OpenSearch Serverless (AOSS):
 }
 ```
 
+## Critical Rules (MUST follow)
+
+1. **No agentic search on Serverless non-NextGen** — Agentic search (both flow agents and conversational agents) CANNOT be deployed to Serverless non-NextGen (v1/classic). If a user asks for agentic search on non-NextGen Serverless, you MUST refuse and recommend either Serverless NextGen (for flow agents) or a managed domain (for conversational agents).
+2. **Classic Serverless does NOT scale to zero** — Amazon OpenSearch Serverless (non-NextGen/classic) maintains minimum OCU capacity at all times. NEVER claim classic Serverless scales to zero. Note: Serverless NextGen DOES support scale to zero.
+3. **Validate credentials first** — ALWAYS run `aws sts get-caller-identity` as the first step before any provisioning or deployment operation.
+4. **Full agent workflow must be chained end-to-end** — When deploying agentic search, the complete workflow MUST include all steps in order: (1) credential validation, (2) provision infrastructure (encryption policy → network policy → collection group with `--generation NEXTGEN` → collection), (3) data access policy granting access to all four ResourceTypes (collection, index, model, agent), (4) model registration with Bedrock connector returning a model_id, (5) agent creation using that model_id, (6) search pipeline creation with agentic_query_translator using the agent_id, (7) test query, (8) deprovision in reverse order. Outputs from each step must chain into the next.
+
 ## Key Rules
 
 - **Serverless NextGen** supports only **flow agents** — conversational agents require a **managed domain**.

@@ -111,6 +111,12 @@ uv run python scripts/opensearch_ops.py <command> [options]
 
 See [cli-reference.md](../../cli-reference.md) for the full command reference.
 
+## Critical Rules (MUST follow)
+
+1. **Preflight-check first** — ALWAYS run `preflight-check` as the very first action before creating any index, loading data, or performing any cluster operation. No exceptions.
+2. **Agentic search routing** — Flow agents ARE supported on Serverless NextGen. Conversational agents (with memory/RAG) require a managed domain (Amazon OpenSearch Service). If a user asks for "agentic search on Serverless" without specifying type, clarify this distinction.
+3. **Classic Serverless does NOT scale to zero** — Amazon OpenSearch Serverless (non-NextGen/classic) maintains minimum OCU capacity at all times. NEVER claim classic Serverless scales to zero. Note: Serverless NextGen DOES support scale to zero.
+
 ## Key Rules
 
 - Ask **one** preference question per message.
@@ -135,12 +141,14 @@ Inspect and validate the data (read a sample, confirm schema).
 
 Ask **one at a time**:
 
-1. **Search strategy.** Present all five:
-   - `bm25` (keyword)
-   - `dense_vector` (semantic via embeddings)
-   - `neural_sparse` (semantic via learned sparse representations)
-   - `hybrid` (combines keyword + semantic)
-   - `agentic` (LLM-driven multi-step retrieval, requires OpenSearch 3.2+)
+1. **Search strategy.**
+   - **For unstructured documents** (PDF, DOCX, PPTX, etc.): Default to `agentic` search. Do NOT present all five strategies — proceed with agentic as the default. Mention alternatives are available if the user asks.
+   - **For structured data** (JSON, CSV, etc.): Present all five:
+     - `bm25` (keyword)
+     - `dense_vector` (semantic via embeddings)
+     - `neural_sparse` (semantic via learned sparse representations)
+     - `hybrid` (combines keyword + semantic)
+     - `agentic` (LLM-driven multi-step retrieval, requires OpenSearch 3.2+)
 
 2. **Target.** Where should the search app run?
    - `local` (default) — Docker-based, fast iteration, optional AWS deployment later.

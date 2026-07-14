@@ -95,6 +95,11 @@ For Amazon OpenSearch Serverless (AOSS) — [User Guide](https://github.com/open
 }
 ```
 
+## Critical Rules (MUST follow)
+
+1. **Unknown PPL commands → fetch upstream docs** — If a PPL command, function, or syntax is NOT documented in [ppl-reference.md](../ppl-reference.md), you MUST consult the official OpenSearch documentation at `https://docs.opensearch.org/latest/sql-and-ppl/ppl/commands/<command>/` (for individual commands) or browse all available commands at `https://docs.opensearch.org/latest/sql-and-ppl/ppl/commands/index/`. NEVER guess or invent PPL syntax. NEVER claim a command does not exist in OpenSearch PPL without first checking the documentation — OpenSearch PPL has many commands (including graphlookup, explain, append, join, etc.) that do not exist in other systems. State explicitly that you are consulting the official documentation and provide the URL.
+2. **Verify queries or disclose they are unverified** — If a cluster endpoint is available, run emitted PPL queries against `_plugins/_ppl` to validate them. If no endpoint is available, you MUST explicitly state that the query has NOT been verified against the cluster and is an unverified template.
+
 ## Key Rules
 
 - **Discovery first** — never assume index patterns, field names, or schemas. Discover them.

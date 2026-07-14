@@ -24,10 +24,14 @@ import pytest
 
 _SKILLS_ROOT = Path(__file__).resolve().parents[2] / "skills" / "opensearch-skills"
 
-# Bedrock model to use as the judge. Haiku is cheap and fast.
+# Bedrock model configuration:
+# - Skill model: Used to invoke the skill (the agent under test). Sonnet
+#   provides strong instruction-following at reasonable cost.
+# - Judge model: Used by GEval to score responses. Haiku is cheap and fast.
 # Use the US cross-region inference profile — required for newer models
 # that don't support on-demand throughput directly.
-_BEDROCK_MODEL_ID = "us.anthropic.claude-haiku-4-5-20251001-v1:0"
+_BEDROCK_MODEL_ID = "us.anthropic.claude-sonnet-4-5-20250929-v1:0"
+_BEDROCK_JUDGE_MODEL_ID = "us.anthropic.claude-haiku-4-5-20251001-v1:0"
 _BEDROCK_REGION = "us-east-1"
 
 
@@ -64,17 +68,139 @@ def load_skill_md(skill_name: str) -> str:
     )
 
 
-def call_skill(skill_md: str, prompt: str, client, model_id: str = _BEDROCK_MODEL_ID) -> str:
-    """Simulate an agent with skill_md loaded as the system prompt.
+def load_skill_with_references(skill_name: str, references: list[str] | None = None) -> str:
+    """Return skill SKILL.md content with optional reference files appended.
 
-    Calls Bedrock using the Messages API (anthropic_version bedrock-2023-05-31),
-    matching the pattern used in opensearch-build's AIReleaseNotesGenerator.
+    In a real agent, reference files are loaded on demand when the agent reads
+    them. For evals, we include them in the system prompt to simulate the agent
+    having already read the reference material.
     """
+    skill_md = load_skill_md(skill_name)
+    if not references:
+        return skill_md
+
+    # Find the skill directory
+    skill_dir = None
+    for path in _SKILLS_ROOT.rglob("SKILL.md"):
+        if path.parent.name == skill_name:
+            skill_dir = path.parent
+            break
+
+    if not skill_dir:
+        return skill_md
+
+    # Append reference files
+    parts = [skill_md]
+    for ref in references:
+        # Search in skill dir, parent, and grandparent (for shared references)
+        for search_dir in [skill_dir, skill_dir.parent, skill_dir.parent.parent]:
+            ref_path = search_dir / ref
+            if ref_path.exists():
+                parts.append(f"\n\n---\n## Reference: {ref}\n\n{ref_path.read_text(encoding='utf-8')}")
+                break
+
+    return "\n".join(parts)
+
+
+def call_skill(skill_md: str, prompt: str, client, model_id: str = _BEDROCK_MODEL_ID, max_turns: int = 3) -> str:
+    """Simulate a multi-turn conversation with skill_md as the system prompt.
+
+    If the skill asks follow-up questions instead of executing, an eval agent
+    generates a reasonable user reply and the conversation continues until
+    the skill produces a substantive response (commands, refusals, or
+    explanations) or max_turns is reached.
+
+    Returns the full conversation as a formatted string for the judge to evaluate.
+    """
+    messages = [{"role": "user", "content": prompt}]
+
+    for turn in range(max_turns):
+        body = json.dumps({
+            "anthropic_version": "bedrock-2023-05-31",
+            "max_tokens": 2048,
+            "system": skill_md,
+            "messages": messages,
+        })
+        response = client.invoke_model(
+            modelId=model_id,
+            body=body,
+            contentType="application/json",
+            accept="application/json",
+        )
+        response_body = json.loads(response["body"].read())
+        assistant_text = response_body["content"][0]["text"]
+        messages.append({"role": "assistant", "content": assistant_text})
+
+        # If this is the last allowed turn, stop
+        if turn >= max_turns - 1:
+            break
+
+        # Check if the assistant is asking a follow-up question rather than
+        # executing. Use a simple heuristic: if the response ends with a
+        # question mark or contains common question patterns, generate a reply.
+        if not _is_follow_up_question(assistant_text):
+            break
+
+        # Generate a contextual user reply to the follow-up question
+        user_reply = _generate_eval_reply(prompt, assistant_text, client, model_id)
+        messages.append({"role": "user", "content": user_reply})
+
+    # Return the full conversation formatted for the judge
+    return _format_conversation(messages)
+
+
+def _is_follow_up_question(text: str) -> bool:
+    """Heuristic: does the assistant response look like it's asking for more info?"""
+    # Check if the response is primarily asking questions rather than executing
+    lines = text.strip().split("\n")
+    # Look at the last few non-empty lines for question indicators
+    tail = [l.strip() for l in lines[-5:] if l.strip()]
+    if not tail:
+        return False
+
+    question_indicators = [
+        "?",
+        "Which would you prefer",
+        "Which option",
+        "Would you like",
+        "Could you provide",
+        "Can you provide",
+        "Please provide",
+        "Please specify",
+        "What would you like",
+        "Do you want",
+        "Let me know",
+    ]
+    tail_text = " ".join(tail)
+    return any(indicator in tail_text for indicator in question_indicators)
+
+
+def _generate_eval_reply(original_prompt: str, assistant_question: str, client, model_id: str) -> str:
+    """Use the LLM to generate a reasonable user reply to a follow-up question.
+
+    The eval agent acts as a cooperative user who provides sensible defaults
+    to keep the conversation moving toward execution.
+    """
+    system = (
+        "You are simulating a user in a test scenario. The user originally asked "
+        "something and the assistant asked a follow-up question. Generate a short, "
+        "reasonable reply that answers the question with sensible defaults so the "
+        "assistant can proceed. Be concise — 1-2 sentences max. Pick the simplest "
+        "option if given choices. Don't add new requirements. "
+        "IMPORTANT: Stay consistent with the values and parameters in the original "
+        "request. If the original request specified particular values (names, numbers, "
+        "regions, types), restate those same values — do not change or 'fix' them."
+    )
+    user_msg = (
+        f"Original user request: {original_prompt}\n\n"
+        f"Assistant asked: {assistant_question}\n\n"
+        f"Generate a brief, cooperative reply:"
+    )
     body = json.dumps({
         "anthropic_version": "bedrock-2023-05-31",
-        "max_tokens": 1024,
-        "system": skill_md,
-        "messages": [{"role": "user", "content": prompt}],
+        "max_tokens": 256,
+        "system": system,
+        "messages": [{"role": "user", "content": user_msg}],
     })
     response = client.invoke_model(
         modelId=model_id,
@@ -84,3 +210,12 @@ def call_skill(skill_md: str, prompt: str, client, model_id: str = _BEDROCK_MODE
     )
     response_body = json.loads(response["body"].read())
     return response_body["content"][0]["text"]
+
+
+def _format_conversation(messages: list) -> str:
+    """Format a multi-turn conversation into a readable string for the judge."""
+    parts = []
+    for msg in messages:
+        role = "User" if msg["role"] == "user" else "Assistant"
+        parts.append(f"[{role}]: {msg['content']}")
+    return "\n\n".join(parts)

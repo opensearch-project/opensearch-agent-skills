@@ -16,6 +16,15 @@ Guided wizard for provisioning and deprovisioning Amazon OpenSearch Serverless (
 - Customer wants to delete/deprovision AOSS resources
 - Customer mentions "collection group", "opensearch serverless", "AOSS"
 
+## Critical Rules (MUST follow — violations are errors)
+
+1. **`--generation NEXTGEN` is REQUIRED** — Every `create-collection-group` command MUST include `--generation NEXTGEN`. This flag is mandatory for NextGen collection groups. Never omit it. Example: `aws opensearchserverless create-collection-group --name <name>-group --standby-replicas ENABLED --generation NEXTGEN --region <region>`
+2. **Create encryption policy BEFORE the collection** — Resources MUST be created in this exact order: encryption policy → network policy → collection group → collection. Never create a collection or collection group before its encryption and network policies exist. When the user asks to set up a collection, show ALL commands in the correct order.
+3. **Valid OCU values only** — OCU capacity values MUST be one of: 1, 2, 4, 8, 16, or any multiple of 16 (32, 48, 64, etc.). Values like 3, 5, 6, 7, 9, 10, 11, 12, 13, 14, 15, 17, 18, etc. are INVALID. If a user requests an invalid OCU value (e.g., "10 OCUs" or "12 OCUs"), you MUST immediately reject it — say "10 is not a valid OCU value. Valid values are: 1, 2, 4, 8, 16, 32, 48, 64..." and ask the user to choose a valid value. Do NOT proceed with invalid values.
+4. **Only SEARCH and VECTORSEARCH types** — The only valid collection types are `SEARCH` and `VECTORSEARCH`. TIMESERIES is NOT a valid collection type for AOSS NextGen. If a user asks for TIMESERIES, inform them it is not supported and offer SEARCH or VECTORSEARCH.
+5. **Confirm before deleting** — Before any deprovision/delete operation, ALWAYS list all resources that will be deleted and require explicit user confirmation (typing the group/collection name) before proceeding.
+6. **`standbyReplicas: ENABLED` is mandatory** — Never allow DISABLED for standby replicas in NextGen collection groups.
+
 ## Key Constraints
 
 - `"standbyReplicas": "ENABLED"` is MANDATORY for all NextGen collection groups (never allow DISABLED)
