@@ -34,6 +34,10 @@ _BEDROCK_MODEL_ID = "us.anthropic.claude-sonnet-4-5-20250929-v1:0"
 _BEDROCK_JUDGE_MODEL_ID = "us.anthropic.claude-haiku-4-5-20251001-v1:0"
 _BEDROCK_REGION = "us-east-1"
 
+# Agent harness configuration
+_MAX_AGENT_TURNS = 10  # Max tool-use loops before stopping
+_MAX_USER_TURNS = 5    # Max follow-up user replies
+
 
 # ---------------------------------------------------------------------------
 # LLM client fixture
@@ -55,7 +59,7 @@ def bedrock_client():
 
 
 # ---------------------------------------------------------------------------
-# Skill loading helpers (available to all eval test modules)
+# Skill loading helpers
 # ---------------------------------------------------------------------------
 
 def load_skill_md(skill_name: str) -> str:
@@ -68,92 +72,239 @@ def load_skill_md(skill_name: str) -> str:
     )
 
 
-def load_skill_with_references(skill_name: str, references: list[str] | None = None) -> str:
-    """Return skill SKILL.md content with optional reference files appended.
+def _find_skill_dir(skill_name: str) -> Path | None:
+    """Find the directory containing a skill's SKILL.md."""
+    for path in _SKILLS_ROOT.rglob("SKILL.md"):
+        if path.parent.name == skill_name:
+            return path.parent
+    return None
 
-    In a real agent, reference files are loaded on demand when the agent reads
-    them. For evals, we include them in the system prompt to simulate the agent
-    having already read the reference material.
-    """
+
+# Keep for backward compatibility with test_skill_routing.py
+def load_skill_with_references(skill_name: str, references: list[str] | None = None) -> str:
+    """Return skill SKILL.md content with optional reference files appended."""
     skill_md = load_skill_md(skill_name)
     if not references:
         return skill_md
-
-    # Find the skill directory
-    skill_dir = None
-    for path in _SKILLS_ROOT.rglob("SKILL.md"):
-        if path.parent.name == skill_name:
-            skill_dir = path.parent
-            break
-
+    skill_dir = _find_skill_dir(skill_name)
     if not skill_dir:
         return skill_md
-
-    # Append reference files
     parts = [skill_md]
     for ref in references:
-        # Search in skill dir, parent, and grandparent (for shared references)
         for search_dir in [skill_dir, skill_dir.parent, skill_dir.parent.parent]:
             ref_path = search_dir / ref
             if ref_path.exists():
                 parts.append(f"\n\n---\n## Reference: {ref}\n\n{ref_path.read_text(encoding='utf-8')}")
                 break
-
     return "\n".join(parts)
 
 
-def call_skill(skill_md: str, prompt: str, client, model_id: str = _BEDROCK_MODEL_ID, max_turns: int = 3) -> str:
-    """Simulate a multi-turn conversation with skill_md as the system prompt.
+# ---------------------------------------------------------------------------
+# Agent harness — simulates a real agent with tool access
+# ---------------------------------------------------------------------------
 
-    If the skill asks follow-up questions instead of executing, an eval agent
-    generates a reasonable user reply and the conversation continues until
-    the skill produces a substantive response (commands, refusals, or
-    explanations) or max_turns is reached.
+_TOOLS = [
+    {
+        "name": "read_file",
+        "description": (
+            "Read a file from the skill directory tree. Use relative paths. "
+            "Available files include SKILL.md, reference docs (*.md), and "
+            "sub-skill directories. Use this to read reference documentation "
+            "mentioned in the skill instructions before answering questions."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "path": {
+                    "type": "string",
+                    "description": (
+                        "Relative path from the skill root. Examples: "
+                        "'document_processing_guide.md', 'agentic_search_guide.md', "
+                        "'../ppl-reference.md', '../../cloud/aws-setup/SKILL.md'"
+                    )
+                }
+            },
+            "required": ["path"]
+        }
+    },
+    {
+        "name": "list_files",
+        "description": (
+            "List files and directories available in the skill directory tree. "
+            "Use this to discover what reference files are available."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "path": {
+                    "type": "string",
+                    "description": "Relative directory path to list. Use '.' for current skill directory."
+                }
+            },
+            "required": ["path"]
+        }
+    }
+]
 
-    Returns the full conversation as a formatted string for the judge to evaluate.
+
+def _resolve_file_path(skill_dir: Path, relative_path: str) -> Path | None:
+    """Resolve a relative path from the skill directory, safely.
+
+    Allows traversal within the skills tree but not outside it.
     """
-    messages = [{"role": "user", "content": prompt}]
+    target = (skill_dir / relative_path).resolve()
 
-    for turn in range(max_turns):
+    # Security: ensure it's still within the skills root
+    if not str(target).startswith(str(_SKILLS_ROOT.resolve())):
+        return None
+
+    if target.exists():
+        return target
+    return None
+
+
+def _handle_tool_call(tool_name: str, tool_input: dict, skill_dir: Path) -> str:
+    """Execute a tool call and return the result string."""
+    if tool_name == "read_file":
+        path = tool_input.get("path", "")
+        resolved = _resolve_file_path(skill_dir, path)
+        if resolved is None:
+            return f"Error: File not found: {path}"
+        if resolved.is_dir():
+            return f"Error: {path} is a directory, not a file. Use list_files to see contents."
+        try:
+            content = resolved.read_text(encoding="utf-8")
+            # Truncate very large files to avoid context explosion
+            if len(content) > 15000:
+                content = content[:15000] + "\n\n... [truncated — file too large]"
+            return content
+        except Exception as e:
+            return f"Error reading file: {e}"
+
+    elif tool_name == "list_files":
+        path = tool_input.get("path", ".")
+        resolved = _resolve_file_path(skill_dir, path)
+        if resolved is None or not resolved.is_dir():
+            return f"Error: Directory not found: {path}"
+        entries = []
+        for entry in sorted(resolved.iterdir()):
+            if entry.name.startswith("."):
+                continue
+            rel = entry.relative_to(skill_dir) if str(entry).startswith(str(skill_dir)) else entry.relative_to(resolved)
+            suffix = "/" if entry.is_dir() else ""
+            entries.append(f"  {rel}{suffix}")
+        return "\n".join(entries) if entries else "(empty directory)"
+
+    return f"Error: Unknown tool: {tool_name}"
+
+
+def call_skill(skill_md: str, prompt: str, client, model_id: str = _BEDROCK_MODEL_ID,
+               skill_name: str | None = None, criteria: str = "", **kwargs) -> str:
+    """Run an agent loop with tool access simulating a real skill interaction.
+
+    The agent:
+    1. Receives the skill's SKILL.md as its system prompt
+    2. Has access to read_file and list_files tools scoped to the skill directory
+    3. Can read reference docs on demand (just like a real agent would)
+    4. Responds to follow-up questions via a criteria-aware eval user agent
+    5. Returns the full conversation for the judge to evaluate
+
+    Falls back to simple mode (no tools) if skill_name is not provided.
+    """
+    skill_dir = _find_skill_dir(skill_name) if skill_name else None
+
+    # If no skill directory found, fall back to simple single-turn
+    if skill_dir is None:
+        return _call_skill_simple(skill_md, prompt, client, model_id)
+
+    return _call_skill_agentic(skill_md, prompt, client, model_id, skill_dir, criteria)
+
+
+def _call_skill_simple(skill_md: str, prompt: str, client, model_id: str) -> str:
+    """Simple single-turn call (fallback when no skill directory available)."""
+    body = json.dumps({
+        "anthropic_version": "bedrock-2023-05-31",
+        "max_tokens": 2048,
+        "system": skill_md,
+        "messages": [{"role": "user", "content": prompt}],
+    })
+    response = client.invoke_model(
+        modelId=model_id, body=body,
+        contentType="application/json", accept="application/json",
+    )
+    response_body = json.loads(response["body"].read())
+    return response_body["content"][0]["text"]
+
+
+def _call_skill_agentic(skill_md: str, prompt: str, client, model_id: str, skill_dir: Path, criteria: str = "") -> str:
+    """Run an agentic loop: the agent can use tools and the eval user replies to questions."""
+    messages = [{"role": "user", "content": prompt}]
+    user_turns_used = 0
+    conversation_parts = [f"[User]: {prompt}"]
+
+    for turn in range(_MAX_AGENT_TURNS):
+        # Call the model with tools
         body = json.dumps({
             "anthropic_version": "bedrock-2023-05-31",
-            "max_tokens": 2048,
+            "max_tokens": 4096,
             "system": skill_md,
+            "tools": _TOOLS,
             "messages": messages,
         })
         response = client.invoke_model(
-            modelId=model_id,
-            body=body,
-            contentType="application/json",
-            accept="application/json",
+            modelId=model_id, body=body,
+            contentType="application/json", accept="application/json",
         )
         response_body = json.loads(response["body"].read())
-        assistant_text = response_body["content"][0]["text"]
-        messages.append({"role": "assistant", "content": assistant_text})
+        stop_reason = response_body["stop_reason"]
+        content_blocks = response_body["content"]
 
-        # If this is the last allowed turn, stop
-        if turn >= max_turns - 1:
-            break
+        # Add assistant message
+        messages.append({"role": "assistant", "content": content_blocks})
 
-        # Check if the assistant is asking a follow-up question rather than
-        # executing. Use a simple heuristic: if the response ends with a
-        # question mark or contains common question patterns, generate a reply.
-        if not _is_follow_up_question(assistant_text):
-            break
+        # If the model wants to use a tool, handle it
+        if stop_reason == "tool_use":
+            tool_results = []
+            for block in content_blocks:
+                if block["type"] == "tool_use":
+                    result = _handle_tool_call(block["name"], block["input"], skill_dir)
+                    tool_results.append({
+                        "type": "tool_result",
+                        "tool_use_id": block["id"],
+                        "content": result,
+                    })
+            messages.append({"role": "user", "content": tool_results})
+            continue
 
-        # Generate a contextual user reply to the follow-up question
-        user_reply = _generate_eval_reply(prompt, assistant_text, client, model_id)
-        messages.append({"role": "user", "content": user_reply})
+        # Model produced a text response (end_turn or stop)
+        assistant_text = ""
+        for block in content_blocks:
+            if block["type"] == "text":
+                assistant_text += block["text"]
 
-    # Return the full conversation formatted for the judge
-    return _format_conversation(messages)
+        conversation_parts.append(f"[Assistant]: {assistant_text}")
 
+        # Check if the assistant is asking a follow-up question
+        if user_turns_used < _MAX_USER_TURNS and _is_follow_up_question(assistant_text):
+            user_reply = _generate_eval_reply(prompt, assistant_text, client, model_id, criteria)
+            messages.append({"role": "user", "content": user_reply})
+            conversation_parts.append(f"[User]: {user_reply}")
+            user_turns_used += 1
+            continue
+
+        # Done — agent produced a final response
+        break
+
+    return "\n\n".join(conversation_parts)
+
+
+# ---------------------------------------------------------------------------
+# Follow-up question handling
+# ---------------------------------------------------------------------------
 
 def _is_follow_up_question(text: str) -> bool:
     """Heuristic: does the assistant response look like it's asking for more info?"""
-    # Check if the response is primarily asking questions rather than executing
     lines = text.strip().split("\n")
-    # Look at the last few non-empty lines for question indicators
     tail = [l.strip() for l in lines[-5:] if l.strip()]
     if not tail:
         return False
@@ -175,27 +326,36 @@ def _is_follow_up_question(text: str) -> bool:
     return any(indicator in tail_text for indicator in question_indicators)
 
 
-def _generate_eval_reply(original_prompt: str, assistant_question: str, client, model_id: str) -> str:
-    """Use the LLM to generate a reasonable user reply to a follow-up question.
+def _generate_eval_reply(original_prompt: str, assistant_question: str, client, model_id: str,
+                         criteria: str = "") -> str:
+    """Generate a reasonable user reply to a follow-up question.
 
-    The eval agent acts as a cooperative user who provides sensible defaults
-    to keep the conversation moving toward execution.
+    The eval agent is criteria-aware: it knows what the test is validating and
+    steers the conversation to give the model every opportunity to demonstrate
+    the expected behavior.
     """
     system = (
         "You are simulating a user in a test scenario. The user originally asked "
         "something and the assistant asked a follow-up question. Generate a short, "
-        "reasonable reply that answers the question with sensible defaults so the "
-        "assistant can proceed. Be concise — 1-2 sentences max. Pick the simplest "
-        "option if given choices. Don't add new requirements. "
+        "reasonable reply that answers the question so the assistant can proceed. "
+        "Be concise — 1-3 sentences max. Pick the simplest option if given choices. "
+        "Don't add new requirements.\n\n"
         "IMPORTANT: Stay consistent with the values and parameters in the original "
         "request. If the original request specified particular values (names, numbers, "
-        "regions, types), restate those same values — do not change or 'fix' them."
+        "regions, types), restate those same values — do not change or 'fix' them.\n\n"
+        "CONTEXT: This conversation is being evaluated against specific criteria. "
+        "Your reply should give the assistant the information it needs to proceed "
+        "toward satisfying these criteria. Provide relevant details that enable "
+        "the assistant to demonstrate the expected behavior."
     )
     user_msg = (
         f"Original user request: {original_prompt}\n\n"
         f"Assistant asked: {assistant_question}\n\n"
-        f"Generate a brief, cooperative reply:"
     )
+    if criteria:
+        user_msg += f"Test criteria (what we're evaluating): {criteria}\n\n"
+    user_msg += "Generate a brief, cooperative reply that helps the assistant proceed:"
+
     body = json.dumps({
         "anthropic_version": "bedrock-2023-05-31",
         "max_tokens": 256,
@@ -203,19 +363,8 @@ def _generate_eval_reply(original_prompt: str, assistant_question: str, client, 
         "messages": [{"role": "user", "content": user_msg}],
     })
     response = client.invoke_model(
-        modelId=model_id,
-        body=body,
-        contentType="application/json",
-        accept="application/json",
+        modelId=model_id, body=body,
+        contentType="application/json", accept="application/json",
     )
     response_body = json.loads(response["body"].read())
     return response_body["content"][0]["text"]
-
-
-def _format_conversation(messages: list) -> str:
-    """Format a multi-turn conversation into a readable string for the judge."""
-    parts = []
-    for msg in messages:
-        role = "User" if msg["role"] == "user" else "Assistant"
-        parts.append(f"[{role}]: {msg['content']}")
-    return "\n\n".join(parts)

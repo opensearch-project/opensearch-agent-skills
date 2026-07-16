@@ -3,8 +3,9 @@ name: Skill Evals
 # Runs LLM-based skill evaluation tests (Layer 3b).
 #
 # Triggers:
-#   - Manual dispatch (workflow_dispatch) — run on demand, with optional ref input
-#     for evaluating fork PRs after maintainer review
+#   - Manual dispatch (workflow_dispatch) — run on demand with optional inputs:
+#     * pr_number: Evaluate a fork PR by number (fetches the PR merge ref)
+#     * ref: Evaluate a specific branch or SHA from the base repo
 #   - Weekly schedule — Monday 06:00 UTC
 #   - Push to main touching skill content or eval fixtures/tests
 #   - pull_request for org-member PRs (secrets available via OIDC)
@@ -12,7 +13,7 @@ name: Skill Evals
 # Security: pull_request_target has been intentionally removed to prevent
 # secret exfiltration via malicious fork PRs. For fork PRs, maintainers
 # should review the code then trigger evals via workflow_dispatch with
-# the reviewed commit SHA.
+# the PR number.
 #
 # Requires BEDROCK_ACCESS_ROLE repository secret (IAM role ARN).
 # The role is assumed via GitHub OIDC — no static AWS keys stored.
@@ -20,8 +21,12 @@ name: Skill Evals
 on:
   workflow_dispatch:
     inputs:
+      pr_number:
+        description: 'PR number to evaluate (fetches the PR head from fork). Leave empty to use ref or default branch.'
+        required: false
+        default: ''
       ref:
-        description: 'Git ref to evaluate (SHA or branch). Use for fork PRs after review.'
+        description: 'Git ref to evaluate (branch or SHA in base repo). Ignored if pr_number is set.'
         required: false
         default: ''
   schedule:
@@ -50,13 +55,21 @@ jobs:
   evals:
     name: Skill Evals (LLM)
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 45
     # Skip fork PRs — secrets (OIDC) are unavailable. Maintainers can use
-    # workflow_dispatch with the fork PR's SHA after review.
+    # workflow_dispatch with pr_number after review.
     if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
 
     steps:
-      - name: Checkout
+      - name: Checkout (PR from fork)
+        if: inputs.pr_number != ''
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          ref: refs/pull/${{ inputs.pr_number }}/head
+          fetch-depth: 1
+
+      - name: Checkout (ref or default)
+        if: inputs.pr_number == ''
         uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
         with:
           ref: ${{ inputs.ref || github.sha }}
