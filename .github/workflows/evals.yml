@@ -3,27 +3,25 @@ name: Skill Evals
 # Runs LLM-based skill evaluation tests (Layer 3b).
 #
 # Triggers:
-#   - Manual dispatch (workflow_dispatch) — run on demand, with optional ref input
-#     for evaluating fork PRs after maintainer review
+#   - Manual dispatch (workflow_dispatch) — run on demand
 #   - Weekly schedule — Monday 06:00 UTC
 #   - Push to main touching skill content or eval fixtures/tests
-#   - pull_request for org-member PRs (secrets available via OIDC)
+#   - pull_request_target for ALL PRs (including forks) — runs in base repo
+#     context so OIDC secrets are available. Protected by an environment
+#     approval gate (same pattern as opensearch-project/ml-commons).
 #
-# Security: pull_request_target has been intentionally removed to prevent
-# secret exfiltration via malicious fork PRs. For fork PRs, maintainers
-# should review the code then trigger evals via workflow_dispatch with
-# the reviewed commit SHA.
+# Security: Uses pull_request_target + environment approval gate.
+# - PR authors in CODEOWNERS: run immediately (eval-cicd-env)
+# - Other contributors (fork PRs): require maintainer approval via
+#   eval-cicd-env-require-approval environment before job executes
 #
-# Requires BEDROCK_ACCESS_ROLE repository secret (IAM role ARN).
-# The role is assumed via GitHub OIDC — no static AWS keys stored.
+# Setup required:
+#   1. Create 'eval-cicd-env' environment (no protection rules)
+#   2. Create 'eval-cicd-env-require-approval' environment with required reviewers
+#   3. BEDROCK_ACCESS_ROLE repository secret (IAM role ARN)
 
 on:
   workflow_dispatch:
-    inputs:
-      ref:
-        description: 'Git ref to evaluate (SHA or branch). Use for fork PRs after review.'
-        required: false
-        default: ''
   schedule:
     - cron: '0 6 * * 1'   # weekly, Monday 06:00 UTC
   push:
@@ -32,7 +30,8 @@ on:
       - 'skills/**'
       - 'tests/evals/**'
       - '.github/workflows/evals.yml'
-  pull_request:
+  pull_request_target:
+    types: [opened, synchronize, reopened]
     paths:
       - 'skills/**'
       - 'tests/evals/**'
@@ -43,23 +42,27 @@ permissions:
   id-token: write   # required for OIDC role assumption
 
 concurrency:
-  group: evals-${{ github.ref }}
+  group: evals-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
 
 jobs:
+  Get-Require-Approval:
+    uses: ./.github/workflows/require-approval.yml
+
   evals:
     name: Skill Evals (LLM)
+    needs: [Get-Require-Approval]
     runs-on: ubuntu-latest
-    timeout-minutes: 15
-    # Skip fork PRs — secrets (OIDC) are unavailable. Maintainers can use
-    # workflow_dispatch with the fork PR's SHA after review.
-    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+    timeout-minutes: 45
+    environment: ${{ needs.Get-Require-Approval.outputs.is-require-approval }}
 
     steps:
       - name: Checkout
         uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
         with:
-          ref: ${{ inputs.ref || github.sha }}
+          # For pull_request_target: check out the PR head (fork code)
+          # For push/schedule/dispatch: check out the triggering SHA
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
 
       - name: Set up Python
         uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
