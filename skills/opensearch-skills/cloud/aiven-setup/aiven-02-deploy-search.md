@@ -1,17 +1,13 @@
 # Aiven for OpenSearch — Step 2: Deploy Search Configuration
 
-This guide covers pointing `opensearch-mcp-server` at the Aiven cluster, then creating the index, deploying ML models (if needed), configuring pipelines, and indexing sample documents.
+This guide covers the **Aiven-specific** part: pointing `opensearch-mcp-server` at the Aiven cluster. The actual search build (index, mappings, ML models, pipelines, sample docs) is not Aiven-specific — delegate it to the [opensearch-launchpad](../../search/opensearch-launchpad/SKILL.md) skill rather than duplicating it here.
 
 ## State Input
 
 From `.opensearch-deploy-state.json`:
 - `resource_host`, `resource_port`, `resource_endpoint` — from provisioning
 - `os_username` — the OpenSearch admin user (typically `avnadmin`)
-- `search_strategy` — determines which components to deploy
-
-From `opensearch-launchpad` (if a local setup was built):
-- `local_config.text_fields` — fields to configure
-- `plan_summary.solution` — full architecture plan
+- `search_strategy` — determines which components launchpad deploys
 
 The password is **not** in the state file — retrieve it from the provisioning step (or re-read via `aiven_service_get`).
 
@@ -36,127 +32,23 @@ Aiven OpenSearch uses **basic authentication** over HTTPS. Configure the `opense
 ```
 
 - `OPENSEARCH_SSL_VERIFY=false` is acceptable for development. For verified TLS, supply the Aiven project CA instead — see [reference.md](reference.md).
-- After editing the config, ask the user to reconnect MCP servers so `opensearch-mcp-server` picks up the endpoint.
+- If you set the env block, ask the user to reconnect MCP servers so it picks up the endpoint. Alternatively, `opensearch-mcp-server` accepts the connection details per call — pass them each request and skip the reconnect.
 
-Verify connectivity before proceeding — list indices via `opensearch-mcp-server` (`ListIndexTool`) or:
+Verify connectivity before proceeding — list indices via `opensearch-mcp-server` (`ListIndexTool`).
 
-```bash
-uv run python scripts/opensearch_ops.py status \
-  --endpoint <resource_host> --port <resource_port> --use-ssl \
-  --username <os_username> --password <password>
-```
+## Step 1: Deploy the Search Configuration (delegate to opensearch-launchpad)
 
-## Step 1: Create the Index
+With `opensearch-mcp-server` pointed at Aiven, hand off to [opensearch-launchpad](../../search/opensearch-launchpad/SKILL.md) for the build. It already owns index creation, ML model deployment, ingest/search pipelines, and sample indexing for every strategy (BM25, dense vector, neural sparse, hybrid, agentic). Run that flow against the Aiven endpoint exactly as against any other cluster — nothing about the build differs on Aiven.
 
-Using `opensearch-mcp-server`, create the index on the Aiven endpoint with mappings from the local setup. Include field mappings, settings, and analyzers. Configure 1 replica for HA (Aiven distributes replicas across nodes automatically on multi-node plans).
+### Aiven-specific notes for the launchpad flow
 
-```
-PUT /<index-name>
-{
-  "settings": { "index": { "number_of_replicas": 1 } },
-  "mappings": { ... from local config ... }
-}
-```
+- **Replicas / HA** — Aiven distributes replicas across nodes automatically on multi-node plans. On a single-node plan, replicas stay unassigned (yellow health is expected) — use `number_of_replicas: 0` for dev.
+- **ML on single-node plans** — a single node has no dedicated ML role, so model deploy fails until you set `ml_commons_only_run_on_ml_node: false`. Aiven blocks the direct `PUT /_cluster/settings`, so set it via `aiven_service_update` (`user_config.opensearch.ml_commons_only_run_on_ml_node = false`). This also means the `opensearch_ops.py deploy-model` helper 403s — register the model directly through `opensearch-mcp-server` instead.
+- **Model format** — prefer `ONNX`; the `TORCH_SCRIPT` format of some pretrained models fails to load on OpenSearch 2.17.
+- **Remote ML connectors (Bedrock/OpenAI/etc.)** — no IAM role as on AWS. Allowlist the endpoint via `trusted_connector_endpoints_regex` in the service's OpenSearch user configuration; otherwise fall back to a local pretrained model.
+- **Plugins** — ML Commons, k-NN, and SQL/PPL are available out of the box.
 
-For dense-vector / hybrid strategies, enable k-NN and add the vector field:
-
-```
-PUT /<index-name>
-{
-  "settings": { "index": { "knn": true, "number_of_replicas": 1 } },
-  "mappings": {
-    "properties": {
-      "<text-field>": { "type": "text" },
-      "<vector-field>": {
-        "type": "knn_vector",
-        "dimension": 768,
-        "method": { "engine": "faiss", "name": "hnsw", "space_type": "l2" }
-      }
-    }
-  }
-}
-```
-
-Update state: `"index_name": "<index-name>"`.
-
-## Step 2: Deploy ML Models (if semantic/hybrid/neural-sparse search)
-
-Aiven OpenSearch ships the ML Commons plugin. Register and deploy a pretrained model:
-
-```
-POST /_plugins/_ml/models/_register?deploy=true
-{
-  "name": "huggingface/sentence-transformers/all-MiniLM-L12-v2",
-  "version": "1.0.1",
-  "model_format": "TORCH_SCRIPT"
-}
-```
-
-Test inference once deployed:
-
-```
-POST /_plugins/_ml/models/<model-id>/_predict
-{ "text_docs": ["hello world"] }
-```
-
-> **Remote model connectors (Bedrock/OpenAI/etc.):** Aiven manages the cluster settings and trusted-endpoint allowlist required for ML connectors differently from AWS — there is no IAM role to attach. If the user wants a remote connector, confirm the connector/endpoint is permitted on their plan and configure `trusted_connector_endpoints_regex` via Aiven's OpenSearch user configuration. If it's not available, fall back to a local pretrained model above.
-
-Update state: `"model_id": "<model_id>"`.
-
-## Step 3: Create Ingest Pipelines
-
-```
-PUT /_ingest/pipeline/<pipeline-name>
-{
-  "description": "Embedding pipeline",
-  "processors": [{
-    "text_embedding": {
-      "model_id": "<model_id>",
-      "field_map": { "<text-field>": "<vector-field>" }
-    }
-  }]
-}
-```
-
-Attach it to the index:
-
-```
-PUT /<index-name>/_settings
-{ "index.default_pipeline": "<pipeline-name>" }
-```
-
-Update state: `"ingest_pipeline_name": "<pipeline-name>"`.
-
-## Step 4: Create Search Pipelines (hybrid search)
-
-```
-PUT /_search/pipeline/<search-pipeline-name>
-{
-  "phase_results_processors": [{
-    "normalization-processor": {
-      "normalization": { "technique": "min_max" },
-      "combination": { "technique": "arithmetic_mean", "parameters": { "weights": [0.3, 0.7] } }
-    }
-  }]
-}
-```
-
-Update state: `"search_pipeline_name": "<search-pipeline-name>"`.
-
-## Step 5: Index Sample Documents
-
-1. Use the same sample documents from the local setup.
-2. Index test documents to verify mappings and pipeline processing.
-3. Run a search query appropriate to the strategy (match / neural / hybrid) and confirm results and embeddings.
-
-You can bulk-load with the shared helper:
-
-```bash
-uv run python scripts/opensearch_ops.py index-bulk \
-  --index <index-name> --source-file /path/to/data.tsv --count 50 \
-  --endpoint <resource_host> --port <resource_port> --use-ssl \
-  --username <os_username> --password <password>
-```
+Update state as launchpad completes: `"index_name"`, and (if created) `"model_id"`, `"ingest_pipeline_name"`, `"search_pipeline_name"`.
 
 ## State Output
 

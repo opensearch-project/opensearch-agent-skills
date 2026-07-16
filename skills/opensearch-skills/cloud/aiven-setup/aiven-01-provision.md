@@ -9,7 +9,7 @@ All Aiven calls go through the **`aiven-mcp`** MCP server. The Aiven Console equ
 Before starting:
 1. Read `.opensearch-deploy-state.json` for current deployment state
 2. Verify the `aiven-mcp` server is connected and reachable — call `aiven_project_list`. If it fails with an auth error, the user needs to (re)connect with a valid Aiven token.
-3. Confirm `aiven-mcp` was connected with full access and `allow_secrets=true`. If `aiven_service_create` is not available, the connection is read-only — tell the user to reconnect with full access (or at minimum `write_allowlist=aiven_service_create`). If `aiven_service_get` returns `[REDACTED]` credentials in Step 5, they need `allow_secrets=true`.
+3. Confirm `aiven-mcp` was connected with full access and `allow_secrets=true` (a connection flag that lets `aiven_service_connection_info` return the real credentials instead of `[REDACTED]`). If `aiven_service_create` is not available, the connection is read-only — tell the user to reconnect with full access (or at minimum `write_allowlist=aiven_service_create`).
 
 ## Step 1: Select the Project
 
@@ -78,14 +78,19 @@ aiven_service_get   # project="<project>", service_name="<service-name>"
 
 If `state` is not `RUNNING`, report the state and stop — ask the user to tell you when to check again. **Do not loop.**
 
-Once `state == "RUNNING"`, extract the connection details from the response:
+If `state` is `RUNNING`, read the endpoint and credentials with `aiven_service_connection_info` (this is the tool that returns the real host, port, user, and password — `aiven_service_get` keeps them `[REDACTED]`):
 
-- **Endpoint** — from `service_uri` (an `https://<user>:<password>@<host>:<port>` URI) and/or the `components` array (`host`, `port`, `component: "opensearch"`). The Dashboards URL is the `opensearch_dashboards` component if present.
-- **Credentials** — from `service_uri_params` (`host`, `port`, `user`, `password`) or the `users` array. The default admin user is typically `avnadmin`.
+```
+aiven_service_connection_info   # project="<project>", service_name="<service-name>"
+```
 
-> These values are only returned in full because `aiven-mcp` was connected with `allow_secrets=true`. Without it, `service_uri` and `password` come back as `[REDACTED]` — if you see that, tell the user to reconnect with `allow_secrets=true`.
->
-> Aiven Console equivalent: the service's **Connection information** tab (Service URI, Host, Port, User, Password).
+- **Host / port / user** — from the response (default admin user is `avnadmin`).
+- **Password** — from the response; requires `allow_secrets=true`, otherwise it comes back `[REDACTED]`.
+- **Dashboards URL** — the `opensearch_dashboards` endpoint if present.
+
+> Aiven Console equivalent: the service's **Connection information** tab.
+
+**How the credential reaches the MCP:** Aiven generates the password; you read it from `aiven_service_connection_info` and wire it into `opensearch-mcp-server`'s `OPENSEARCH_PASSWORD` env in Step 2. The agent never invents it.
 
 Store the pieces you'll need for Step 2. Do not echo the password into the chat beyond what's needed to configure the MCP server.
 

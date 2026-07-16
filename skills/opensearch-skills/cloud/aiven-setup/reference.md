@@ -49,10 +49,10 @@ Aiven fronts services with a **project-level self-signed CA**. Two options for `
 |---|---|
 | `aiven_service_create` not available | Connection is read-only — reconnect `aiven-mcp` with full access (or `write_allowlist=aiven_service_create`) |
 | `aiven_service_metrics_fetch` / logs not available | Monitoring needs full access — a provisioning-only (`write_allowlist`) connection excludes them |
-| `service_uri` / password shows `[REDACTED]` | Reconnect `aiven-mcp` with `allow_secrets=true` |
+| credentials show `[REDACTED]` | Reconnect `aiven-mcp` with `allow_secrets=true`, and read them via `aiven_service_connection_info` |
 | Service stuck in `BUILDING` | Normal for a few minutes; re-check with a single `aiven_service_get` — do not loop |
 | TLS handshake / cert errors | Use the project CA, or `OPENSEARCH_SSL_VERIFY=false` for dev |
-| 401 / auth failed to the cluster | Confirm username (`avnadmin`) and password from `aiven_service_get`; password may have rotated |
+| 401 / auth failed to the cluster | Confirm username (`avnadmin`) and password from `aiven_service_connection_info`; password may have rotated |
 | Cluster health yellow | Unassigned replicas — expected on single-node plans; use a multi-node plan or set `number_of_replicas: 0` for dev |
 | Remote ML connector rejected | Endpoint not in the trusted allowlist — configure `trusted_connector_endpoints_regex` in the service's OpenSearch user config, or use a local pretrained model |
 | Model deployment fails | Confirm ML Commons is enabled and the plan has enough heap; smaller plans may not fit larger models |

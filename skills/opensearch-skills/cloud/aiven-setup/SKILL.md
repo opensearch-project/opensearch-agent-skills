@@ -52,7 +52,7 @@ The Aiven MCP is a remote HTTP server — a single URL entry, no local process. 
 }
 ```
 
-- **`aiven-mcp`** — Aiven control plane. Lists projects/plans/clouds, creates the OpenSearch service (`aiven_service_create`), reads service state and connection details (`aiven_service_get`), and monitors the running service — metrics (`aiven_service_metrics_fetch`) and logs (`aiven_project_get_service_logs`). Full access (no `read_only`) is used so provisioning and monitoring both work. `allow_secrets=true` is required so `aiven_service_get` returns the live OpenSearch URI and password instead of `[REDACTED]`.
+- **`aiven-mcp`** — Aiven control plane. Lists projects/plans/clouds, creates the OpenSearch service (`aiven_service_create`), reads service state (`aiven_service_get`) and connection credentials (`aiven_service_connection_info`), and monitors the running service — metrics (`aiven_service_metrics_fetch`) and logs (`aiven_project_get_service_logs`). Full access (no `read_only`) is used so provisioning and monitoring both work. `allow_secrets=true` is required so `aiven_service_connection_info` returns the live URI and password instead of `[REDACTED]`.
   - **Prefer a scoped token.** Because this connection has full write access, use an Aiven API token scoped to the intended project so the skill can't touch unrelated services. If the user wants provisioning-only, they may instead connect with `?read_only=true&write_allowlist=aiven_service_create&allow_secrets=true`, but then the monitoring step (Step 4) is unavailable.
 - **`opensearch-mcp-server`** — Direct OpenSearch API access for the deploy step. Configured with the Aiven endpoint + basic-auth credentials in Step 2.
 
@@ -61,7 +61,7 @@ If a required MCP server is missing, follow the **Auto-Installing Missing MCP Se
 ## Key Rules
 
 - **Never guess the plan or cloud.** Always call `aiven_service_type_plans` (with `service_type="opensearch"`) and present plans to the user; call `aiven_list_project_clouds` for valid cloud names. Let the user choose both.
-- **Never fabricate the password.** Aiven generates it. Read it back via `aiven_service_get` (requires `allow_secrets=true`) — do not invent or assume credentials.
+- **Never fabricate the password.** Aiven generates it. Read it back via `aiven_service_connection_info` (requires `allow_secrets=true`) — do not invent or assume credentials.
 - **Do not poll in a loop.** After creating the service, tell the user it is provisioning (a few minutes) and ask them to tell you when to check. Re-check state with a single `aiven_service_get`.
 - **Treat credentials as sensitive.** Wire them into the `opensearch-mcp-server` env block; do not echo the password back into the conversation more than necessary.
 - **TLS is required.** Aiven uses a project CA (self-signed). Either set `OPENSEARCH_SSL_VERIFY=false` (dev) or supply the project CA (see [reference.md](reference.md)).
@@ -76,7 +76,7 @@ Follow [aiven-01-provision.md](aiven-01-provision.md): pick project → list pla
 
 ### Step 2 — Deploy the search configuration
 
-Follow [aiven-02-deploy-search.md](aiven-02-deploy-search.md): point `opensearch-mcp-server` at the Aiven endpoint, then create the index, mappings, and pipelines, and index sample documents.
+Follow [aiven-02-deploy-search.md](aiven-02-deploy-search.md): point `opensearch-mcp-server` at the Aiven endpoint, then delegate the search build (index, mappings, models, pipelines, sample docs) to the [opensearch-launchpad](../../search/opensearch-launchpad/SKILL.md) skill — that flow is not Aiven-specific.
 
 ### Step 3 — Launch the Search UI
 
@@ -84,11 +84,11 @@ Follow [aiven-02-deploy-search.md](aiven-02-deploy-search.md): point `opensearch
 uv run python scripts/opensearch_ops.py launch-ui \
   --index <index-name> \
   --endpoint <aiven-host> \
-  --port <aiven-port> \
-  --use-ssl \
   --username <username> \
   --password <password>
 ```
+
+> `launch-ui` assumes port 443. Aiven serves OpenSearch on a non-standard port, so the UI won't connect out of the box — launch it with the port corrected (Aiven's TLS cert is publicly trusted, so no CA setup is needed). See [reference.md](reference.md).
 
 ### Step 4 — Verify health via Aiven (optional but recommended)
 
