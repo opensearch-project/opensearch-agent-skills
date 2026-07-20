@@ -69,13 +69,12 @@ jobs:
       - name: Install UV
         uses: astral-sh/setup-uv@d0cc045d04ccac9d8b7881df0226f9e82c39688e # v6
 
-      # Authenticate to AWS using OIDC — same pattern as opensearch-build's
-      # code-diff-reviewer workflow. Requires BEDROCK_ACCESS_ROLE secret
-      # (an IAM role ARN with bedrock:InvokeModel permission).
+      # This ROLE should not be shared with PR review
+      # And should be managed by the opensearch-agent-skills team
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@7474bc4690e29a8392af63c5b98e7449536d5c3a # v4
         with:
-          role-to-assume: ${{ secrets.BEDROCK_ACCESS_ROLE }}
+          role-to-assume: ${{ secrets.BEDROCK_ACCESS_ROLE_EVALS }}
           aws-region: us-east-1
 
       - name: Install eval dependencies
