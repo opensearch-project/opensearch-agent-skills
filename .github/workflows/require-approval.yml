@@ -1,0 +1,53 @@
+---
+name: Check if the workflow requires approval
+
+on:
+  workflow_call:
+    outputs:
+      is-require-approval:
+        description: The environment name to use (controls approval gate)
+        value: ${{ jobs.Require-Approval.outputs.output-is-require-approval }}
+
+jobs:
+  Require-Approval:
+    runs-on: ubuntu-latest
+    outputs:
+      output-is-require-approval: ${{ steps.step-is-require-approval.outputs.is-require-approval }}
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          ref: ${{ github.event.pull_request.base.sha }}
+      - name: Check if approval is required
+        id: step-is-require-approval
+        run: |
+          github_event=${{ github.event_name }}
+          author=${{ github.event.pull_request.user.login }}
+
+          if [[ "$github_event" == "push" ]] || [[ "$github_event" == "schedule" ]] || [[ "$github_event" == "workflow_dispatch" ]]; then
+            echo "Non-PR event does not need approval."
+            echo "is-require-approval=eval-cicd-env" >> $GITHUB_OUTPUT
+          else
+            # Check if the author is in the approvers list (CODEOWNERS)
+            if [ -f ".github/CODEOWNERS" ]; then
+              approvers=$(cat .github/CODEOWNERS | grep @ | tr -d '* ' | sed 's/@/,/g' | sed 's/,//1')
+            else
+              approvers=""
+            fi
+
+            is_approved=false
+            IFS=',' read -ra APPROVER_ARRAY <<< "$approvers"
+            for approver in "${APPROVER_ARRAY[@]}"; do
+              if [[ "$approver" == "$author" ]]; then
+                is_approved=true
+                break
+              fi
+            done
+
+            if [[ "$is_approved" == "true" ]]; then
+              echo "$author is in the approval list."
+              echo "is-require-approval=eval-cicd-env" >> $GITHUB_OUTPUT
+            else
+              echo "$author is not in the approval list."
+              echo "is-require-approval=eval-cicd-env-require-approval" >> $GITHUB_OUTPUT
+            fi
+          fi
