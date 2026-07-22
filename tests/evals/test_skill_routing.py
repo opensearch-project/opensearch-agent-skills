@@ -20,7 +20,7 @@ import pytest
 pytest.importorskip("pytest_evals", reason="evals group not installed — run with: uv run --group evals pytest tests/evals/")
 from pytest_evals import eval_bag  # noqa: F401 — fixture injected by plugin
 
-from tests.evals.conftest import call_skill, load_skill_md
+from tests.evals.conftest import call_skill, load_skill_md, _BEDROCK_JUDGE_MODEL_ID
 
 _FIXTURES = Path(__file__).parent / "fixtures" / "routing.json"
 _CASES = json.loads(_FIXTURES.read_text())
@@ -49,7 +49,9 @@ def test_skill_routing(case, eval_bag, bedrock_client):  # noqa: F811
         "Reply with the skill name (e.g. opensearch-launchpad, log-analytics, "
         "trace-analytics, aws-setup, managed-ingestion-service, document-processing) and a brief explanation."
     )
-    response = call_skill(router_skill, wrapped_prompt, bedrock_client)
+    # STOPGAP: use Haiku, not the default Sonnet — eval CI role only
+    # allowlists Haiku for now. Revert once IAM allows Sonnet too.
+    response = call_skill(router_skill, wrapped_prompt, bedrock_client, model_id=_BEDROCK_JUDGE_MODEL_ID)
 
     routed_correctly = case["expected_skill"] in response.lower().replace("-", "-")
 

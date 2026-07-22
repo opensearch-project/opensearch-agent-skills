@@ -7,7 +7,8 @@ matching.
 
 Architecture:
   1. call_skill()  — runs the skill as a system prompt against a user prompt
-                     (Haiku 4.5 via Bedrock, same model as routing tests)
+                     (Sonnet by design; pinned to Haiku as a stopgap — see
+                     the STOPGAP comment below)
   2. GEval judge   — a second Bedrock call evaluates whether the response
                      satisfies the rule criteria (Haiku 4.5 as judge)
 
@@ -61,7 +62,9 @@ def test_skill_rule_compliance(case, eval_bag, bedrock_client):  # noqa: F811
     if bedrock_client is None:
         pytest.skip("AWS Bedrock credentials not available")
     skill_md = load_skill_with_references(case["skill"], case.get("references"))
-    response = call_skill(skill_md, case["prompt"], bedrock_client)
+    # STOPGAP: use Haiku, not the default Sonnet — eval CI role only
+    # allowlists Haiku for now. Revert once IAM allows Sonnet too.
+    response = call_skill(skill_md, case["prompt"], bedrock_client, model_id=_BEDROCK_JUDGE_MODEL_ID)
 
     # Build a GEval metric with the rule's natural-language criteria.
     # The judge evaluates whether the response satisfies the criteria.

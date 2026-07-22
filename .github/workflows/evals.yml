@@ -3,25 +3,27 @@ name: Skill Evals
 # Runs LLM-based skill evaluation tests (Layer 3b).
 #
 # Triggers:
-#   - Manual dispatch (workflow_dispatch) — run on demand, with optional ref input
-#     for evaluating fork PRs after maintainer review
-#   - Weekly schedule — Monday 06:00 UTC
-#   - Push to main touching skill content or eval fixtures/tests
-#   - pull_request for org-member PRs (secrets available via OIDC)
+#   - workflow_dispatch — run on demand against any ref
+#   - schedule — weekly, Monday 06:00 UTC
+#   - push to main touching skill content or eval fixtures/tests
+#   - pull_request_review (submitted) — runs only after a trusted
+#     reviewer's "Approve", pinned to the exact reviewed commit
 #
-# Security: pull_request_target has been intentionally removed to prevent
-# secret exfiltration via malicious fork PRs. For fork PRs, maintainers
-# should review the code then trigger evals via workflow_dispatch with
-# the reviewed commit SHA.
+# Security: pull_request_target is not used — it can run fork code
+# with secrets on a signal not bound to a specific commit. Instead,
+# evals only run after a CODEOWNERS-listed reviewer (see
+# check-reviewer.yml) approves the current commit. Enable "Dismiss
+# stale pull request approvals when new commits are pushed" in branch
+# protection so a new push always requires a fresh review.
 #
-# Requires BEDROCK_ACCESS_ROLE repository secret (IAM role ARN).
-# The role is assumed via GitHub OIDC — no static AWS keys stored.
+# Requires BEDROCK_ACCESS_ROLE_EVALS repository secret (IAM role ARN),
+# assumed via GitHub OIDC.
 
 on:
   workflow_dispatch:
     inputs:
       ref:
-        description: 'Git ref to evaluate (SHA or branch). Use for fork PRs after review.'
+        description: 'Git ref to evaluate (SHA or branch).'
         required: false
         default: ''
   schedule:
@@ -32,34 +34,44 @@ on:
       - 'skills/**'
       - 'tests/evals/**'
       - '.github/workflows/evals.yml'
-  pull_request:
-    paths:
-      - 'skills/**'
-      - 'tests/evals/**'
-      - '.github/workflows/evals.yml'
+  pull_request_review:
+    types: [submitted]
 
 permissions:
   contents: read
   id-token: write   # required for OIDC role assumption
 
 concurrency:
-  group: evals-${{ github.ref }}
+  group: evals-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
 
 jobs:
+  check-reviewer:
+    # Only relevant for pull_request_review; skip on other triggers.
+    if: github.event_name == 'pull_request_review'
+    uses: ./.github/workflows/check-reviewer.yml
+
   evals:
     name: Skill Evals (LLM)
+    needs: [check-reviewer]
     runs-on: ubuntu-latest
-    timeout-minutes: 15
-    # Skip fork PRs — secrets (OIDC) are unavailable. Maintainers can use
-    # workflow_dispatch with the fork PR's SHA after review.
-    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+    timeout-minutes: 30
+    # always() prevents this job from being skipped just because its
+    # `needs` dependency was skipped (see actions/runner#491).
+    if: >
+      always() &&
+      (github.event_name != 'pull_request_review' ||
+       (github.event.review.state == 'approved' &&
+        github.event.review.commit_id == github.event.pull_request.head.sha &&
+        needs.check-reviewer.outputs.is-trusted-reviewer == 'true'))
 
     steps:
       - name: Checkout
         uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
         with:
-          ref: ${{ inputs.ref || github.sha }}
+          # Priority: manual ref > reviewed commit (pinned, never the
+          # PR's live head) > default trigger SHA.
+          ref: ${{ inputs.ref || github.event.review.commit_id || github.sha }}
 
       - name: Set up Python
         uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5

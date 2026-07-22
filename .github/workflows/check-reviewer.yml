@@ -1,0 +1,44 @@
+name: Check if reviewer is in CODEOWNERS
+
+# Checks whether a pull_request_review's reviewer is listed in
+# .github/CODEOWNERS. Anyone can submit an "Approve" review on a
+# public repo, so approval alone isn't a sufficient trust signal for
+# workflows that need secrets (see evals.yml).
+#
+# Reads CODEOWNERS from the base branch only, never the PR head, so
+# the trust decision can't depend on anything the PR author controls.
+
+on:
+  workflow_call:
+    outputs:
+      is-trusted-reviewer:
+        description: "'true' if the reviewer's login appears in CODEOWNERS"
+        value: ${{ jobs.check.outputs.is-trusted-reviewer }}
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    outputs:
+      is-trusted-reviewer: ${{ steps.check.outputs.is-trusted-reviewer }}
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          ref: ${{ github.event.pull_request.base.sha }}
+          sparse-checkout: .github/CODEOWNERS
+          sparse-checkout-cone-mode: false
+
+      - id: check
+        env:
+          REVIEWER: ${{ github.event.review.user.login }}
+        run: |
+          # Exact-token match on "@<reviewer>", anchored to whitespace.
+          # grep -w would wrongly match substrings (e.g. "fen" inside
+          # "@fen-qin") or team handles (e.g. "@org/team").
+          if grep -qiE "(^|[[:space:]])@${REVIEWER}([[:space:]]|$)" .github/CODEOWNERS 2>/dev/null; then
+            echo "is-trusted-reviewer=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "is-trusted-reviewer=false" >> "$GITHUB_OUTPUT"
+          fi
