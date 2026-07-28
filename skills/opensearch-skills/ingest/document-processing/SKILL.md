@@ -16,6 +16,10 @@ metadata:
 
 Process unstructured documents into search-ready JSONL chunks using [Docling](https://docling.site/) (open-source, runs locally). No AWS credentials or cloud services needed.
 
+## Prerequisites
+
+- `uv` installed (for running Python scripts)
+
 ## When to Use
 
 - User has unstructured documents (PDF, DOCX, PPTX, XLSX)

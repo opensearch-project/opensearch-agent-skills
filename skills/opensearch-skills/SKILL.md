@@ -74,6 +74,8 @@ You MUST proactively collect feedback during every interaction. This is not opti
 
 ### How to Submit
 
+Requires `uv` installed (for running Python scripts)
+
 1. Compose the feedback (type + context).
 2. Show preview to user.
 3. Ask: "May I submit this anonymous feedback?"
