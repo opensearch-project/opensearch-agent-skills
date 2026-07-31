@@ -9,6 +9,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from typing import Any, Iterable
+from urllib.parse import urlsplit
 
 
 class WorkflowError(ValueError):
@@ -57,6 +58,11 @@ def validate_workflow(document: dict[str, Any]) -> dict[str, Step]:
         path = raw.get("path")
         if not isinstance(path, str) or not path.startswith("/"):
             raise WorkflowError(f"{step_id}: path must start with '/'")
+        path_parts = urlsplit(path)
+        if path_parts.scheme or path_parts.netloc or path_parts.fragment:
+            raise WorkflowError(
+                f"{step_id}: path must be root-relative and contain no fragment"
+            )
         expect = str(raw.get("expect", "allow")).lower()
         if expect not in {"allow", "deny"}:
             raise WorkflowError(f"{step_id}: expect must be 'allow' or 'deny'")
@@ -173,7 +179,21 @@ def parse_evidence_document(document: Any, source: str = "evidence") -> list[Evi
         step_id = record.get("step_id")
         if not isinstance(step_id, str) or not step_id.strip():
             raise WorkflowError(f"{source}[{position}].step_id is required")
-        response = record.get("response", record)
+        response = record.get("response")
+        if response is None and "response" not in record:
+            metadata_fields = {
+                "step_id",
+                "source",
+                "timestamp",
+                "observed_at",
+                "request",
+                "metadata",
+            }
+            response = {
+                key: value
+                for key, value in record.items()
+                if key not in metadata_fields
+            }
         missing_privileges = parse_missing_privileges(response)
         allowed = _infer_allowed(response)
         if allowed is None and missing_privileges:

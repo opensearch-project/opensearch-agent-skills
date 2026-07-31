@@ -39,6 +39,15 @@ def _write_json(path: Path, value: Any) -> None:
 
 def _permission_check_path(path: str) -> str:
     parts = urlsplit(path)
+    if (
+        parts.scheme
+        or parts.netloc
+        or parts.fragment
+        or not parts.path.startswith("/")
+    ):
+        raise WorkflowError(
+            "workflow step path must be root-relative and contain no fragment"
+        )
     query = [
         (key, value)
         for key, value in parse_qsl(parts.query, keep_blank_values=True)
@@ -71,6 +80,14 @@ def _validate_probe_url(base_url: str) -> None:
     scheme = parts.scheme.lower()
     host = (parts.hostname or "").lower()
     loopback_hosts = {"127.0.0.1", "localhost", "::1"}
+    if not parts.netloc or not host:
+        raise WorkflowError("probe base URL must include a host")
+    if parts.username is not None or parts.password is not None:
+        raise WorkflowError("probe base URL must not contain user information")
+    try:
+        parts.port
+    except ValueError as exc:
+        raise WorkflowError("probe base URL contains an invalid port") from exc
     if scheme != "https" and not (scheme == "http" and host in loopback_hosts):
         raise WorkflowError(
             "probe refuses to send credentials over a non-HTTPS URL; "
@@ -78,6 +95,27 @@ def _validate_probe_url(base_url: str) -> None:
         )
     if parts.query or parts.fragment:
         raise WorkflowError("probe base URL must not contain a query or fragment")
+
+
+def _compose_probe_url(base_url: str, path: str) -> str:
+    _validate_probe_url(base_url)
+    permission_path = _permission_check_path(path)
+    url = base_url.rstrip("/") + permission_path
+    base_parts = urlsplit(base_url)
+    url_parts = urlsplit(url)
+    base_origin = (
+        base_parts.scheme.lower(),
+        (base_parts.hostname or "").lower(),
+        base_parts.port,
+    )
+    url_origin = (
+        url_parts.scheme.lower(),
+        (url_parts.hostname or "").lower(),
+        url_parts.port,
+    )
+    if url_origin != base_origin:
+        raise WorkflowError("workflow step path resolves outside the probe origin")
+    return url
 
 
 def _probe_step(
@@ -89,8 +127,7 @@ def _probe_step(
     skip_hostname_verification: bool,
     timeout: float,
 ) -> dict[str, Any]:
-    path = _permission_check_path(step["path"])
-    url = base_url.rstrip("/") + path
+    url = _compose_probe_url(base_url, step["path"])
     body = step.get("body")
     data = None if body is None else json.dumps(body).encode("utf-8")
     request = Request(url, data=data, method=str(step.get("method", "GET")).upper())

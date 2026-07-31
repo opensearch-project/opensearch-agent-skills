@@ -22,6 +22,7 @@ sys.path.insert(0, str(_SCRIPTS_DIR))
 
 import permission_compiler.cli as compiler_cli  # noqa: E402
 from permission_compiler.cli import (  # noqa: E402
+    _compose_probe_url,
     _permission_check_path,
     _ssl_context,
     _validate_probe_url,
@@ -149,6 +150,17 @@ def test_workflow_rejects_duplicate_ids():
         validate_workflow(document)
 
 
+@pytest.mark.parametrize(
+    "path",
+    ["//evil.example.com/_search", "/_search#fragment"],
+)
+def test_workflow_rejects_non_root_relative_paths(path):
+    document = workflow()
+    document["steps"][0]["path"] = path
+    with pytest.raises(WorkflowError, match="root-relative"):
+        validate_workflow(document)
+
+
 def test_compile_partitions_cluster_and_index_actions():
     evidence = [
         Evidence(
@@ -219,6 +231,17 @@ def test_parse_evidence_document_requires_step_id():
         parse_evidence_document({"response": {"accessAllowed": True}})
 
 
+def test_evidence_metadata_does_not_influence_response_inference():
+    evidence = parse_evidence_document(
+        {
+            "step_id": "search",
+            "metadata": {"accessAllowed": True},
+            "status": 200,
+        }
+    )
+    assert evidence[0].allowed is None
+
+
 def test_verify_workflow_passes_positive_and_negative_contract():
     evidence = [
         Evidence("search", True, (), "after"),
@@ -273,6 +296,22 @@ def test_permission_check_path_preserves_duplicate_query_parameters():
     }
 
 
+def test_permission_check_path_rejects_authority_and_fragment():
+    with pytest.raises(WorkflowError, match="root-relative"):
+        _permission_check_path("//evil.example.com/_search")
+    with pytest.raises(WorkflowError, match="root-relative"):
+        _permission_check_path("/_search#fragment")
+
+
+def test_composed_probe_url_preserves_prefix_and_origin():
+    url = _compose_probe_url(
+        "https://search.example.com/opensearch",
+        "/logs/_search?preference=local",
+    )
+    assert url.startswith("https://search.example.com/opensearch/logs/_search?")
+    assert urlsplit(url).hostname == "search.example.com"
+
+
 def test_http_status_alone_does_not_infer_permission_outcome():
     evidence = parse_evidence_document(
         {"step_id": "search", "response": {"status": 200}}
@@ -325,6 +364,13 @@ def test_probe_url_requires_https_except_for_loopback():
 def test_probe_url_rejects_query_and_fragment():
     with pytest.raises(WorkflowError, match="query or fragment"):
         _validate_probe_url("https://search.example.com?pretty=true")
+
+
+def test_probe_url_requires_host_and_rejects_userinfo():
+    with pytest.raises(WorkflowError, match="include a host"):
+        _validate_probe_url("https:///opensearch")
+    with pytest.raises(WorkflowError, match="user information"):
+        _validate_probe_url("https://user@example.com")
 
 
 def test_probe_connection_failure_returns_nonzero_and_keeps_evidence(

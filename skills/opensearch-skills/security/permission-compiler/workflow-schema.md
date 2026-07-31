@@ -32,7 +32,8 @@ The compiler accepts a JSON object:
 - `role_name`: OpenSearch role name to emit.
 - `steps[].id`: stable evidence join key.
 - `steps[].method`: HTTP method.
-- `steps[].path`: path beginning with `/`.
+- `steps[].path`: root-relative path beginning with `/`; absolute URLs,
+  protocol-relative paths, and fragments are rejected.
 - `steps[].body`: optional JSON request body.
 - `steps[].index_patterns`: intended data boundary. Required whenever evidence
   yields an `indices:*` action.
