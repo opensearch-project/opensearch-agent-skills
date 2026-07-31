@@ -125,6 +125,10 @@ def _compose_probe_url(base_url: str, path: str) -> str:
     )
     if url_origin != base_origin:
         raise WorkflowError("workflow step path resolves outside the probe origin")
+    base_path = base_parts.path.rstrip("/")
+    expected_path_prefix = f"{base_path}/" if base_path else "/"
+    if not url_parts.path.startswith(expected_path_prefix):
+        raise WorkflowError("workflow step path resolves outside the probe base path")
     return url
 
 
@@ -200,7 +204,8 @@ def _command_probe(args: argparse.Namespace) -> int:
     password = os.getenv("OPENSEARCH_PASSWORD")
     if not username or not password:
         raise WorkflowError(
-            "probe requires --username/OPENSEARCH_USERNAME and OPENSEARCH_PASSWORD"
+            "probe requires --username/OPENSEARCH_USERNAME and a password via "
+            "OPENSEARCH_PASSWORD; password flags are intentionally unsupported"
         )
     base_url = args.url or os.getenv("OPENSEARCH_URL")
     if not base_url:

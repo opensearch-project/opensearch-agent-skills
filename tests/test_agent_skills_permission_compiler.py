@@ -113,6 +113,20 @@ def test_parse_multiple_actions_with_nested_commas():
     )
 
 
+@pytest.mark.parametrize(
+    ("reason", "expected"),
+    [
+        ("no permissions for [indices:data/read/search", ()),
+        (
+            "no permissions for [indices:data/read/search]",
+            ("indices:data/read/search",),
+        ),
+    ],
+)
+def test_reason_parser_handles_bracket_boundary(reason, expected):
+    assert parse_missing_privileges({"reason": reason}) == expected
+
+
 def test_parse_audit_record():
     response = {
         "audit_category": "MISSING_PRIVILEGES",
@@ -351,6 +365,7 @@ def test_composed_probe_url_preserves_prefix_and_origin():
     )
     assert url.startswith("https://search.example.com/opensearch/logs/_search?")
     assert urlsplit(url).hostname == "search.example.com"
+    assert urlsplit(url).path.startswith("/opensearch/")
 
 
 def test_composed_probe_url_defends_single_slash_boundary(monkeypatch):
