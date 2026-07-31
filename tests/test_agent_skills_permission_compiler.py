@@ -20,9 +20,11 @@ _SCRIPTS_DIR = (
 )
 sys.path.insert(0, str(_SCRIPTS_DIR))
 
+import permission_compiler.cli as compiler_cli  # noqa: E402
 from permission_compiler.cli import (  # noqa: E402
     _permission_check_path,
     _ssl_context,
+    _validate_probe_url,
     main,
 )
 from permission_compiler.core import (
@@ -278,6 +280,21 @@ def test_http_status_alone_does_not_infer_permission_outcome():
     assert evidence[0].allowed is None
 
 
+def test_nested_access_allowed_is_detected_conservatively():
+    evidence = parse_evidence_document(
+        {
+            "step_id": "search",
+            "response": {
+                "checks": [
+                    {"accessAllowed": True},
+                    {"accessAllowed": False},
+                ]
+            },
+        }
+    )
+    assert evidence[0].allowed is False
+
+
 def test_missing_privileges_are_denied_without_http_status_inference():
     evidence = parse_evidence_document(
         {
@@ -296,6 +313,48 @@ def test_main_module_can_be_imported_without_running_cli():
 def test_skip_hostname_verification_requires_ca():
     with pytest.raises(WorkflowError, match="requires --ca-cert"):
         _ssl_context(None, skip_hostname_verification=True)
+
+
+def test_probe_url_requires_https_except_for_loopback():
+    _validate_probe_url("https://search.example.com/opensearch")
+    _validate_probe_url("http://127.0.0.1:9200")
+    with pytest.raises(WorkflowError, match="non-HTTPS"):
+        _validate_probe_url("http://search.example.com:9200")
+
+
+def test_probe_url_rejects_query_and_fragment():
+    with pytest.raises(WorkflowError, match="query or fragment"):
+        _validate_probe_url("https://search.example.com?pretty=true")
+
+
+def test_probe_connection_failure_returns_nonzero_and_keeps_evidence(
+    tmp_path, monkeypatch
+):
+    workflow_path = tmp_path / "workflow.json"
+    evidence_path = tmp_path / "evidence.json"
+    workflow_path.write_text(json.dumps(workflow()), encoding="utf-8")
+    monkeypatch.setenv("OPENSEARCH_USERNAME", "test-user")
+    monkeypatch.setenv("OPENSEARCH_PASSWORD", "test-password")
+    monkeypatch.setattr(
+        compiler_cli,
+        "_probe_step",
+        lambda **kwargs: {"connection_error": "connection refused", "status": 0},
+    )
+
+    exit_code = main(
+        [
+            "probe",
+            "--workflow",
+            str(workflow_path),
+            "--output",
+            str(evidence_path),
+            "--url",
+            "https://search.example.com/opensearch",
+        ]
+    )
+
+    assert exit_code == 2
+    assert len(json.loads(evidence_path.read_text(encoding="utf-8"))) == 3
 
 
 def test_probe_is_permission_check_and_does_not_persist_credentials(

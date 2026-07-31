@@ -11,7 +11,7 @@ import sys
 from pathlib import Path
 from typing import Any
 from urllib.error import HTTPError, URLError
-from urllib.parse import parse_qsl, urlencode, urljoin, urlsplit, urlunsplit
+from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 from urllib.request import Request, urlopen
 
 from .core import (
@@ -66,6 +66,20 @@ def _ssl_context(
     return context
 
 
+def _validate_probe_url(base_url: str) -> None:
+    parts = urlsplit(base_url)
+    scheme = parts.scheme.lower()
+    host = (parts.hostname or "").lower()
+    loopback_hosts = {"127.0.0.1", "localhost", "::1"}
+    if scheme != "https" and not (scheme == "http" and host in loopback_hosts):
+        raise WorkflowError(
+            "probe refuses to send credentials over a non-HTTPS URL; "
+            "plaintext HTTP is allowed only for loopback development clusters"
+        )
+    if parts.query or parts.fragment:
+        raise WorkflowError("probe base URL must not contain a query or fragment")
+
+
 def _probe_step(
     base_url: str,
     step: dict[str, Any],
@@ -76,7 +90,7 @@ def _probe_step(
     timeout: float,
 ) -> dict[str, Any]:
     path = _permission_check_path(step["path"])
-    url = urljoin(base_url.rstrip("/") + "/", path.lstrip("/"))
+    url = base_url.rstrip("/") + path
     body = step.get("body")
     data = None if body is None else json.dumps(body).encode("utf-8")
     request = Request(url, data=data, method=str(step.get("method", "GET")).upper())
@@ -134,7 +148,9 @@ def _command_probe(args: argparse.Namespace) -> int:
     base_url = args.url or os.getenv("OPENSEARCH_URL")
     if not base_url:
         raise WorkflowError("probe requires --url or OPENSEARCH_URL")
+    _validate_probe_url(base_url)
     evidence = []
+    connection_failures = []
     for step in workflow["steps"]:
         response = _probe_step(
             base_url=base_url,
@@ -146,8 +162,17 @@ def _command_probe(args: argparse.Namespace) -> int:
             timeout=args.timeout,
         )
         evidence.append({"step_id": step["id"], "response": response})
+        if "connection_error" in response:
+            connection_failures.append(step["id"])
     _write_json(args.output, evidence)
     print(f"Wrote permission-check evidence: {args.output}")
+    if connection_failures:
+        print(
+            "error: probe connection failed for steps: "
+            + ", ".join(connection_failures),
+            file=sys.stderr,
+        )
+        return 2
     return 0
 
 

@@ -147,9 +147,14 @@ def parse_missing_privileges(response: Any) -> tuple[str, ...]:
 
 
 def _infer_allowed(response: Any) -> bool | None:
-    if isinstance(response, dict):
-        if isinstance(response.get("accessAllowed"), bool):
-            return response["accessAllowed"]
+    observed: set[bool] = set()
+    for value in _walk_json(response):
+        if isinstance(value, dict) and isinstance(value.get("accessAllowed"), bool):
+            observed.add(value["accessAllowed"])
+    if False in observed:
+        return False
+    if True in observed:
+        return True
     return None
 
 
