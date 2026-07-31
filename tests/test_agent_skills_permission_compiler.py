@@ -1,0 +1,325 @@
+from __future__ import annotations
+
+import json
+import sys
+import threading
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from pathlib import Path
+from urllib.parse import parse_qs, urlsplit
+
+import pytest
+
+_SCRIPTS_DIR = (
+    Path(__file__).resolve().parents[1]
+    / "skills"
+    / "opensearch-skills"
+    / "security"
+    / "permission-compiler"
+    / "scripts"
+)
+sys.path.insert(0, str(_SCRIPTS_DIR))
+
+from permission_compiler.cli import (  # noqa: E402
+    _permission_check_path,
+    _ssl_context,
+    main,
+)
+from permission_compiler.core import (
+    Evidence,
+    WorkflowError,
+    compile_role,
+    parse_evidence_document,
+    parse_missing_privileges,
+    validate_workflow,
+    verify_workflow,
+)
+
+
+def workflow():
+    return {
+        "name": "reader",
+        "role_name": "reader-observed",
+        "steps": [
+            {
+                "id": "search",
+                "method": "POST",
+                "path": "/logs-*/_search",
+                "index_patterns": ["logs-*"],
+                "expect": "allow",
+            },
+            {
+                "id": "health",
+                "method": "GET",
+                "path": "/_cluster/health",
+                "index_patterns": [],
+                "expect": "allow",
+            },
+            {
+                "id": "delete",
+                "method": "DELETE",
+                "path": "/logs-2026",
+                "index_patterns": ["logs-*"],
+                "expect": "deny",
+            },
+        ],
+    }
+
+
+def test_parse_direct_missing_privileges():
+    response = {
+        "accessAllowed": False,
+        "missingPrivileges": ["indices:data/read/search", "cluster:monitor/health"],
+    }
+    assert parse_missing_privileges(response) == (
+        "cluster:monitor/health",
+        "indices:data/read/search",
+    )
+
+
+def test_parse_nested_security_exception_with_bracketed_action():
+    response = {
+        "error": {
+            "root_cause": [
+                {
+                    "reason": (
+                        "no permissions for [indices:data/write/bulk[s]] and User "
+                        "[name=a, backend_roles=[], requestedTenant=null]"
+                    )
+                }
+            ]
+        }
+    }
+    assert parse_missing_privileges(response) == ("indices:data/write/bulk[s]",)
+
+
+def test_parse_audit_record():
+    response = {
+        "audit_category": "MISSING_PRIVILEGES",
+        "audit_request_privilege": "indices:admin/get",
+    }
+    assert parse_missing_privileges(response) == ("indices:admin/get",)
+
+
+def test_empty_permission_is_not_invented():
+    response = {
+        "error": {
+            "reason": (
+                "no permissions for [] and User "
+                "[name=admin, backend_roles=[admin], requestedTenant=null]"
+            )
+        }
+    }
+    assert parse_missing_privileges(response) == ()
+
+
+def test_unexpected_ppl_exception_is_not_treated_as_a_grant():
+    response = {
+        "error": {
+            "reason": (
+                "Error occurred in OpenSearch engine: Unexpected exception "
+                "cluster:admin/opensearch/ppl"
+            )
+        }
+    }
+    assert parse_missing_privileges(response) == ()
+
+
+def test_workflow_rejects_duplicate_ids():
+    document = workflow()
+    document["steps"].append(document["steps"][0])
+    with pytest.raises(WorkflowError, match="duplicate"):
+        validate_workflow(document)
+
+
+def test_compile_partitions_cluster_and_index_actions():
+    evidence = [
+        Evidence(
+            "search", False, ("indices:data/read/search",), "test"
+        ),
+        Evidence(
+            "health", False, ("cluster:monitor/health",), "test"
+        ),
+    ]
+    candidate, report = compile_role(workflow(), evidence)
+    role = candidate["reader-observed"]
+    assert role["cluster_permissions"] == ["cluster:monitor/health"]
+    assert role["index_permissions"][0]["index_patterns"] == ["logs-*"]
+    assert role["index_permissions"][0]["allowed_actions"] == [
+        "indices:data/read/search"
+    ]
+    assert report["unobserved_steps"] == ["delete"]
+    assert report["permission_evidence"]["indices:data/read/search"] == {
+        "steps": ["search"],
+        "sources": ["test"],
+        "index_patterns": ["logs-*"],
+    }
+
+
+def test_negative_evidence_never_creates_grant():
+    evidence = [
+        Evidence("delete", False, ("indices:admin/delete",), "test")
+    ]
+    candidate, _ = compile_role(workflow(), evidence)
+    assert candidate["reader-observed"]["index_permissions"] == []
+
+
+def test_allowed_negative_probe_is_violation():
+    evidence = [Evidence("delete", True, (), "test")]
+    _, report = compile_role(workflow(), evidence)
+    assert report["negative_probe_violations"] == ["delete"]
+    assert report["safe_to_review"] is False
+
+
+def test_unscoped_index_permission_stops_review():
+    document = workflow()
+    document["steps"][0]["index_patterns"] = []
+    evidence = [
+        Evidence("search", False, ("indices:data/read/search",), "test")
+    ]
+    candidate, report = compile_role(document, evidence)
+    assert candidate["reader-observed"]["index_permissions"] == []
+    assert report["unscoped_index_actions"]
+    assert report["safe_to_review"] is False
+
+
+def test_unknown_evidence_step_stops_review():
+    evidence = [Evidence("not-in-workflow", False, ("cluster:monitor/state",), "test")]
+    _, report = compile_role(workflow(), evidence)
+    assert report["unknown_evidence_steps"] == ["not-in-workflow"]
+    assert report["safe_to_review"] is False
+
+
+def test_parse_evidence_document_requires_step_id():
+    with pytest.raises(WorkflowError, match="step_id"):
+        parse_evidence_document({"response": {"accessAllowed": True}})
+
+
+def test_verify_workflow_passes_positive_and_negative_contract():
+    evidence = [
+        Evidence("search", True, (), "after"),
+        Evidence("health", True, (), "after"),
+        Evidence("delete", False, ("indices:admin/delete",), "after"),
+    ]
+    report = verify_workflow(workflow(), evidence)
+    assert report["passed"] is True
+    assert {item["outcome"] for item in report["results"]} == {"passed"}
+
+
+def test_verify_workflow_rejects_allowed_negative_probe():
+    evidence = [
+        Evidence("search", True, (), "after"),
+        Evidence("health", True, (), "after"),
+        Evidence("delete", True, (), "after"),
+    ]
+    report = verify_workflow(workflow(), evidence)
+    assert report["passed"] is False
+    assert report["negative_probe_violations"] == [{"step_id": "delete"}]
+
+
+def test_verify_workflow_rejects_conflicting_observations():
+    evidence = [
+        Evidence("search", True, (), "run-1"),
+        Evidence("search", False, ("indices:data/read/search",), "run-2"),
+        Evidence("health", True, (), "after"),
+        Evidence("delete", False, ("indices:admin/delete",), "after"),
+    ]
+    report = verify_workflow(workflow(), evidence)
+    assert report["passed"] is False
+    assert report["conflicting_steps"] == ["search"]
+
+
+def test_permission_check_path_preserves_existing_query():
+    path = _permission_check_path("/logs/_search?preference=local")
+    query = parse_qs(urlsplit(path).query)
+    assert query == {
+        "perform_permission_check": ["true"],
+        "preference": ["local"],
+    }
+
+
+def test_skip_hostname_verification_requires_ca():
+    with pytest.raises(WorkflowError, match="requires --ca-cert"):
+        _ssl_context(None, skip_hostname_verification=True)
+
+
+def test_probe_is_permission_check_and_does_not_persist_credentials(
+    tmp_path, monkeypatch
+):
+    requests = []
+
+    class Handler(BaseHTTPRequestHandler):
+        def do_POST(self):
+            length = int(self.headers.get("Content-Length", "0"))
+            requests.append(
+                {
+                    "path": self.path,
+                    "authorization": self.headers.get("Authorization"),
+                    "body": self.rfile.read(length).decode("utf-8"),
+                }
+            )
+            payload = json.dumps(
+                {
+                    "accessAllowed": False,
+                    "missingPrivileges": ["indices:data/read/search"],
+                }
+            ).encode("utf-8")
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", str(len(payload)))
+            self.end_headers()
+            self.wfile.write(payload)
+
+        def log_message(self, format, *args):
+            return
+
+    server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    try:
+        workflow_path = tmp_path / "workflow.json"
+        evidence_path = tmp_path / "evidence.json"
+        workflow_path.write_text(
+            json.dumps(
+                {
+                    "name": "query",
+                    "steps": [
+                        {
+                            "id": "search",
+                            "method": "POST",
+                            "path": "/logs/_search",
+                            "body": {"query": {"match_all": {}}},
+                            "index_patterns": ["logs"],
+                            "expect": "allow",
+                        }
+                    ],
+                }
+            ),
+            encoding="utf-8",
+        )
+        monkeypatch.setenv("OPENSEARCH_USERNAME", "test-user")
+        monkeypatch.setenv("OPENSEARCH_PASSWORD", "correct-horse")
+        exit_code = main(
+            [
+                "probe",
+                "--workflow",
+                str(workflow_path),
+                "--output",
+                str(evidence_path),
+                "--url",
+                f"http://127.0.0.1:{server.server_port}",
+            ]
+        )
+    finally:
+        server.shutdown()
+        server.server_close()
+        thread.join(timeout=2)
+
+    assert exit_code == 0
+    assert len(requests) == 1
+    query = parse_qs(urlsplit(requests[0]["path"]).query)
+    assert query["perform_permission_check"] == ["true"]
+    assert requests[0]["authorization"].startswith("Basic ")
+    persisted = evidence_path.read_text(encoding="utf-8")
+    assert "correct-horse" not in persisted
+    assert "test-user" not in persisted
+    assert "Authorization" not in persisted
