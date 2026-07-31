@@ -161,6 +161,27 @@ def test_workflow_rejects_non_root_relative_paths(path):
         validate_workflow(document)
 
 
+@pytest.mark.parametrize(
+    "path",
+    ["/../_search", "/%2e%2e/_search", "/%252e%252e/_search", "/logs\\_search"],
+)
+def test_workflow_rejects_unsafe_path_segments(path):
+    document = workflow()
+    document["steps"][0]["path"] = path
+    with pytest.raises(WorkflowError, match="unsafe segment"):
+        validate_workflow(document)
+
+
+def test_workflow_rejects_head_body_but_allows_get_body():
+    document = workflow()
+    document["steps"][0].update({"method": "HEAD", "body": {"query": {}}})
+    with pytest.raises(WorkflowError, match="HEAD steps"):
+        validate_workflow(document)
+
+    document["steps"][0]["method"] = "GET"
+    validate_workflow(document)
+
+
 def test_compile_partitions_cluster_and_index_actions():
     evidence = [
         Evidence(
@@ -301,6 +322,15 @@ def test_permission_check_path_rejects_authority_and_fragment():
         _permission_check_path("//evil.example.com/_search")
     with pytest.raises(WorkflowError, match="root-relative"):
         _permission_check_path("/_search#fragment")
+
+
+@pytest.mark.parametrize(
+    "path",
+    ["/../_search", "/%2e%2e/_search", "/%252e%252e/_search", "/logs\\_search"],
+)
+def test_permission_check_path_rejects_unsafe_segments(path):
+    with pytest.raises(WorkflowError, match="unsafe segment"):
+        _permission_check_path(path)
 
 
 def test_composed_probe_url_preserves_prefix_and_origin():

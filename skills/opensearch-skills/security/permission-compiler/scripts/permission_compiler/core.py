@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from typing import Any, Iterable
-from urllib.parse import urlsplit
+from urllib.parse import unquote, urlsplit
 
 
 class WorkflowError(ValueError):
@@ -31,6 +31,15 @@ class Evidence:
     allowed: bool | None
     missing_privileges: tuple[str, ...]
     source: str
+
+
+def _path_has_unsafe_segments(path: str) -> bool:
+    decoded = path
+    for _ in range(2):
+        decoded = unquote(decoded)
+    return "\\" in decoded or any(
+        segment in {".", ".."} for segment in decoded.split("/")
+    )
 
 
 def validate_workflow(document: dict[str, Any]) -> dict[str, Step]:
@@ -63,6 +72,10 @@ def validate_workflow(document: dict[str, Any]) -> dict[str, Step]:
             raise WorkflowError(
                 f"{step_id}: path must be root-relative and contain no fragment"
             )
+        if _path_has_unsafe_segments(path_parts.path):
+            raise WorkflowError(f"{step_id}: path contains an unsafe segment")
+        if method == "HEAD" and raw.get("body") is not None:
+            raise WorkflowError(f"{step_id}: HEAD steps must not contain a body")
         expect = str(raw.get("expect", "allow")).lower()
         if expect not in {"allow", "deny"}:
             raise WorkflowError(f"{step_id}: expect must be 'allow' or 'deny'")

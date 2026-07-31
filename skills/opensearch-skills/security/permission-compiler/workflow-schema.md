@@ -33,11 +33,17 @@ The compiler accepts a JSON object:
 - `steps[].id`: stable evidence join key.
 - `steps[].method`: HTTP method.
 - `steps[].path`: root-relative path beginning with `/`; absolute URLs,
-  protocol-relative paths, and fragments are rejected.
+  protocol-relative paths, fragments, traversal segments, and backslashes are
+  rejected.
 - `steps[].body`: optional JSON request body.
 - `steps[].index_patterns`: intended data boundary. Required whenever evidence
   yields an `indices:*` action.
 - `steps[].expect`: `allow` or `deny`.
+
+The probe preserves a GET request body because OpenSearch supports GET search
+requests with JSON bodies. Prefer `POST` for search workflows that cross HTTP
+intermediaries which may reject or strip GET bodies. HEAD steps cannot contain
+a body.
 - `tenant_permissions`: optional, explicitly reviewed tenant grants. Tenant
   permissions are not inferred from transport-action errors.
 

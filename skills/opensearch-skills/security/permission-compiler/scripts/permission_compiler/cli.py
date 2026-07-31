@@ -11,7 +11,7 @@ import sys
 from pathlib import Path
 from typing import Any
 from urllib.error import HTTPError, URLError
-from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
+from urllib.parse import parse_qsl, unquote, urlencode, urlsplit, urlunsplit
 from urllib.request import Request, urlopen
 
 from .core import (
@@ -48,6 +48,13 @@ def _permission_check_path(path: str) -> str:
         raise WorkflowError(
             "workflow step path must be root-relative and contain no fragment"
         )
+    decoded_path = parts.path
+    for _ in range(2):
+        decoded_path = unquote(decoded_path)
+    if "\\" in decoded_path or any(
+        segment in {".", ".."} for segment in decoded_path.split("/")
+    ):
+        raise WorkflowError("workflow step path contains an unsafe segment")
     query = [
         (key, value)
         for key, value in parse_qsl(parts.query, keep_blank_values=True)
