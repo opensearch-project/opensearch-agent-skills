@@ -5,6 +5,7 @@ These tests must not require a running OpenSearch cluster or the optional
 the index-naming and file-output behavior can be tested in isolation.
 """
 
+import ctypes
 import json
 import os
 import sys
@@ -563,3 +564,34 @@ def test_is_ingestion_running_dead_pid(workdir):
     assert is_ingestion_running() is False
     # Should have cleaned up the stale PID file.
     assert not pid_path.exists()
+
+
+def test_windows_pid_liveness_treats_access_denied_as_alive(monkeypatch):
+    """Windows last-error tracking preserves the access-denied live-process case."""
+
+    class FakeFunction:
+        def __init__(self, return_value):
+            self.return_value = return_value
+            self.argtypes = None
+            self.restype = None
+
+        def __call__(self, *args):
+            return self.return_value
+
+    class FakeKernel32:
+        OpenProcess = FakeFunction(0)
+        CloseHandle = FakeFunction(1)
+
+    calls = []
+
+    def fake_windll(name, *, use_last_error):
+        calls.append((name, use_last_error))
+        return FakeKernel32()
+
+    monkeypatch.setattr(ingest.os, "name", "nt")
+    monkeypatch.setattr(ctypes, "WinDLL", fake_windll)
+    monkeypatch.setattr(ctypes, "set_last_error", lambda value: None)
+    monkeypatch.setattr(ctypes, "get_last_error", lambda: 5)
+
+    assert ingest._pid_is_alive(12345) is True
+    assert calls == [("kernel32", True)]

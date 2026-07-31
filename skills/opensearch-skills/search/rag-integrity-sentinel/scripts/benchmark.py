@@ -137,9 +137,7 @@ def run_benchmark(corpus_path: Path = DEFAULT_CORPUS) -> dict[str, Any]:
             "classification_threshold": CLASSIFICATION_THRESHOLD,
             "corpus_file": corpus_path.name,
             "corpus_size": len(records),
-            "clean_documents": sum(
-                record["expected"] == "clean" for record in records
-            ),
+            "clean_documents": sum(record["expected"] == "clean" for record in records),
             "malicious_documents": sum(
                 record["expected"] == "malicious" for record in records
             ),
@@ -213,7 +211,9 @@ def main(argv: Sequence[str] | None = None) -> int:
     if args.output == "-":
         sys.stdout.write(rendered)
     else:
-        Path(args.output).write_text(rendered, encoding="utf-8")
+        output_path = Path(args.output)
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+        output_path.write_text(rendered, encoding="utf-8")
 
     metrics = result["metrics"]
     if (

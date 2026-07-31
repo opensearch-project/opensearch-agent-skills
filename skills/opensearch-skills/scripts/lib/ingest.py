@@ -559,16 +559,29 @@ def _pid_is_alive(pid: int) -> bool:
     if os.name == "nt":
         import ctypes
 
+        kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+        open_process = kernel32.OpenProcess
+        open_process.argtypes = [
+            ctypes.c_uint32,
+            ctypes.c_int,
+            ctypes.c_uint32,
+        ]
+        open_process.restype = ctypes.c_void_p
+        close_handle = kernel32.CloseHandle
+        close_handle.argtypes = [ctypes.c_void_p]
+        close_handle.restype = ctypes.c_int
+
         process_query_limited_information = 0x1000
-        handle = ctypes.windll.kernel32.OpenProcess(  # type: ignore[attr-defined]
+        ctypes.set_last_error(0)
+        handle = open_process(
             process_query_limited_information,
             False,
             pid,
         )
         if handle:
-            ctypes.windll.kernel32.CloseHandle(handle)  # type: ignore[attr-defined]
+            close_handle(handle)
             return True
-        # Access denied still proves that the process exists.
+        # Access denied (ERROR_ACCESS_DENIED = 5) still proves that the process exists.
         return ctypes.get_last_error() == 5
 
     try:

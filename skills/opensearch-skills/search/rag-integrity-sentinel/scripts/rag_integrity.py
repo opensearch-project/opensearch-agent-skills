@@ -15,8 +15,8 @@ from __future__ import annotations
 import argparse
 import base64
 import hashlib
+import ipaddress
 import json
-import math
 import os
 import re
 import sys
@@ -254,8 +254,13 @@ def encoded_blob_signal(text: str) -> dict[str, Any] | None:
     """Detect long Base64 blobs that decode mostly to printable bytes."""
     for match in re.finditer(r"(?<![A-Za-z0-9+/])[A-Za-z0-9+/]{80,}={0,2}", text):
         candidate = match.group(0)
+        unpadded = candidate.rstrip("=")
+        remainder = len(unpadded) % 4
+        if remainder == 1:
+            continue
+        normalized = unpadded + ("=" * ((4 - remainder) % 4))
         try:
-            decoded = base64.b64decode(candidate, validate=True)
+            decoded = base64.b64decode(normalized, validate=True)
         except (ValueError, base64.binascii.Error):
             continue
         if not decoded:
@@ -288,7 +293,7 @@ def simhash64(tokens: Sequence[str]) -> int:
     for token, frequency in frequencies.items():
         digest = hashlib.blake2b(token.encode("utf-8"), digest_size=8).digest()
         value = int.from_bytes(digest, "big")
-        weight = 1 + int(math.log2(frequency))
+        weight = frequency.bit_length()
         for bit in range(64):
             vector[bit] += weight if (value >> bit) & 1 else -weight
     result = 0
@@ -390,7 +395,9 @@ def analyze_document(
 
     computed_hash = content_sha256(raw_text)
     missing_provenance = [
-        field for field in provenance_fields if get_path(source, field) in (None, "", [])
+        field
+        for field in provenance_fields
+        if get_path(source, field) in (None, "", [])
     ]
     if missing_provenance:
         findings.append(
@@ -487,9 +494,7 @@ def find_near_duplicate_clusters(
     findings: Sequence[Mapping[str, Any]], max_distance: int = 3
 ) -> list[dict[str, Any]]:
     """Group exact and near-duplicate documents using deterministic SimHash."""
-    eligible = [
-        item for item in findings if int(item.get("token_count", 0)) >= 5
-    ]
+    eligible = [item for item in findings if int(item.get("token_count", 0)) >= 5]
     union_find = UnionFind(len(eligible))
     pair_distances: dict[tuple[int, int], int] = {}
     for left in range(len(eligible)):
@@ -497,13 +502,13 @@ def find_near_duplicate_clusters(
         for right in range(left + 1, len(eligible)):
             right_hash = int(str(eligible[right]["simhash64"]), 16)
             distance = hamming_distance(left_hash, right_hash)
-            if (
-                eligible[left]["content_sha256"]
-                == eligible[right]["content_sha256"]
-                or distance <= max_distance
-            ):
+            exact_match = (
+                eligible[left]["content_sha256"] == eligible[right]["content_sha256"]
+            )
+            if exact_match or distance <= max_distance:
                 union_find.union(left, right)
-                pair_distances[(left, right)] = distance
+                if distance <= max_distance:
+                    pair_distances[(left, right)] = distance
 
     grouped: dict[int, list[int]] = {}
     for position in range(len(eligible)):
@@ -527,6 +532,11 @@ def find_near_duplicate_clusters(
             }
             for position in positions
         ]
+        exact_content = len({member["content_sha256"] for member in members}) == 1
+        distance_basis = (
+            "exact-content" if exact_content else "qualifying-simhash-edges"
+        )
+        reported_distances = [] if exact_content else distances
         clusters.append(
             {
                 "cluster_id": hashlib.sha256(
@@ -537,17 +547,23 @@ def find_near_duplicate_clusters(
                     ).encode("utf-8")
                 ).hexdigest()[:16],
                 "member_count": len(members),
-                "minimum_simhash_distance": min(distances) if distances else 0,
-                "maximum_simhash_distance": max(distances) if distances else 0,
-                "exact_content": len(
-                    {member["content_sha256"] for member in members}
-                )
-                == 1,
-                "members": sorted(members, key=lambda member: (member["index"], member["id"])),
+                "minimum_simhash_distance": (
+                    min(reported_distances) if reported_distances else 0
+                ),
+                "maximum_simhash_distance": (
+                    max(reported_distances) if reported_distances else 0
+                ),
+                "distance_basis": distance_basis,
+                "exact_content": exact_content,
+                "members": sorted(
+                    members, key=lambda member: (member["index"], member["id"])
+                ),
                 "recommended_action": "compare-provenance-and-ingest-history",
             }
         )
-    return sorted(clusters, key=lambda cluster: (-cluster["member_count"], cluster["cluster_id"]))
+    return sorted(
+        clusters, key=lambda cluster: (-cluster["member_count"], cluster["cluster_id"])
+    )
 
 
 def build_neural_query(
@@ -672,12 +688,11 @@ def client_from_environment() -> Any:
     parsed = urlparse(endpoint)
     if parsed.scheme not in {"http", "https"} or not parsed.hostname:
         raise RuntimeError("OPENSEARCH_URL must be an http(s) URL")
-    try:
-        from opensearchpy import OpenSearch
-    except ImportError as exc:
+    if parsed.username or parsed.password:
         raise RuntimeError(
-            "opensearch-py is required; run this command through uv"
-        ) from exc
+            "do not embed credentials in OPENSEARCH_URL; use the credential "
+            "environment variables"
+        )
 
     username = os.environ.get("OPENSEARCH_USERNAME")
     password = os.environ.get("OPENSEARCH_PASSWORD")
@@ -685,11 +700,38 @@ def client_from_environment() -> Any:
         raise RuntimeError(
             "set both OPENSEARCH_USERNAME and OPENSEARCH_PASSWORD, or neither"
         )
-    verify_certs = os.environ.get("OPENSEARCH_SSL_VERIFY", "true").casefold() not in {
-        "0",
-        "false",
-        "no",
-    }
+    try:
+        loopback = ipaddress.ip_address(parsed.hostname).is_loopback
+    except ValueError:
+        loopback = parsed.hostname.casefold() == "localhost"
+    if parsed.scheme == "http" and not loopback:
+        raise RuntimeError(
+            "plain HTTP is allowed only for loopback development endpoints"
+        )
+    if username and parsed.scheme != "https":
+        raise RuntimeError("OpenSearch credentials require an HTTPS endpoint")
+
+    verify_setting = os.environ.get("OPENSEARCH_SSL_VERIFY", "true").casefold()
+    if verify_setting in {"1", "true", "yes"}:
+        verify_certs = True
+    elif verify_setting in {"0", "false", "no"}:
+        verify_certs = False
+    else:
+        raise RuntimeError(
+            "OPENSEARCH_SSL_VERIFY must be true, false, yes, no, 1, or 0"
+        )
+    if not verify_certs and (parsed.scheme != "https" or not loopback or username):
+        raise RuntimeError(
+            "disabling TLS verification is allowed only for unauthenticated "
+            "HTTPS loopback endpoints"
+        )
+
+    try:
+        from opensearchpy import OpenSearch
+    except ImportError as exc:
+        raise RuntimeError(
+            "opensearch-py is required; run this command through uv"
+        ) from exc
     host: dict[str, Any] = {
         "host": parsed.hostname,
         "port": parsed.port or (443 if parsed.scheme == "https" else 80),
@@ -719,9 +761,9 @@ def semantic_expansion(
 ) -> list[dict[str, Any]]:
     """Expand the highest-risk seeds using OpenSearch's neural query."""
     expanded: list[dict[str, Any]] = []
-    seeds = [
-        item for item in findings if SEVERITY_ORDER[item["severity"]] >= 2
-    ][:max_seeds]
+    seeds = [item for item in findings if SEVERITY_ORDER[item["severity"]] >= 2][
+        :max_seeds
+    ]
     for seed in seeds:
         query_text = sources.get(str(seed["id"]), "")
         if not query_text:
@@ -878,9 +920,7 @@ def build_parser() -> argparse.ArgumentParser:
         "scan-jsonl", help="Analyze a JSONL export without a cluster"
     )
     jsonl.add_argument("--input", required=True, help="UTF-8 JSONL input")
-    jsonl.add_argument(
-        "--index", default="offline-export", help="Fallback index name"
-    )
+    jsonl.add_argument("--index", default="offline-export", help="Fallback index name")
     add_common_arguments(jsonl)
     jsonl.set_defaults(handler=scan_jsonl)
 
