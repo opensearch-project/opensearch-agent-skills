@@ -595,3 +595,16 @@ def test_windows_pid_liveness_treats_access_denied_as_alive(monkeypatch):
 
     assert ingest._pid_is_alive(12345) is True
     assert calls == [("kernel32", True)]
+
+
+@pytest.mark.parametrize("pid", [-1, 0, 0x100000000])
+def test_windows_pid_liveness_rejects_out_of_range_values(monkeypatch, pid):
+    """Malformed Windows PID values fail closed before loading kernel32."""
+    monkeypatch.setattr(ingest.os, "name", "nt")
+    monkeypatch.setattr(
+        ctypes,
+        "WinDLL",
+        lambda *args, **kwargs: pytest.fail("WinDLL should not be called"),
+    )
+
+    assert ingest._pid_is_alive(pid) is False

@@ -122,7 +122,11 @@ def run_benchmark(corpus_path: Path = DEFAULT_CORPUS) -> dict[str, Any]:
     fn = confusion["false_negative"]
     precision = safe_ratio(tp, tp + fp)
     recall = safe_ratio(tp, tp + fn)
-    f1 = safe_ratio(2 * precision * recall, precision + recall)
+    f1 = (
+        2 * precision * recall / (precision + recall)
+        if precision + recall > 0
+        else 0.0
+    )
     accuracy = safe_ratio(tp + tn, len(records))
     report = rag_integrity.make_report(
         findings,

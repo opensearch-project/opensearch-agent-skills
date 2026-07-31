@@ -293,7 +293,7 @@ def simhash64(tokens: Sequence[str]) -> int:
     for token, frequency in frequencies.items():
         digest = hashlib.blake2b(token.encode("utf-8"), digest_size=8).digest()
         value = int.from_bytes(digest, "big")
-        weight = frequency.bit_length()
+        weight = frequency
         for bit in range(64):
             vector[bit] += weight if (value >> bit) & 1 else -weight
     result = 0
@@ -703,7 +703,8 @@ def client_from_environment() -> Any:
     try:
         loopback = ipaddress.ip_address(parsed.hostname).is_loopback
     except ValueError:
-        loopback = parsed.hostname.casefold() == "localhost"
+        # Keep this deterministic and offline: do not resolve arbitrary DNS names.
+        loopback = parsed.hostname == "localhost"
     if parsed.scheme == "http" and not loopback:
         raise RuntimeError(
             "plain HTTP is allowed only for loopback development endpoints"

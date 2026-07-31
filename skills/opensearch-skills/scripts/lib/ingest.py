@@ -556,7 +556,11 @@ def read_status() -> dict:
 
 def _pid_is_alive(pid: int) -> bool:
     """Return whether a process exists without signaling or mutating it."""
+    if pid <= 0:
+        return False
     if os.name == "nt":
+        if pid > 0xFFFFFFFF:
+            return False
         import ctypes
 
         kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
