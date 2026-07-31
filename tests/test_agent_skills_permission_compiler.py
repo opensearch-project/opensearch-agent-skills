@@ -487,6 +487,38 @@ def test_probe_connection_failure_returns_nonzero_and_keeps_evidence(
     assert len(json.loads(evidence_path.read_text(encoding="utf-8"))) == 3
 
 
+def test_probe_response_failure_returns_nonzero_and_keeps_evidence(
+    tmp_path, monkeypatch
+):
+    workflow_path = tmp_path / "workflow.json"
+    evidence_path = tmp_path / "evidence.json"
+    workflow_path.write_text(json.dumps(workflow()), encoding="utf-8")
+    monkeypatch.setenv("OPENSEARCH_USERNAME", "test-user")
+    monkeypatch.setenv("OPENSEARCH_PASSWORD", "test-password")
+    monkeypatch.setattr(
+        compiler_cli,
+        "_probe_step",
+        lambda **kwargs: {"response_error": "response too large", "status": 500},
+    )
+
+    exit_code = main(
+        [
+            "probe",
+            "--workflow",
+            str(workflow_path),
+            "--output",
+            str(evidence_path),
+            "--url",
+            "https://search.example.com/opensearch",
+        ]
+    )
+
+    assert exit_code == 2
+    evidence = json.loads(evidence_path.read_text(encoding="utf-8"))
+    assert len(evidence) == 3
+    assert all("response_error" in item["response"] for item in evidence)
+
+
 def test_probe_is_permission_check_and_does_not_persist_credentials(
     tmp_path, monkeypatch
 ):

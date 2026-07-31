@@ -166,13 +166,19 @@ def _probe_step(
             context=_ssl_context(ca_cert),
             timeout=timeout,
         ) as response:
-            payload = _read_response_body(response)
+            try:
+                payload = _read_response_body(response)
+            except WorkflowError as exc:
+                return {"response_error": str(exc), "status": response.status}
             parsed = json.loads(payload) if payload else {}
             if isinstance(parsed, dict):
                 parsed.setdefault("status", response.status)
             return parsed
     except HTTPError as exc:
-        payload = _read_response_body(exc)
+        try:
+            payload = _read_response_body(exc)
+        except WorkflowError as error:
+            return {"response_error": str(error), "status": exc.code}
         try:
             parsed = json.loads(payload)
         except json.JSONDecodeError:
@@ -223,13 +229,13 @@ def _command_probe(args: argparse.Namespace) -> int:
             timeout=args.timeout,
         )
         evidence.append({"step_id": step["id"], "response": response})
-        if "connection_error" in response:
+        if "connection_error" in response or "response_error" in response:
             connection_failures.append(step["id"])
     _write_json(args.output, evidence)
     print(f"Wrote permission-check evidence: {args.output}")
     if connection_failures:
         print(
-            "error: probe connection failed for steps: "
+            "error: probe failed to collect usable evidence for steps: "
             + ", ".join(connection_failures),
             file=sys.stderr,
         )
