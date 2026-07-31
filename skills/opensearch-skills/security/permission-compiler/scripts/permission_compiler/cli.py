@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import base64
 import json
+import math
 import os
 import ssl
 import sys
@@ -107,6 +108,8 @@ def _validate_probe_url(base_url: str) -> None:
 def _compose_probe_url(base_url: str, path: str) -> str:
     _validate_probe_url(base_url)
     permission_path = _permission_check_path(path)
+    if not permission_path.startswith("/") or permission_path.startswith("//"):
+        raise WorkflowError("workflow step path must begin with exactly one slash")
     url = base_url.rstrip("/") + permission_path
     base_parts = urlsplit(base_url)
     url_parts = urlsplit(url)
@@ -123,6 +126,16 @@ def _compose_probe_url(base_url: str, path: str) -> str:
     if url_origin != base_origin:
         raise WorkflowError("workflow step path resolves outside the probe origin")
     return url
+
+
+def _positive_timeout(value: str) -> float:
+    try:
+        timeout = float(value)
+    except ValueError as exc:
+        raise argparse.ArgumentTypeError("timeout must be a number") from exc
+    if not math.isfinite(timeout) or timeout <= 0:
+        raise argparse.ArgumentTypeError("timeout must be a positive finite number")
+    return timeout
 
 
 def _probe_step(
@@ -268,7 +281,7 @@ def build_parser() -> argparse.ArgumentParser:
             "with disposable demo certificates and --ca-cert"
         ),
     )
-    probe_parser.add_argument("--timeout", type=float, default=10.0)
+    probe_parser.add_argument("--timeout", type=_positive_timeout, default=10.0)
     probe_parser.set_defaults(handler=_command_probe)
 
     verify_parser = subparsers.add_parser(

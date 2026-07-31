@@ -318,6 +318,7 @@ def compile_role(
     observed: set[str] = set()
     negative_violations: list[str] = []
     unresolved_negative_probes: list[str] = []
+    non_deriving_positive_probes: list[str] = []
     unknown_steps: list[str] = []
     unscoped_index_actions: list[dict[str, str]] = []
     provenance: dict[str, dict[str, set[str]]] = {}
@@ -335,6 +336,8 @@ def compile_role(
                 unresolved_negative_probes.append(item.step_id)
             # Denied probes are assertions, never permission sources.
             continue
+        if not item.missing_privileges:
+            non_deriving_positive_probes.append(item.step_id)
         for action in item.missing_privileges:
             trace = provenance.setdefault(
                 action, {"steps": set(), "sources": set(), "index_patterns": set()}
@@ -383,6 +386,9 @@ def compile_role(
         "unknown_evidence_steps": sorted(set(unknown_steps)),
         "negative_probe_violations": sorted(set(negative_violations)),
         "unresolved_negative_probes": sorted(set(unresolved_negative_probes)),
+        "non_deriving_positive_probes": sorted(
+            set(non_deriving_positive_probes)
+        ),
         "unscoped_index_actions": unscoped_index_actions,
         "wildcards": sorted({value for value in all_values if _contains_wildcard(value)}),
         "permission_evidence": {
@@ -400,6 +406,7 @@ def compile_role(
             unknown_steps
             or negative_violations
             or unresolved_negative_probes
+            or non_deriving_positive_probes
             or unscoped_index_actions
         ),
     }

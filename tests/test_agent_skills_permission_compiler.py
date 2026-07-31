@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import argparse
 import importlib
 import json
 import sys
@@ -24,6 +25,7 @@ import permission_compiler.cli as compiler_cli  # noqa: E402
 from permission_compiler.cli import (  # noqa: E402
     _compose_probe_url,
     _permission_check_path,
+    _positive_timeout,
     _ssl_context,
     _validate_probe_url,
     main,
@@ -228,6 +230,15 @@ def test_unresolved_negative_probe_stops_review():
     assert report["safe_to_review"] is False
 
 
+@pytest.mark.parametrize("allowed", [True, False, None])
+def test_positive_probe_without_derived_privileges_stops_review(allowed):
+    evidence = [Evidence("search", allowed, (), "test")]
+    candidate, report = compile_role(workflow(), evidence)
+    assert candidate["reader-observed"]["index_permissions"] == []
+    assert report["non_deriving_positive_probes"] == ["search"]
+    assert report["safe_to_review"] is False
+
+
 def test_unscoped_index_permission_stops_review():
     document = workflow()
     document["steps"][0]["index_patterns"] = []
@@ -342,6 +353,16 @@ def test_composed_probe_url_preserves_prefix_and_origin():
     assert urlsplit(url).hostname == "search.example.com"
 
 
+def test_composed_probe_url_defends_single_slash_boundary(monkeypatch):
+    monkeypatch.setattr(
+        compiler_cli,
+        "_permission_check_path",
+        lambda path: "//evil.example.com/_search",
+    )
+    with pytest.raises(WorkflowError, match="exactly one slash"):
+        _compose_probe_url("https://search.example.com", "/_search")
+
+
 def test_http_status_alone_does_not_infer_permission_outcome():
     evidence = parse_evidence_document(
         {"step_id": "search", "response": {"status": 200}}
@@ -401,6 +422,12 @@ def test_probe_url_requires_host_and_rejects_userinfo():
         _validate_probe_url("https:///opensearch")
     with pytest.raises(WorkflowError, match="user information"):
         _validate_probe_url("https://user@example.com")
+
+
+@pytest.mark.parametrize("value", ["0", "-1", "nan", "inf", "-inf"])
+def test_probe_timeout_must_be_positive_and_finite(value):
+    with pytest.raises(argparse.ArgumentTypeError, match="positive finite"):
+        _positive_timeout(value)
 
 
 def test_probe_connection_failure_returns_nonzero_and_keeps_evidence(
