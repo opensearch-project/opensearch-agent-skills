@@ -81,19 +81,37 @@ def _missing_from_reason(reason: str) -> list[str]:
     if start < 0:
         return []
     start += len(marker)
-    end_marker = "] and User"
-    end = reason.find(end_marker, start)
-    if end < 0:
-        end = reason.find("]", start)
-    if end < 0:
+    depth = 1
+    end = start
+    while end < len(reason) and depth:
+        if reason[end] == "[":
+            depth += 1
+        elif reason[end] == "]":
+            depth -= 1
+        end += 1
+    if depth:
         return []
-    payload = reason[start:end].strip()
+    payload = reason[start : end - 1].strip()
     if not payload:
         return []
-    # OpenSearch normally separates multiple actions with comma-space. Action
-    # names can contain nested brackets (for example bulk[s]), hence the
-    # explicit "] and User" boundary above.
-    return [item.strip() for item in payload.split(",") if item.strip()]
+
+    actions: list[str] = []
+    action_start = 0
+    nested_depth = 0
+    for position, character in enumerate(payload):
+        if character == "[":
+            nested_depth += 1
+        elif character == "]" and nested_depth:
+            nested_depth -= 1
+        elif character == "," and nested_depth == 0:
+            action = payload[action_start:position].strip()
+            if action:
+                actions.append(action)
+            action_start = position + 1
+    final_action = payload[action_start:].strip()
+    if final_action:
+        actions.append(final_action)
+    return actions
 
 
 def _walk_json(value: Any) -> Iterable[Any]:
@@ -132,11 +150,6 @@ def _infer_allowed(response: Any) -> bool | None:
     if isinstance(response, dict):
         if isinstance(response.get("accessAllowed"), bool):
             return response["accessAllowed"]
-        status = response.get("status")
-        if isinstance(status, int):
-            return 200 <= status < 400
-        if "error" in response:
-            return False
     return None
 
 
@@ -156,11 +169,15 @@ def parse_evidence_document(document: Any, source: str = "evidence") -> list[Evi
         if not isinstance(step_id, str) or not step_id.strip():
             raise WorkflowError(f"{source}[{position}].step_id is required")
         response = record.get("response", record)
+        missing_privileges = parse_missing_privileges(response)
+        allowed = _infer_allowed(response)
+        if allowed is None and missing_privileges:
+            allowed = False
         parsed.append(
             Evidence(
                 step_id=step_id,
-                allowed=_infer_allowed(response),
-                missing_privileges=parse_missing_privileges(response),
+                allowed=allowed,
+                missing_privileges=missing_privileges,
                 source=source,
             )
         )
@@ -262,6 +279,7 @@ def compile_role(
     index_permissions: dict[tuple[str, ...], set[str]] = {}
     observed: set[str] = set()
     negative_violations: list[str] = []
+    unresolved_negative_probes: list[str] = []
     unknown_steps: list[str] = []
     unscoped_index_actions: list[dict[str, str]] = []
     provenance: dict[str, dict[str, set[str]]] = {}
@@ -275,6 +293,8 @@ def compile_role(
         if step.expect == "deny" and item.allowed is True:
             negative_violations.append(item.step_id)
         if step.expect == "deny":
+            if item.allowed is None:
+                unresolved_negative_probes.append(item.step_id)
             # Denied probes are assertions, never permission sources.
             continue
         for action in item.missing_privileges:
@@ -324,6 +344,7 @@ def compile_role(
         "unobserved_steps": sorted(set(steps) - observed),
         "unknown_evidence_steps": sorted(set(unknown_steps)),
         "negative_probe_violations": sorted(set(negative_violations)),
+        "unresolved_negative_probes": sorted(set(unresolved_negative_probes)),
         "unscoped_index_actions": unscoped_index_actions,
         "wildcards": sorted({value for value in all_values if _contains_wildcard(value)}),
         "permission_evidence": {
@@ -338,7 +359,10 @@ def compile_role(
             cluster_permissions, index_permissions
         ),
         "safe_to_review": not (
-            unknown_steps or negative_violations or unscoped_index_actions
+            unknown_steps
+            or negative_violations
+            or unresolved_negative_probes
+            or unscoped_index_actions
         ),
     }
     return candidate, report

@@ -39,8 +39,12 @@ def _write_json(path: Path, value: Any) -> None:
 
 def _permission_check_path(path: str) -> str:
     parts = urlsplit(path)
-    query = dict(parse_qsl(parts.query, keep_blank_values=True))
-    query["perform_permission_check"] = "true"
+    query = [
+        (key, value)
+        for key, value in parse_qsl(parts.query, keep_blank_values=True)
+        if key != "perform_permission_check"
+    ]
+    query.append(("perform_permission_check", "true"))
     return urlunsplit(("", "", parts.path, urlencode(query), parts.fragment))
 
 

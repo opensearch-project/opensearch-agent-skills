@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import importlib
 import json
 import sys
 import threading
@@ -92,6 +93,21 @@ def test_parse_nested_security_exception_with_bracketed_action():
     assert parse_missing_privileges(response) == ("indices:data/write/bulk[s]",)
 
 
+def test_parse_multiple_actions_with_nested_commas():
+    response = {
+        "error": {
+            "reason": (
+                "no permissions for [indices:data/read/search, "
+                "indices:data/write/bulk[s,t]] and User [name=a]"
+            )
+        }
+    }
+    assert parse_missing_privileges(response) == (
+        "indices:data/read/search",
+        "indices:data/write/bulk[s,t]",
+    )
+
+
 def test_parse_audit_record():
     response = {
         "audit_category": "MISSING_PRIVILEGES",
@@ -170,6 +186,13 @@ def test_allowed_negative_probe_is_violation():
     assert report["safe_to_review"] is False
 
 
+def test_unresolved_negative_probe_stops_review():
+    evidence = [Evidence("delete", None, (), "test")]
+    _, report = compile_role(workflow(), evidence)
+    assert report["unresolved_negative_probes"] == ["delete"]
+    assert report["safe_to_review"] is False
+
+
 def test_unscoped_index_permission_stops_review():
     document = workflow()
     document["steps"][0]["index_patterns"] = []
@@ -235,6 +258,39 @@ def test_permission_check_path_preserves_existing_query():
         "perform_permission_check": ["true"],
         "preference": ["local"],
     }
+
+
+def test_permission_check_path_preserves_duplicate_query_parameters():
+    path = _permission_check_path(
+        "/logs/_search?filter_path=hits.total&filter_path=took&perform_permission_check=false"
+    )
+    query = parse_qs(urlsplit(path).query)
+    assert query == {
+        "filter_path": ["hits.total", "took"],
+        "perform_permission_check": ["true"],
+    }
+
+
+def test_http_status_alone_does_not_infer_permission_outcome():
+    evidence = parse_evidence_document(
+        {"step_id": "search", "response": {"status": 200}}
+    )
+    assert evidence[0].allowed is None
+
+
+def test_missing_privileges_are_denied_without_http_status_inference():
+    evidence = parse_evidence_document(
+        {
+            "step_id": "search",
+            "response": {"missingPrivileges": ["indices:data/read/search"]},
+        }
+    )
+    assert evidence[0].allowed is False
+
+
+def test_main_module_can_be_imported_without_running_cli():
+    module = importlib.import_module("permission_compiler.__main__")
+    assert module.main is main
 
 
 def test_skip_hostname_verification_requires_ca():
