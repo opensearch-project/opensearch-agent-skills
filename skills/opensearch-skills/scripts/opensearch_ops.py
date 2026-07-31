@@ -33,6 +33,10 @@ Commands:
     create-flow-agentic-pipeline Create and attach a flow agent search pipeline
     create-conversational-agent-pipeline Create and attach a conversational agent pipeline with RAG
     search-docs            Search documentation via DuckDuckGo (default: opensearch.org)
+    blueprint-lint         Statically check a blueprint bundle (no cluster required)
+    blueprint-render       Render a blueprint bundle as a dense single-block spec
+    blueprint-apply        Apply a blueprint to a cluster, probe analyzers, validate queries
+    blueprint-extract      Extract a blueprint from an existing index
 """
 
 import argparse
@@ -403,6 +407,75 @@ def cmd_save_quality(args):
     print(json.dumps(result, indent=2))
 
 
+def cmd_blueprint_lint(args):
+    """Statically check a blueprint bundle. No cluster required."""
+    from lib.blueprint import load_bundle, lint_bundle, format_findings, has_errors
+    bundle = load_bundle(args.bundle)
+    findings = lint_bundle(bundle)
+    if args.json:
+        print(json.dumps({"findings": findings, "ok": not has_errors(findings)}, indent=2))
+    else:
+        print(format_findings(findings))
+    if has_errors(findings):
+        sys.exit(1)
+
+
+def cmd_blueprint_render(args):
+    """Render a blueprint bundle as the dense single-block spec."""
+    from lib.blueprint import load_bundle, render_blueprint
+    print(render_blueprint(load_bundle(args.bundle)))
+
+
+def cmd_blueprint_apply(args):
+    """Lint, probe analyzers, create the index, then validate every query."""
+    from lib.client import create_client
+    from lib.blueprint import (
+        load_bundle, lint_bundle, has_errors, format_findings,
+        probe_analyzers, apply_bundle, validate_queries, render_blueprint,
+    )
+
+    bundle = load_bundle(args.bundle)
+    findings = lint_bundle(bundle)
+    print(format_findings(findings))
+    if has_errors(findings) and not args.force:
+        print("\nRefusing to apply a blueprint with errors. Fix them or pass --force.")
+        sys.exit(1)
+
+    client = create_client()
+    result = {"blueprint": render_blueprint(bundle)}
+
+    if args.dry_run:
+        result["dry_run"] = True
+        print(json.dumps(result, indent=2))
+        return
+
+    result["applied"] = apply_bundle(client, bundle, replace=args.replace)
+    result["analyzer_probes"] = probe_analyzers(client, bundle)
+    result["query_validation"] = validate_queries(client, bundle.get("index"), bundle)
+    print(json.dumps(result, indent=2))
+
+    failed = [p for p in result["analyzer_probes"] if not p.get("ok")]
+    invalid = [q for q in result["query_validation"] if not q.get("valid")]
+    if failed or invalid:
+        sys.exit(1)
+
+
+def cmd_blueprint_extract(args):
+    """Read an existing index back into a blueprint bundle."""
+    from lib.client import create_client
+    from lib.blueprint import extract_bundle, render_blueprint, lint_bundle
+
+    bundle = extract_bundle(create_client(), args.index)
+    if args.out:
+        with open(args.out, "w", encoding="utf-8") as handle:
+            json.dump(bundle, handle, indent=2)
+    print(render_blueprint(bundle))
+    if args.lint:
+        from lib.blueprint import format_findings
+        print()
+        print(format_findings(lint_bundle(bundle)))
+
+
 def cmd_create_flow_agent(args):
     from lib.operations import create_flow_agent
     print(create_flow_agent(
@@ -624,9 +697,35 @@ def main():
     p.add_argument("--verdict", default="", help="Verdict as a JSON string")
     p.add_argument("--verdict-file", default="", help="Path to a JSON file with the verdict (alternative to --verdict)")
 
+    # blueprint-lint — static checks, no cluster
+    p = sub.add_parser("blueprint-lint", help="Statically check a blueprint bundle (no cluster)")
+    p.add_argument("--bundle", required=True, help="Path to the blueprint bundle JSON")
+    p.add_argument("--json", action="store_true", help="Emit findings as JSON")
+
+    # blueprint-render — bundle to dense spec
+    p = sub.add_parser("blueprint-render", help="Render a bundle as the dense blueprint spec")
+    p.add_argument("--bundle", required=True, help="Path to the blueprint bundle JSON")
+
+    # blueprint-apply — lint, probe analyzers, create, validate queries
+    p = sub.add_parser("blueprint-apply", help="Apply a blueprint bundle to a cluster and verify it")
+    p.add_argument("--bundle", required=True, help="Path to the blueprint bundle JSON")
+    p.add_argument("--replace", action="store_true", help="Delete the index first if it exists")
+    p.add_argument("--dry-run", action="store_true", help="Lint and render only; touch nothing")
+    p.add_argument("--force", action="store_true", help="Apply even if lint reports errors")
+
+    # blueprint-extract — live index back to a bundle
+    p = sub.add_parser("blueprint-extract", help="Extract a blueprint from an existing index")
+    p.add_argument("--index", required=True, help="Index to read")
+    p.add_argument("--out", default="", help="Write the extracted bundle JSON to this path")
+    p.add_argument("--lint", action="store_true", help="Also lint the extracted bundle")
+
     args = parser.parse_args()
 
     dispatch = {
+        "blueprint-lint": cmd_blueprint_lint,
+        "blueprint-render": cmd_blueprint_render,
+        "blueprint-apply": cmd_blueprint_apply,
+        "blueprint-extract": cmd_blueprint_extract,
         "status": cmd_status,
         "preflight-check": cmd_preflight_check,
         "create-index": cmd_create_index,

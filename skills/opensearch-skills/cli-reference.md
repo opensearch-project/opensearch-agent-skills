@@ -171,6 +171,30 @@ uv run python scripts/opensearch_ops.py read-knowledge --file agentic_search_gui
 uv run python scripts/opensearch_ops.py read-knowledge --file evaluation_guide.md
 ```
 
+## Index blueprints
+
+Compile, verify, and extract complete index designs. See the
+[opensearch-blueprint](search/opensearch-blueprint/SKILL.md) skill.
+
+```bash
+# Static checks — no cluster required. Exits non-zero on errors.
+uv run python scripts/opensearch_ops.py blueprint-lint --bundle blueprint.json
+uv run python scripts/opensearch_ops.py blueprint-lint --bundle blueprint.json --json
+
+# Render the bundle as a dense single-block spec
+uv run python scripts/opensearch_ops.py blueprint-render --bundle blueprint.json
+
+# Lint and render without touching the cluster
+uv run python scripts/opensearch_ops.py blueprint-apply --bundle blueprint.json --dry-run
+
+# Create pipelines + index + ISM policy, probe analyzers via _analyze,
+# validate every named query via _validate/query
+uv run python scripts/opensearch_ops.py blueprint-apply --bundle blueprint.json --replace
+
+# Read an existing index back into a portable blueprint
+uv run python scripts/opensearch_ops.py blueprint-extract --index movies_v1 --out blueprint.json --lint
+```
+
 ## Cleanup
 
 ```bash

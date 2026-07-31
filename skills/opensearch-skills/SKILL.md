@@ -24,6 +24,7 @@ This is the top-level skill for OpenSearch. It contains four category skills tha
 | Category | Skill | Install individually |
 |---|---|---|
 | [search](search/SKILL.md) | [opensearch-launchpad](search/opensearch-launchpad/SKILL.md) | `npx skills add opensearch-project/opensearch-agent-skills@opensearch-launchpad --full-depth` |
+| [search](search/SKILL.md) | [opensearch-blueprint](search/opensearch-blueprint/SKILL.md) | `npx skills add opensearch-project/opensearch-agent-skills@opensearch-blueprint --full-depth` |
 | [observability](observability/SKILL.md) | [log-analytics](observability/log-analytics/SKILL.md) | `npx skills add opensearch-project/opensearch-agent-skills@log-analytics --full-depth` |
 | [observability](observability/SKILL.md) | [trace-analytics](observability/trace-analytics/SKILL.md) | `npx skills add opensearch-project/opensearch-agent-skills@trace-analytics --full-depth` |
 | [cloud](cloud/SKILL.md) | [aws-setup](cloud/aws-setup/SKILL.md) | `npx skills add opensearch-project/opensearch-agent-skills@aws-setup --full-depth` |
@@ -37,6 +38,7 @@ Route to the right skill based on user intent:
 | User Intent | Skill |
 |---|---|
 | Build a search app, set up an index, choose a search strategy | [opensearch-launchpad](search/opensearch-launchpad/SKILL.md) |
+| Design/review a mapping or analyzer, validate an index design, audit an existing index | [opensearch-blueprint](search/opensearch-blueprint/SKILL.md) |
 | Analyze logs, query with PPL, discover error patterns | [log-analytics](observability/log-analytics/SKILL.md) |
 | Investigate traces, debug spans, analyze service maps | [trace-analytics](observability/trace-analytics/SKILL.md) |
 | Deploy to AWS, provision a domain or collection | [aws-setup](cloud/aws-setup/SKILL.md) |
