@@ -272,6 +272,13 @@ def test_write_then_read_status_roundtrip(workdir):
     assert status["stage"] == "processing"
 
 
+def test_write_status_atomically_replaces_previous_status(workdir):
+    write_status({"active": True, "stage": "processing"})
+    write_status({"active": False, "stage": "complete"})
+
+    assert read_status() == {"active": False, "stage": "complete"}
+
+
 # ---------------------------------------------------------------------------
 # ingest_local  (named index, auto-derived when absent)
 # ---------------------------------------------------------------------------

@@ -106,5 +106,23 @@
     "prompt": "Bulk index my product catalog JSON into OpenSearch using the _bulk API",
     "expected_skill": "opensearch-launchpad",
     "rationale": "Structured bulk-indexing is NOT managed-ingestion-service — it's opensearch-launchpad"
+  },
+  {
+    "id": "routing-rag-integrity-01",
+    "prompt": "My RAG assistant retrieved a document that says to ignore its system prompt. Investigate the poisoned OpenSearch chunks.",
+    "expected_skill": "rag-integrity-sentinel",
+    "rationale": "Explicit indirect prompt injection and poisoned RAG corpus investigation"
+  },
+  {
+    "id": "routing-rag-integrity-02",
+    "prompt": "Find hidden Unicode instructions and near-duplicate attack documents in my vector-search index.",
+    "expected_skill": "rag-integrity-sentinel",
+    "rationale": "Unicode concealment and semantic duplicate poisoning are sentinel capabilities"
+  },
+  {
+    "id": "routing-rag-integrity-03",
+    "prompt": "Verify source provenance and content checksums for documents retrieved into model context.",
+    "expected_skill": "rag-integrity-sentinel",
+    "rationale": "RAG source provenance and checksum drift route to the integrity sentinel"
   }
 ]
