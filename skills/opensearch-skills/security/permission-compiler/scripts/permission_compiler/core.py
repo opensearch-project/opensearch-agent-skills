@@ -181,8 +181,8 @@ def parse_evidence_document(document: Any, source: str = "evidence") -> list[Evi
     """Parse one evidence document.
 
     Accepted forms are a single record or a list of records. Each record must
-    include ``step_id`` and either a nested ``response`` or response fields at
-    the record's top level.
+    include ``step_id`` and a nested ``response`` object. Requiring the wrapper
+    prevents record metadata from being interpreted as permission evidence.
     """
     records = document if isinstance(document, list) else [document]
     parsed: list[Evidence] = []
@@ -192,21 +192,9 @@ def parse_evidence_document(document: Any, source: str = "evidence") -> list[Evi
         step_id = record.get("step_id")
         if not isinstance(step_id, str) or not step_id.strip():
             raise WorkflowError(f"{source}[{position}].step_id is required")
-        response = record.get("response")
-        if response is None and "response" not in record:
-            metadata_fields = {
-                "step_id",
-                "source",
-                "timestamp",
-                "observed_at",
-                "request",
-                "metadata",
-            }
-            response = {
-                key: value
-                for key, value in record.items()
-                if key not in metadata_fields
-            }
+        if "response" not in record:
+            raise WorkflowError(f"{source}[{position}].response is required")
+        response = record["response"]
         missing_privileges = parse_missing_privileges(response)
         allowed = _infer_allowed(response)
         if allowed is None and missing_privileges:

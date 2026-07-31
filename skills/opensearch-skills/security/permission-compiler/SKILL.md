@@ -33,8 +33,8 @@ OpenSearch's own permission decisions.
    broader action group for convenience.
 7. Read credentials from environment variables. Do not write credentials or
    authorization headers into workflow, evidence, or report files.
-8. Verify TLS by default. Require a CA certificate for private certificate
-   authorities; never silently disable verification.
+8. Always verify the TLS certificate chain and hostname. Require a CA
+   certificate for private certificate authorities; never disable verification.
 
 ## Workflow
 

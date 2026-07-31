@@ -23,6 +23,8 @@ from .core import (
     verify_workflow,
 )
 
+_MAX_RESPONSE_BYTES = 1024 * 1024
+
 
 def _load_json(path: Path) -> Any:
     try:
@@ -65,29 +67,28 @@ def _permission_check_path(path: str) -> str:
     return urlunsplit(("", "", parts.path, urlencode(query), parts.fragment))
 
 
-def _ssl_context(
-    ca_cert: str | None, skip_hostname_verification: bool = False
-) -> ssl.SSLContext:
-    if skip_hostname_verification and not ca_cert:
-        raise WorkflowError(
-            "--skip-hostname-verification requires --ca-cert so certificate "
-            "chain verification remains enabled"
-        )
-    context = (
+def _ssl_context(ca_cert: str | None) -> ssl.SSLContext:
+    return (
         ssl.create_default_context(cafile=ca_cert)
         if ca_cert
         else ssl.create_default_context()
     )
-    if skip_hostname_verification:
-        context.check_hostname = False
-    return context
+
+
+def _read_response_body(stream: Any) -> str:
+    payload = stream.read(_MAX_RESPONSE_BYTES + 1)
+    if len(payload) > _MAX_RESPONSE_BYTES:
+        raise WorkflowError(
+            f"permission-check response exceeds {_MAX_RESPONSE_BYTES} bytes"
+        )
+    return payload.decode("utf-8", errors="replace")
 
 
 def _validate_probe_url(base_url: str) -> None:
     parts = urlsplit(base_url)
     scheme = parts.scheme.lower()
     host = (parts.hostname or "").lower()
-    loopback_hosts = {"127.0.0.1", "localhost", "::1"}
+    loopback_hosts = {"127.0.0.1", "::1"}
     if not parts.netloc or not host:
         raise WorkflowError("probe base URL must include a host")
     if parts.username is not None or parts.password is not None:
@@ -148,7 +149,6 @@ def _probe_step(
     username: str,
     password: str,
     ca_cert: str | None,
-    skip_hostname_verification: bool,
     timeout: float,
 ) -> dict[str, Any]:
     url = _compose_probe_url(base_url, step["path"])
@@ -163,16 +163,16 @@ def _probe_step(
     try:
         with urlopen(
             request,
-            context=_ssl_context(ca_cert, skip_hostname_verification),
+            context=_ssl_context(ca_cert),
             timeout=timeout,
         ) as response:
-            payload = response.read().decode("utf-8")
+            payload = _read_response_body(response)
             parsed = json.loads(payload) if payload else {}
             if isinstance(parsed, dict):
                 parsed.setdefault("status", response.status)
             return parsed
     except HTTPError as exc:
-        payload = exc.read().decode("utf-8", errors="replace")
+        payload = _read_response_body(exc)
         try:
             parsed = json.loads(payload)
         except json.JSONDecodeError:
@@ -220,7 +220,6 @@ def _command_probe(args: argparse.Namespace) -> int:
             username=username,
             password=password,
             ca_cert=args.ca_cert,
-            skip_hostname_verification=args.skip_hostname_verification,
             timeout=args.timeout,
         )
         evidence.append({"step_id": step["id"], "response": response})
@@ -278,14 +277,6 @@ def build_parser() -> argparse.ArgumentParser:
     probe_parser.add_argument("--url")
     probe_parser.add_argument("--username")
     probe_parser.add_argument("--ca-cert")
-    probe_parser.add_argument(
-        "--skip-hostname-verification",
-        action="store_true",
-        help=(
-            "verify the certificate chain but skip hostname matching; use only "
-            "with disposable demo certificates and --ca-cert"
-        ),
-    )
     probe_parser.add_argument("--timeout", type=_positive_timeout, default=10.0)
     probe_parser.set_defaults(handler=_command_probe)
 

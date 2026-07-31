@@ -2,7 +2,9 @@ from __future__ import annotations
 
 import argparse
 import importlib
+import io
 import json
+import ssl
 import sys
 import threading
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -26,6 +28,7 @@ from permission_compiler.cli import (  # noqa: E402
     _compose_probe_url,
     _permission_check_path,
     _positive_timeout,
+    _read_response_body,
     _ssl_context,
     _validate_probe_url,
     main,
@@ -277,15 +280,15 @@ def test_parse_evidence_document_requires_step_id():
         parse_evidence_document({"response": {"accessAllowed": True}})
 
 
-def test_evidence_metadata_does_not_influence_response_inference():
-    evidence = parse_evidence_document(
+def test_evidence_requires_explicit_response_wrapper():
+    with pytest.raises(WorkflowError, match="response is required"):
+        parse_evidence_document(
         {
             "step_id": "search",
             "metadata": {"accessAllowed": True},
             "status": 200,
         }
-    )
-    assert evidence[0].allowed is None
+        )
 
 
 def test_verify_workflow_passes_positive_and_negative_contract():
@@ -415,9 +418,10 @@ def test_main_module_can_be_imported_without_running_cli():
     assert module.main is main
 
 
-def test_skip_hostname_verification_requires_ca():
-    with pytest.raises(WorkflowError, match="requires --ca-cert"):
-        _ssl_context(None, skip_hostname_verification=True)
+def test_ssl_context_always_verifies_hostname():
+    context = _ssl_context(None)
+    assert context.check_hostname is True
+    assert context.verify_mode == ssl.CERT_REQUIRED
 
 
 def test_probe_url_requires_https_except_for_loopback():
@@ -425,6 +429,8 @@ def test_probe_url_requires_https_except_for_loopback():
     _validate_probe_url("http://127.0.0.1:9200")
     with pytest.raises(WorkflowError, match="non-HTTPS"):
         _validate_probe_url("http://search.example.com:9200")
+    with pytest.raises(WorkflowError, match="non-HTTPS"):
+        _validate_probe_url("http://localhost:9200")
 
 
 def test_probe_url_rejects_query_and_fragment():
@@ -443,6 +449,12 @@ def test_probe_url_requires_host_and_rejects_userinfo():
 def test_probe_timeout_must_be_positive_and_finite(value):
     with pytest.raises(argparse.ArgumentTypeError, match="positive finite"):
         _positive_timeout(value)
+
+
+def test_permission_response_body_is_bounded():
+    assert _read_response_body(io.BytesIO(b"{}")) == "{}"
+    with pytest.raises(WorkflowError, match="exceeds"):
+        _read_response_body(io.BytesIO(b"x" * (1024 * 1024 + 1)))
 
 
 def test_probe_connection_failure_returns_nonzero_and_keeps_evidence(
