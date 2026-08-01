@@ -222,19 +222,24 @@ def _lint_analysis_refs(bundle, fields):
                     f"mappings.properties.{path}.{key}",
                 ))
         ref = defn.get("normalizer")
-        if ref and ref not in custom_normalizers:
-            findings.append(_error(
-                "analysis.dangling_normalizer",
-                f"Field '{path}' references normalizer '{ref}', "
-                f"which is not defined in settings.analysis.normalizer.",
-                f"mappings.properties.{path}.normalizer",
-            ))
-        if ref and defn.get("type") != "keyword":
+        if not ref:
+            continue
+        # Report one problem per field: a normalizer on a non-keyword field is
+        # wrong regardless of whether the normalizer resolves, so that check
+        # takes precedence over the dangling-reference check.
+        if defn.get("type") != "keyword":
             findings.append(_error(
                 "analysis.normalizer_on_non_keyword",
                 f"Field '{path}' is type '{defn.get('type')}'; "
                 f"normalizers apply only to keyword fields.",
                 f"mappings.properties.{path}",
+            ))
+        elif ref not in custom_normalizers:
+            findings.append(_error(
+                "analysis.dangling_normalizer",
+                f"Field '{path}' references normalizer '{ref}', "
+                f"which is not defined in settings.analysis.normalizer.",
+                f"mappings.properties.{path}.normalizer",
             ))
 
     # Custom analyzer internals must also resolve.
@@ -336,6 +341,35 @@ def _lint_knn(bundle, fields):
     return findings
 
 
+# Expected mapping type for each embedding processor's target field.
+_EMBEDDING_TARGET_TYPES = {
+    "text_embedding": "knn_vector",
+    "text_image_embedding": "knn_vector",
+    "sparse_encoding": "rank_features",
+}
+
+
+def _embedding_pairs(kind, cfg):
+    """Yield ``(source_field, target_field)`` pairs for an embedding processor.
+
+    ``text_embedding`` and ``sparse_encoding`` use ``field_map`` as
+    ``{source: target}``. ``text_image_embedding`` inverts this: ``field_map`` is
+    ``{modality: source}`` (e.g. ``{"text": "name", "image": "image_binary"}``)
+    and the single vector target lives in ``embedding``.
+    """
+    field_map = cfg.get("field_map") or {}
+    if not isinstance(field_map, dict):
+        return
+    if kind == "text_image_embedding":
+        target = cfg.get("embedding")
+        for source in field_map.values():
+            if isinstance(source, str):
+                yield source, target
+        return
+    for source, target in field_map.items():
+        yield source, target
+
+
 def _lint_ingest_pipeline(bundle, fields):
     """Embedding processors must target real knn_vector fields of the right size."""
     findings = []
@@ -346,12 +380,19 @@ def _lint_ingest_pipeline(bundle, fields):
     for idx, processor in enumerate(processors):
         if not isinstance(processor, dict):
             continue
-        for kind in ("text_embedding", "sparse_encoding", "text_image_embedding"):
+        for kind, expected_type in _EMBEDDING_TARGET_TYPES.items():
             cfg = processor.get(kind)
             if not isinstance(cfg, dict):
                 continue
-            field_map = cfg.get("field_map") or {}
-            for source, target in field_map.items():
+            if kind == "text_image_embedding" and not cfg.get("embedding"):
+                findings.append(_error(
+                    "ingest.missing_embedding_target",
+                    "text_image_embedding processor has no 'embedding' field naming "
+                    "the target knn_vector.",
+                    f"ingest_pipeline.processors[{idx}].embedding",
+                ))
+                continue
+            for source, target in _embedding_pairs(kind, cfg):
                 if source not in fields:
                     findings.append(_error(
                         "ingest.unmapped_source",
@@ -366,7 +407,6 @@ def _lint_ingest_pipeline(bundle, fields):
                         f"ingest_pipeline.processors[{idx}].field_map",
                     ))
                     continue
-                expected_type = "rank_features" if kind == "sparse_encoding" else "knn_vector"
                 if target_def.get("type") != expected_type:
                     findings.append(_error(
                         "ingest.wrong_target_type",
@@ -547,7 +587,10 @@ def _lint_queries(bundle, fields):
                 f"queries.{name}",
             ))
             continue
-        for field in sorted(_collect_query_fields(body, set())):
+        # Scope collection to the query clause. Walking the whole body would
+        # misread aggregations — a `terms` agg is {"terms": {"field": "genres",
+        # "size": 10}}, whose keys are parameters, not field names.
+        for field in sorted(_collect_query_fields(body.get("query"), set())):
             base = field.split(".")[0]
             if field in known or base in known or field.startswith("_"):
                 continue
@@ -871,6 +914,21 @@ def apply_bundle(client, bundle, replace=False):
     return applied
 
 
+def _resolve_response_key(response, index, preferred=None):
+    """Pick the key an index-keyed API response is stored under.
+
+    Prefers an exact match on the requested name, then the key already resolved
+    from a sibling response, then the first key present.
+    """
+    if not isinstance(response, dict) or not response:
+        return index
+    if index in response:
+        return index
+    if preferred and preferred in response:
+        return preferred
+    return next(iter(response), index)
+
+
 def extract_bundle(client, index):
     """Read a live index back into a blueprint bundle.
 
@@ -880,15 +938,20 @@ def extract_bundle(client, index):
     settings_response = client.indices.get_settings(index=index)
     mappings_response = client.indices.get_mapping(index=index)
 
-    resolved = next(iter(settings_response), index)
-    raw_settings = (settings_response.get(resolved) or {}).get("settings") or {}
+    # Resolve each response independently. When `index` is an alias or pattern,
+    # the responses are keyed by concrete index name, and there is no guarantee
+    # both dicts enumerate in the same order.
+    settings_key = _resolve_response_key(settings_response, index)
+    mappings_key = _resolve_response_key(mappings_response, index, preferred=settings_key)
+
+    raw_settings = (settings_response.get(settings_key) or {}).get("settings") or {}
     index_settings = dict(raw_settings.get("index") or {})
 
     # Drop cluster-assigned metadata that is not part of a portable design.
     for key in ("uuid", "version", "provided_name", "creation_date", "routing"):
         index_settings.pop(key, None)
 
-    mappings = (mappings_response.get(resolved) or {}).get("mappings") or {}
+    mappings = (mappings_response.get(mappings_key) or {}).get("mappings") or {}
 
     bundle = {
         "name": index.upper(),

@@ -238,6 +238,14 @@ class TestAnalysisLint:
         )
         assert "analysis.normalizer_on_non_keyword" in codes(lint_bundle(bundle))
 
+    def test_reports_one_normalizer_problem_per_field(self):
+        """A dangling normalizer on a text field reports the type error only."""
+        bundle = minimal_bundle(
+            mappings={"properties": {"title": {"type": "text", "normalizer": "ghost"}}}
+        )
+        found = codes(lint_bundle(bundle))
+        assert found == {"analysis.normalizer_on_non_keyword"}
+
 
 # ---------------------------------------------------------------------------
 # k-NN
@@ -356,6 +364,43 @@ class TestIngestLint:
         )
         assert not has_errors(lint_bundle(bundle))
 
+    def test_text_image_embedding_field_map_is_modality_keyed(self):
+        """field_map is {modality: source} and the target lives in 'embedding'."""
+        bundle = self._bundle(
+            [{
+                "text_image_embedding": {
+                    "model_id": "x",
+                    "embedding": "embedding",
+                    "field_map": {"text": "title", "image": "poster"},
+                }
+            }],
+            properties={
+                "title": {"type": "text"},
+                "poster": {"type": "binary"},
+                "embedding": {"type": "knn_vector", "dimension": 384},
+            },
+        )
+        assert not has_errors(lint_bundle(bundle))
+
+    def test_text_image_embedding_flags_unmapped_source(self):
+        bundle = self._bundle(
+            [{
+                "text_image_embedding": {
+                    "model_id": "x",
+                    "embedding": "embedding",
+                    "field_map": {"text": "ghost_field"},
+                }
+            }],
+            properties={"embedding": {"type": "knn_vector", "dimension": 384}},
+        )
+        assert "ingest.unmapped_source" in codes(lint_bundle(bundle))
+
+    def test_text_image_embedding_requires_embedding_target(self):
+        bundle = self._bundle([{
+            "text_image_embedding": {"model_id": "x", "field_map": {"text": "title"}}
+        }])
+        assert "ingest.missing_embedding_target" in codes(lint_bundle(bundle))
+
     def test_flags_pipeline_without_name(self):
         bundle = minimal_bundle(
             ingest_pipeline={"body": {"processors": [{"set": {"field": "a", "value": 1}}]}}
@@ -470,6 +515,27 @@ class TestQueryLint:
                 "title": {"type": "text", "fields": {"raw": {"type": "keyword"}}}
             }},
             queries=[{"name": "q", "body": {"query": {"term": {"title.raw": "x"}}}}],
+        )
+        assert not has_errors(lint_bundle(bundle))
+
+    def test_aggregations_are_not_read_as_query_fields(self):
+        """A terms agg is {"terms": {"field": ..., "size": ...}} — parameters, not fields."""
+        bundle = minimal_bundle(
+            mappings={"properties": {"genres": {"type": "keyword"}}},
+            queries=[{"name": "faceted", "body": {
+                "query": {"match_all": {}},
+                "aggs": {"by_genre": {"terms": {"field": "genres", "size": 10}}},
+            }}],
+        )
+        assert not has_errors(lint_bundle(bundle))
+
+    def test_terms_lookup_reads_the_field_key_not_lookup_params(self):
+        """Terms lookup nests index/id/path under the field name."""
+        bundle = minimal_bundle(
+            mappings={"properties": {"color": {"type": "keyword"}}},
+            queries=[{"name": "q", "body": {"query": {"terms": {
+                "color": {"index": "palettes", "id": "2", "path": "colors"}
+            }}}}],
         )
         assert not has_errors(lint_bundle(bundle))
 
@@ -724,6 +790,32 @@ class TestExtractBundle:
         rendered = render_blueprint(extract_bundle(self._client(), "movies_v1"))
         assert "movies_v1" in rendered
         assert "MAPPINGS" in rendered
+
+    def test_resolves_settings_and_mappings_keys_independently(self):
+        """An alias resolves to a concrete name; the two responses may differ in order."""
+        client = _FakeClient(
+            indices={
+                "settings": {"movies_v1": {"settings": {"index": {"number_of_shards": "2"}}}},
+                # Deliberately different insertion order and an extra sibling index.
+                "mappings": {
+                    "other_index": {"mappings": {"properties": {"wrong": {"type": "text"}}}},
+                    "movies_v1": {"mappings": {"properties": {"title": {"type": "text"}}}},
+                },
+            },
+        )
+        bundle = extract_bundle(client, "movies_v1")
+        assert bundle["mappings"]["properties"] == {"title": {"type": "text"}}
+        assert bundle["settings"]["index"]["number_of_shards"] == "2"
+
+    def test_falls_back_to_first_key_for_alias_lookups(self):
+        client = _FakeClient(
+            indices={
+                "settings": {"movies_v1": {"settings": {"index": {}}}},
+                "mappings": {"movies_v1": {"mappings": {"properties": {"a": {"type": "text"}}}}},
+            },
+        )
+        bundle = extract_bundle(client, "movies-alias")
+        assert bundle["mappings"]["properties"] == {"a": {"type": "text"}}
 
     def test_missing_pipeline_does_not_raise(self):
         class _Boom(_FakeIngest):
