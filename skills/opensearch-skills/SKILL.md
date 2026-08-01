@@ -8,9 +8,13 @@ description: >
   ingestion, document processing, or any related search topic. Also use for
   log analytics and observability — when the user wants to set up log
   ingestion, query logs with PPL, analyze error patterns, set up index
-  lifecycle policies, investigate traces, or check stack health. Activate
-  even if the user says log analysis, Fluent Bit, Fluentd, Logstash, syslog,
-  traceId, OpenTelemetry, or log analytics without mentioning OpenSearch.
+  lifecycle policies, investigate traces, or check stack health. Also use for
+  cluster operations — when the user wants to diagnose cluster health, fix
+  unassigned shards, investigate JVM pressure, manage ISM policies, or set up
+  alerting monitors. Activate even if the user says log analysis, Fluent Bit,
+  Fluentd, Logstash, syslog, traceId, OpenTelemetry, log analytics, cluster red,
+  cluster yellow, unassigned shards, circuit breaker, ISM policy, or alerting
+  without mentioning OpenSearch.
 compatibility: Requires Docker and uv. AWS deployment requires AWS credentials.
 metadata:
   author: opensearch-project
@@ -19,7 +23,7 @@ metadata:
 
 # OpenSearch Skills
 
-This is the top-level skill for OpenSearch. It contains four category skills that can also be installed and used independently:
+This is the top-level skill for OpenSearch. It contains five category skills that can also be installed and used independently:
 
 | Category | Skill | Install individually |
 |---|---|---|
@@ -29,6 +33,7 @@ This is the top-level skill for OpenSearch. It contains four category skills tha
 | [cloud](cloud/SKILL.md) | [aws-setup](cloud/aws-setup/SKILL.md) | `npx skills add opensearch-project/opensearch-agent-skills@aws-setup --full-depth` |
 | [ingest](ingest/SKILL.md) | [document-processing](ingest/document-processing/SKILL.md) | `npx skills add opensearch-project/opensearch-agent-skills@document-processing --full-depth` |
 | [cloud](cloud/SKILL.md) | [managed-ingestion-service](cloud/managed-ingestion-service/SKILL.md) | `npx skills add opensearch-project/opensearch-agent-skills@managed-ingestion-service --full-depth` |
+| [management](management/SKILL.md) | [cluster-operations](management/cluster-operations/SKILL.md) | `npx skills add opensearch-project/opensearch-agent-skills@cluster-operations --full-depth` |
 
 ## Routing
 
@@ -42,13 +47,14 @@ Route to the right skill based on user intent:
 | Deploy to AWS, provision a domain or collection | [aws-setup](cloud/aws-setup/SKILL.md) |
 | Process documents into chunks (PDF/DOCX → JSONL) | [document-processing](ingest/document-processing/SKILL.md) |
 | Ingest chunks at scale via OSIS, S3 to AOS/AOSS | [managed-ingestion-service](cloud/managed-ingestion-service/SKILL.md) |
+| Cluster health, unassigned shards, JVM pressure, circuit breakers, ISM, alerting | [cluster-operations](management/cluster-operations/SKILL.md) |
 | General OpenSearch question | Search docs first, then route to the relevant skill |
 
 If the user's intent spans multiple skills (e.g., "build a search app and deploy it to AWS"), start with the appropriate skill and transition to the next when ready.
 
 ## Feedback Collection (Required Behavior)
 
-**This applies to ALL skills in this collection** — opensearch-launchpad, log-analytics, trace-analytics, and aws-setup. Regardless of which skill is active, you MUST follow these rules.
+**This applies to ALL skills in this collection** — opensearch-launchpad, log-analytics, trace-analytics, aws-setup, and cluster-operations. Regardless of which skill is active, you MUST follow these rules.
 
 You MUST proactively collect feedback during every interaction. This is not optional — treat it as a core part of the workflow, not an afterthought.
 
