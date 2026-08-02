@@ -23,6 +23,8 @@ _MODULE_PATH = (
     / "scripts"
     / "rag_integrity.py"
 )
+_SKILL_ROOT = _MODULE_PATH.parent.parent
+_README_PATH = _SKILL_ROOT / "README.md"
 _SPEC = importlib.util.spec_from_file_location("rag_integrity", _MODULE_PATH)
 assert _SPEC and _SPEC.loader
 rag_integrity = importlib.util.module_from_spec(_SPEC)
@@ -46,6 +48,21 @@ def _safe_source(text: str) -> dict[str, str]:
         "ingested_at": "2026-07-30T00:00:00Z",
         "content_sha256": rag_integrity.content_sha256(text),
     }
+
+
+def test_readme_documents_bounded_sampling_and_integration_contract():
+    readme = _README_PATH.read_text(encoding="utf-8")
+
+    assert "default is **250 documents**" in readme
+    assert "hard maximum is **1,000 documents**" in readme
+    assert "one bounded `match_all` search sorted by `_doc`" in readme
+    assert "does **not** establish global safety" in readme
+    assert "ad-hoc investigation" in readme
+    assert "caller-controlled CI gate" in readme
+    assert "uv run python scripts/rag_integrity.py scan-jsonl" in readme
+    assert "uv run python scripts/rag_integrity.py scan-cluster" in readme
+    assert "--size 250" in readme
+    assert "--fail-on high" in readme
 
 
 def test_safe_document_has_no_findings():
@@ -385,6 +402,61 @@ def test_cluster_scan_performs_only_mapping_and_search(monkeypatch):
     assert [call[0] for call in calls] == ["get_mapping", "search"]
     assert report["summary"]["documents_analyzed"] == 1
     assert report["safety"]["cluster_mutations_performed"] == 0
+
+
+def test_semantic_expansion_prioritizes_highest_risk_with_stable_ties():
+    calls: list[dict[str, object]] = []
+
+    class FakeClient:
+        def search(self, *, index, body):
+            calls.append({"index": index, "body": body})
+            return {"hits": {"hits": []}}
+
+    findings = [
+        {"index": "kb", "id": "medium", "severity": "medium", "risk_score": 100},
+        {"index": "kb", "id": "high-low", "severity": "high", "risk_score": 70},
+        {
+            "index": "kb-b",
+            "id": "critical-0",
+            "severity": "critical",
+            "risk_score": 90,
+        },
+        {"index": "kb", "id": "low", "severity": "low", "risk_score": 100},
+        {"index": "kb", "id": "high-high", "severity": "high", "risk_score": 95},
+        {
+            "index": "kb-a",
+            "id": "critical-z",
+            "severity": "critical",
+            "risk_score": 90,
+        },
+        {
+            "index": "kb-a",
+            "id": "critical-a",
+            "severity": "critical",
+            "risk_score": 90,
+        },
+    ]
+    sources = {str(item["id"]): f"source for {item['id']}" for item in findings}
+
+    expanded = rag_integrity.semantic_expansion(
+        FakeClient(),
+        index="kb",
+        sources=sources,
+        findings=findings,
+        vector_field="content_embedding",
+        model_id="model-1",
+        k=10,
+        max_seeds=5,
+    )
+
+    assert [item["seed"] for item in expanded] == [
+        {"index": "kb-a", "id": "critical-a"},
+        {"index": "kb-a", "id": "critical-z"},
+        {"index": "kb-b", "id": "critical-0"},
+        {"index": "kb", "id": "high-high"},
+        {"index": "kb", "id": "high-low"},
+    ]
+    assert len(calls) == 5
 
 
 def test_cluster_client_requires_endpoint(monkeypatch):

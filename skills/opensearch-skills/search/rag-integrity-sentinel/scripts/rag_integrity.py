@@ -762,9 +762,19 @@ def semantic_expansion(
 ) -> list[dict[str, Any]]:
     """Expand the highest-risk seeds using OpenSearch's neural query."""
     expanded: list[dict[str, Any]] = []
-    seeds = [item for item in findings if SEVERITY_ORDER[item["severity"]] >= 2][
-        :max_seeds
-    ]
+    seeds = sorted(
+        (
+            item
+            for item in findings
+            if SEVERITY_ORDER[item["severity"]] >= SEVERITY_ORDER["medium"]
+        ),
+        key=lambda item: (
+            -SEVERITY_ORDER[item["severity"]],
+            -item["risk_score"],
+            str(item["index"]),
+            str(item["id"]),
+        ),
+    )[:max_seeds]
     for seed in seeds:
         query_text = sources.get(str(seed["id"]), "")
         if not query_text:
