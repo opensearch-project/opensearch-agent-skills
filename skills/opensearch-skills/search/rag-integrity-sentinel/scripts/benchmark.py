@@ -75,6 +75,8 @@ def run_benchmark(corpus_path: Path = DEFAULT_CORPUS) -> dict[str, Any]:
     """Evaluate deterministic classification on the bundled labeled corpus."""
     started = time.perf_counter()
     records = list(load_corpus(corpus_path))
+    if not records:
+        raise ValueError(f"{corpus_path} contains no benchmark records")
     findings = []
     rows = []
     confusion = Counter()

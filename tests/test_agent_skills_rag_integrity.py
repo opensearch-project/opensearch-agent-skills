@@ -546,6 +546,14 @@ def test_bundled_benchmark_has_perfect_regression_metrics():
     assert result["safety"]["containment_requires_human_approval"] is True
 
 
+def test_empty_benchmark_corpus_fails_as_input_error(tmp_path):
+    corpus_path = tmp_path / "empty.jsonl"
+    corpus_path.write_text("", encoding="utf-8")
+
+    with pytest.raises(ValueError, match="contains no benchmark records"):
+        rag_integrity_benchmark.run_benchmark(corpus_path)
+
+
 def test_benchmark_cli_enforces_quality_gate(tmp_path):
     output_path = tmp_path / "nested" / "benchmark.json"
 
