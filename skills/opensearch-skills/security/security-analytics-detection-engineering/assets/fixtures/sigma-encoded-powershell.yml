@@ -1,0 +1,15 @@
+title: SA Detection Engineering Test - Encoded PowerShell
+id: 8f2c5b34-1a77-4d3e-9b60-aa11223344cc
+status: experimental
+description: Verification fixture rule - Sysmon process creation with EncodedCommand flag
+author: opensearch-agent-skills
+date: 2026/08/03
+logsource:
+  product: windows
+  category: process_creation
+detection:
+  selection:
+    EventID: 1
+    CommandLine|contains: '-EncodedCommand'
+  condition: selection
+level: high

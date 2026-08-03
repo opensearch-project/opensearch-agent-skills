@@ -1,0 +1,7 @@
+{
+  "EventID": 1,
+  "CommandLine": "C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe -NoProfile -EncodedCommand SQBFAFgAIAAoAE4AZQB3AC0ATwBiAGoAZQBjAHQA",
+  "Image": "C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe",
+  "@timestamp": "2026-08-03T20:19:38Z",
+  "test_case_id": "positive-match-001"
+}

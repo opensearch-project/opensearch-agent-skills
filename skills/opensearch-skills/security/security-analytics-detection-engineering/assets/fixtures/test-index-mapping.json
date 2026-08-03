@@ -1,0 +1,12 @@
+{
+  "settings": {"number_of_shards": 1, "number_of_replicas": 0},
+  "mappings": {
+    "properties": {
+      "EventID": {"type": "integer"},
+      "CommandLine": {"type": "text"},
+      "Image": {"type": "keyword"},
+      "@timestamp": {"type": "date"},
+      "test_case_id": {"type": "keyword"}
+    }
+  }
+}
