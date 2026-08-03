@@ -10,8 +10,6 @@ OpenSearch supports four main quantization techniques:
 - **FP16 Quantization**: 16-bit floating-point quantization, 2× compression
 - **Product Quantization**: Up to 64× compression
 
-<!-- FALLBACK: opensearch, priority=1 -->
-
 ## Quantization Principles
 
 ### Scalar Quantization vs Product Quantization

@@ -4,9 +4,6 @@
 
 This document provides performance benchmark data for OpenSearch vector search across different node shapes, dataset sizes, and vector dimensions. Many concrete examples use Amazon OpenSearch Service instance names because they are easy to compare, but the portable sizing signals are CPU generation, memory per node, storage IOPS/throughput, shard count, compression, and target latency.
 
-<!-- FALLBACK: opensearch, priority=1 -->
-<!-- FALLBACK: aws-pricing, priority=2, condition="cost-related" -->
-
 ## Key Performance Metrics
 
 - **QPS (Queries Per Second)**: Queries per second, higher is better

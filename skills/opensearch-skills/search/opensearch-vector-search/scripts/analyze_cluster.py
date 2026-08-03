@@ -24,13 +24,13 @@ Output: JSON format for easy parsing by AI agents.
 Safety: This script is READ-ONLY. It never creates, modifies, or deletes any indices or data.
 """
 
+from __future__ import annotations
+
 import argparse
 import json
 import sys
-import warnings
-from datetime import datetime
+from datetime import datetime, timezone
 
-warnings.filterwarnings("ignore")
 
 try:
     from opensearchpy import OpenSearch, RequestsHttpConnection
@@ -40,7 +40,7 @@ except ImportError:
 
 
 def create_client(url: str, username: str = None, password: str = None,
-                  no_auth: bool = False, verify_ssl: bool = False) -> OpenSearch:
+                  no_auth: bool = False, verify_ssl: bool = True) -> OpenSearch:
     """Create an OpenSearch client connection."""
     if OpenSearch is None or RequestsHttpConnection is None:
         print(json.dumps({
@@ -56,7 +56,7 @@ def create_client(url: str, username: str = None, password: str = None,
         "hosts": [parsed],
         "use_ssl": use_ssl,
         "verify_certs": verify_ssl,
-        "ssl_show_warn": False,
+        "ssl_show_warn": not verify_ssl,
         "connection_class": RequestsHttpConnection,
         "timeout": 30,
     }
@@ -65,6 +65,14 @@ def create_client(url: str, username: str = None, password: str = None,
         kwargs["http_auth"] = (username, password)
 
     return OpenSearch(**kwargs)
+
+
+def _as_int(value, default: int = 0) -> int:
+    """Return an integer value without raising on incomplete API responses."""
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return default
 
 
 def safe_request(func, *args, **kwargs):
@@ -332,11 +340,7 @@ def get_index_detail(client: OpenSearch, index_name: str) -> dict:
 
     # Memory estimate for vector fields
     if isinstance(result.get("vector_fields"), list) and result["vector_fields"]:
-        doc_count = 0
-        try:
-            doc_count = result.get("stats", {}).get("docs_count", 0) or 0
-        except Exception:
-            pass
+        doc_count = _as_int(result.get("stats", {}).get("docs_count"))
 
         if doc_count > 0:
             result["memory_estimates"] = []
@@ -372,9 +376,9 @@ def get_index_detail(client: OpenSearch, index_name: str) -> dict:
                     compression_label = f"binary {bits}-bit ({int(32/bits)}x)"
                 elif encoder_name == "pq":
                     # PQ: code_size bits per sub-vector, m sub-vectors
-                    pq_m = encoder_params.get("m", dim // 8)
-                    code_size = encoder_params.get("code_size", 8)
-                    total_bytes = (code_size / 8) * pq_m
+                    pq_m = _as_int(encoder_params.get("m"), dim // 8 if dim else 0)
+                    code_size = _as_int(encoder_params.get("code_size"), 8)
+                    total_bytes = (code_size / 8) * pq_m if pq_m else 0
                     bytes_per_dim = total_bytes / dim if dim > 0 else 0
                     compression_label = f"product quantization (PQ m={pq_m}, code_size={code_size})"
 
@@ -566,7 +570,7 @@ def _analyze_index_config(detail: dict, recommendations: list):
         return
 
     # Check knn setting
-    if settings.get("knn") != "true" and vector_fields:
+    if str(settings.get("knn")).lower() != "true" and vector_fields:
         recommendations.append({
             "severity": "CRITICAL",
             "category": "knn_setting",
@@ -642,7 +646,7 @@ def _analyze_index_config(detail: dict, recommendations: list):
                 })
 
         # Quantization recommendations for large indices
-        doc_count = stats.get("docs_count", 0) or 0
+        doc_count = _as_int(stats.get("docs_count"))
         if doc_count > 10_000_000 and not encoder_name and data_type == "float" and not mode:
             recommendations.append({
                 "severity": "INFO",
@@ -682,7 +686,7 @@ def _analyze_index_config(detail: dict, recommendations: list):
     num_shards = settings.get("number_of_shards")
     if num_shards:
         num_shards = int(num_shards)
-        doc_count = stats.get("docs_count", 0) or 0
+        doc_count = _as_int(stats.get("docs_count"))
         if num_shards == 1 and doc_count > 5_000_000:
             recommendations.append({
                 "severity": "WARNING",
@@ -703,7 +707,7 @@ def _analyze_index_config(detail: dict, recommendations: list):
     # Refresh interval
     refresh = settings.get("refresh_interval")
     if refresh and refresh == "1s":
-        doc_count = stats.get("docs_count", 0) or 0
+        doc_count = _as_int(stats.get("docs_count"))
         if doc_count > 1_000_000:
             recommendations.append({
                 "severity": "INFO",
@@ -721,7 +725,11 @@ def main():
     parser.add_argument("--username", "-u", help="Username for basic auth")
     parser.add_argument("--password", "-p", help="Password for basic auth")
     parser.add_argument("--no-auth", action="store_true", help="Connect without authentication")
-    parser.add_argument("--verify-ssl", action="store_true", help="Verify SSL certificates (default: false)")
+    parser.add_argument(
+        "--insecure",
+        action="store_true",
+        help="Disable TLS certificate verification (only for trusted development clusters).",
+    )
     parser.add_argument("--index", "-i", help="Specific index to analyze")
     parser.add_argument("--action", "-a", default="cluster-overview",
                         choices=["cluster-overview", "index-detail", "shard-analysis", "all"],
@@ -746,7 +754,7 @@ def main():
             username=args.username,
             password=args.password,
             no_auth=args.no_auth,
-            verify_ssl=args.verify_ssl,
+            verify_ssl=not args.insecure,
         )
         # Test connection
         client.info()
@@ -759,7 +767,7 @@ def main():
 
     output = {
         "success": True,
-        "timestamp": datetime.utcnow().isoformat() + "Z",
+        "timestamp": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
         "cluster_url": args.url,
     }
 

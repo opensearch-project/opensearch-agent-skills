@@ -13,9 +13,23 @@ Usage:
   python3 get_opensearch_pricing.py --region us-east-1 [--instance-type r7g.xlarge] [--format table|json]
 """
 
+from __future__ import annotations
+
 import argparse
 import json
 import sys
+
+
+def normalize_instance_type(instance_type: str) -> str:
+    """Normalize an Amazon OpenSearch Service instance type for the Pricing API."""
+    normalized = instance_type.strip().lower()
+    if normalized.endswith(".search"):
+        normalized = normalized.removesuffix(".search")
+    if "." not in normalized:
+        raise ValueError(
+            "Instance type must include both family and size, for example r7g.xlarge."
+        )
+    return f"{normalized}.search"
 
 
 def get_opensearch_pricing(region: str, instance_type: str = None) -> list[dict]:
@@ -39,7 +53,7 @@ def get_opensearch_pricing(region: str, instance_type: str = None) -> list[dict]
     ]
     if instance_type:
         # OpenSearch instance types have .search suffix in pricing API
-        it = instance_type if ".search" in instance_type else instance_type + ".search"
+        it = normalize_instance_type(instance_type)
         filters.append(
             {"Type": "TERM_MATCH", "Field": "instanceType", "Value": it}
         )
@@ -151,7 +165,10 @@ def main():
     parser.add_argument("--format", choices=["table", "json"], default="table", help="Output format")
     args = parser.parse_args()
 
-    results = get_opensearch_pricing(args.region, args.instance_type)
+    try:
+        results = get_opensearch_pricing(args.region, args.instance_type)
+    except ValueError as exc:
+        parser.error(str(exc))
 
     if args.format == "json":
         print(json.dumps(results, indent=2))

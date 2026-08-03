@@ -18,8 +18,6 @@ The cost of OpenSearch vector search mainly consists of compute resources, stora
 - **Similarity Algorithm**: cosine for normalized embeddings and common semantic-search workloads; choose L2 or inner product when the embedding model requires it.
 - **Node Shape**: Prefer current-generation CPU, enough RAM for k-NN graph/cache headroom, and storage with predictable IOPS. For Amazon OpenSearch Service examples in this guide, r7g/r8g/r8gd and OpenSearch-optimized families are used as concrete reference points; for self-managed or Kubernetes deployments, map the same resource profile to your platform.
 
-<!-- FALLBACK: aws-pricing, priority=1, condition="cost-related" -->
-
 ## Cost Optimization Techniques Overview
 
 ### 1. Disk-Based Vector Search

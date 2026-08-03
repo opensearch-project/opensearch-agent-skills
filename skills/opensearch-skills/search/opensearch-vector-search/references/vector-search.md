@@ -14,9 +14,6 @@ OpenSearch supports two vector index modes:
 - **Capacity Shape**: Choose memory-optimized nodes for low-latency in-memory k-NN, storage/IO-optimized nodes for disk mode, and enough data nodes to keep shard sizes and k-NN cache pressure manageable.
 - **Provider-Specific Mapping**: If the target is Amazon OpenSearch Service, current-generation memory-optimized families such as r7g/r8g/r8gd are common vector-search examples; optimized families such as OR2/OM2/OI2 have workload-specific tradeoffs. For self-managed OpenSearch, map the same CPU, memory, and IO requirements to your available instance or Kubernetes node classes.
 
-<!-- FALLBACK: opensearch, priority=1 -->
-<!-- FALLBACK: aws-pricing, priority=2, condition="cost-related" -->
-
 ## Common Issues
 
 ### Issue 1: First Vector Query Is Very Slow (Cold Start Problem)
@@ -121,7 +118,7 @@ Vector dimensions directly affect computational complexity and storage space.
     "properties": {
       "embedding": {
         "type": "knn_vector",
-        "dimension": 384,  // Choose based on model
+        "dimension": 384,
         "method": {
           "name": "hnsw",
           "space_type": "cosine"

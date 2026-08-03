@@ -194,7 +194,7 @@ PUT /my_index_v2
   "mappings": {
     "properties": {
       "field": {
-        "type": "keyword"  // 新的类型
+        "type": "keyword"
       }
     }
   }
