@@ -13,6 +13,8 @@ body:
           required: true
         - label: I have reviewed and accept the [Code of Conduct](https://opensearch.org/code-of-conduct/).
           required: true
+        - label: I am a legal United States resident 18 years or older.
+          required: true
 
   - type: input
     id: name
