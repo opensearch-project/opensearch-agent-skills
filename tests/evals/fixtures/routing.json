@@ -106,5 +106,23 @@
     "prompt": "Bulk index my product catalog JSON into OpenSearch using the _bulk API",
     "expected_skill": "opensearch-launchpad",
     "rationale": "Structured bulk-indexing is NOT managed-ingestion-service — it's opensearch-launchpad"
+  },
+  {
+    "id": "routing-cluster-01",
+    "prompt": "My OpenSearch cluster is red and I have unassigned shards. How do I fix it?",
+    "expected_skill": "cluster-operations",
+    "rationale": "Explicit cluster-red + unassigned shards = cluster-operations"
+  },
+  {
+    "id": "routing-cluster-02",
+    "prompt": "JVM heap pressure is at 92% on one of my nodes and circuit breakers are tripping",
+    "expected_skill": "cluster-operations",
+    "rationale": "JVM heap pressure + circuit breaker are cluster-operations trigger keywords"
+  },
+  {
+    "id": "routing-cluster-03",
+    "prompt": "I want to set up an ISM policy that rolls over my log indices at 50GB and deletes them after 30 days",
+    "expected_skill": "cluster-operations",
+    "rationale": "ISM policy + rollover + retention = cluster-operations"
   }
 ]

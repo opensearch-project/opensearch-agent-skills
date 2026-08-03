@@ -96,12 +96,15 @@ def cmd_cluster_stats(args):
     """Return high-level cluster statistics (node count, shard totals, store size)."""
     client = _get_client()
     stats = client.cluster.stats()
+    shards = stats.get("indices", {}).get("shards", {})
+    total_shards = shards.get("total", 0)
+    primary_shards = shards.get("primaries", 0)
     summary = {
         "status": stats.get("status"),
         "node_count": stats.get("nodes", {}).get("count", {}).get("total"),
         "data_node_count": stats.get("nodes", {}).get("count", {}).get("data"),
-        "primary_shards": stats.get("indices", {}).get("shards", {}).get("primaries"),
-        "replica_shards": stats.get("indices", {}).get("shards", {}).get("replication"),
+        "primary_shards": primary_shards,
+        "replica_shards": total_shards - primary_shards,
         "index_count": stats.get("indices", {}).get("count"),
         "store_size_bytes": stats.get("indices", {}).get("store", {}).get("size_in_bytes"),
         "docs_count": stats.get("indices", {}).get("docs", {}).get("count"),
@@ -213,11 +216,13 @@ def cmd_hot_threads(args):
     try:
         result = client.nodes.hot_threads(
             node_id=node_id,
-            threads=threads,
-            type="cpu",
-            interval="500ms",
+            params={"threads": threads, "type": "cpu", "interval": "500ms"},
         )
-        # hot_threads returns plain text — print as-is
+        # hot_threads returns plain text; decode bytes if needed
+        if isinstance(result, bytes):
+            result = result.decode("utf-8", errors="replace")
+        elif not isinstance(result, str):
+            result = json.dumps(result, indent=2)
         print(result)
     except Exception as exc:
         print(json.dumps({"error": str(exc)}))
@@ -305,8 +310,8 @@ def cmd_disk_usage(args):
         for entry in result:
             pct = entry.get("disk.percent", "")
             try:
-                entry["warning"] = int(pct) >= LOW_WATERMARK
-            except (ValueError, TypeError):
+                entry["warning"] = float(str(pct).strip()) >= LOW_WATERMARK
+            except (ValueError, TypeError, AttributeError):
                 entry["warning"] = False
         print(json.dumps(result, indent=2))
     except Exception as exc:

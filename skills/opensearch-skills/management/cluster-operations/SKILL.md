@@ -1,16 +1,12 @@
 ---
 name: cluster-operations
 description: >
-  Diagnose and fix OpenSearch cluster health issues. Use this skill when
-  cluster status is red or yellow, shards are unassigned, nodes are down or
-  unreachable, JVM heap pressure is high, circuit breakers are tripping, queries
-  are slow, or you need to tune cluster settings. Covers _cluster/health,
-  _cat/shards, _cluster/allocation/explain, _nodes/stats, _nodes/hot_threads,
-  _cluster/reroute, force merge, ISM policies, rollover, index retention, alerting
-  monitors, and cluster settings. Activate when user says: cluster red, cluster
-  yellow, unassigned shards, node OOM, JVM pressure, circuit breaker, hot threads,
-  shard allocation, cluster settings, ISM policy, rollover, alerting, slow query,
-  profile API, or any phrase about a broken or degraded OpenSearch cluster.
+  Diagnose and fix OpenSearch cluster health issues. Activate when the user
+  says: cluster red, cluster yellow, unassigned shards, node OOM, node down,
+  JVM pressure, circuit breaker tripped, hot threads, shard allocation,
+  cluster settings, ISM policy, rollover, index retention, alerting monitor,
+  slow query, force merge, or any phrase about a broken, degraded, or
+  misconfigured OpenSearch cluster.
 compatibility: Requires a running OpenSearch cluster. uv and Python 3.11+ for helper scripts.
 metadata:
   author: opensearch-project
@@ -304,7 +300,7 @@ PUT _plugins/_ism/policies/log-retention-policy
 ```json
 POST _plugins/_ism/add/logs-000001
 {
-  "policy_id": "log-retention-policy"
+  "policy_id": "log-retention-30d"
 }
 ```
 
