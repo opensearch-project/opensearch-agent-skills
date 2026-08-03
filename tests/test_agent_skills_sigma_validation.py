@@ -464,3 +464,15 @@ def test_provenance_load_rejects_invalid_file(tmp_path):
     bad.write_text('{"not": "provenance"}')
     with pytest.raises(sa.SAError, match="not a valid provenance record"):
         sa.load_provenance(str(bad))
+
+
+def test_pyyaml_declared_as_pep723_runtime_dependency():
+    """Regression: PyYAML is a runtime dependency of the CLI (sigma_validation
+    imports it), so it must be declared in the entrypoint's PEP 723 script
+    block rather than relying on the repository dev dependency group."""
+    script = (_SCRIPTS_DIR / "security_analytics.py").read_text()
+    lines = script.splitlines()
+    start = lines.index("# /// script")
+    end = lines.index("# ///", start)
+    block = "\n".join(lines[start:end + 1])
+    assert "pyyaml" in block.lower()

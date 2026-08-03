@@ -44,8 +44,9 @@ def load_sigma(sigma_text):
         import yaml
     except ImportError:
         return None, (
-            "PyYAML is required for rule validation. Install the repository dev "
-            "dependency group (uv sync --group dev) or `pip install pyyaml`."
+            "PyYAML is required for rule validation. Run the CLI via "
+            "`uv run scripts/security_analytics.py` (PyYAML is declared as a "
+            "PEP 723 script dependency) or `pip install pyyaml`."
         )
     try:
         docs = list(yaml.safe_load_all(sigma_text))
