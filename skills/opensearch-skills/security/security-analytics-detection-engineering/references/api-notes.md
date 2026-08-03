@@ -106,3 +106,22 @@ Both keys are stable and suitable for programmatic verification.
 - Preflight rule search: `POST /rules/_search?pre_packaged=true` with a
   `match_all` body → 200 even on a fresh cluster.
 - Detector search: `POST /detectors/_search` with `match_all` → 200.
+
+## Rule validation endpoint (2.19.1, observed)
+
+`POST /_plugins/_security_analytics/rules/validate` exists, but it is NOT a
+non-mutating content-validation API. Request shape:
+
+```json
+{"index_name": "<index>", "rules": ["<existing rule _id>", "..."]}
+```
+
+It checks whether already-created rules are applicable (field-mappable) to
+the given index and returns `{}` when all supplied rules are applicable.
+Rules must already exist — the mutation has already happened — so it cannot
+pre-validate raw Sigma YAML. Passing a nonexistent rule id yields an HTTP 500
+`index_out_of_bounds_exception`; a nonexistent index yields 404.
+
+Consequence for this skill: pre-creation validation is local static analysis
+(`validate-rule`), and OpenSearch acceptance is only proven by an actual
+`POST /rules?category=...` (evidence state API_ACCEPTED).

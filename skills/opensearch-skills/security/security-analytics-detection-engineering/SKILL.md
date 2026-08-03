@@ -9,10 +9,10 @@ description: >
   Activate even if the user says SIEM rule, detection rule, threat detection,
   Sysmon rule, detection engineering, findings, or detector without
   mentioning OpenSearch.
-compatibility: Requires a reachable OpenSearch 2.x cluster with the Security Analytics plugin, plus uv.
+compatibility: Requires a reachable OpenSearch 2.x cluster with the Security Analytics plugin, plus uv. Rule validation additionally needs PyYAML (repository dev dependency group).
 metadata:
   author: StressTestor
-  version: "1.0"
+  version: "1.1"
 ---
 
 # Security Analytics Detection Engineering
@@ -45,6 +45,22 @@ produced no finding.
    field has no mapping in the index, tell the user instead of guessing.
 6. **One negative fixture is not a false-positive rate.** Report negative
    results as "this rule did not match this document," nothing broader.
+7. **Never overstate the evidence state.** Every authored rule carries exactly
+   one of four states, advanced one step at a time and never skipped:
+   - `DRAFT` — a candidate rule exists; no compatibility or runtime claims.
+   - `SCHEMA_VALID` — every referenced field resolves through the index
+     mapping, explicit Security Analytics aliases, or explicitly declared
+     synthetic fixture fields, and the rule passes deterministic validation.
+   - `API_ACCEPTED` — OpenSearch accepted the rule; a detector can use it.
+   - `REPLAY_VERIFIED` — an eligible post-detector positive fixture produced
+     the expected attributed finding and an eligible negative produced none.
+   "We have a rule for that" means DRAFT. Only REPLAY_VERIFIED means the rule
+   demonstrably fires on this cluster.
+8. **The host agent authors; the CLI verifies.** You (the agent) write the
+   candidate Sigma YAML from the user's threat description, using only fields
+   that `inspect` confirmed. The CLI is deterministic: it grounds, validates,
+   deploys, and replays — it never generates rule content and never calls a
+   model provider.
 
 ## Prerequisites
 
@@ -86,9 +102,12 @@ uv run python scripts/security_analytics.py inspect \
   --index <index> --sigma-file <rule.yml> --log-type windows
 ```
 
-Reports the index's fields, which Sigma detection fields are present or
-missing, and the Security Analytics field-mapping view. For a clean test
-index, use `create-index` with the bundled mapping instead:
+Reports the index's dotted field paths with types, date (timestamp candidate)
+fields, whether the name resolves to an alias or pattern, which Sigma
+detection fields are present or missing, and the Security Analytics
+mapping-view alias resolution. Mapping inspection only — raw documents are
+never sampled. For a clean test index, use `create-index` with the bundled
+mapping instead:
 
 ```bash
 uv run python scripts/security_analytics.py create-index \
@@ -97,6 +116,31 @@ uv run python scripts/security_analytics.py create-index \
 
 Run-created indices must start with the `sa-de-test` prefix so cleanup can
 never touch user data.
+
+### Step 2.5 — Author, ground, and validate the rule (read-only)
+
+When the user gives a natural-language detection objective ("detect encoded
+PowerShell execution"), author the candidate Sigma YAML yourself using only
+fields confirmed by `inspect`, save it to a file, then ground it:
+
+```bash
+uv run python scripts/security_analytics.py plan-rule \
+  --threat-description "Detect encoded PowerShell process execution" \
+  --index <index> --log-type windows --sigma-file candidate-rule.yml
+uv run python scripts/security_analytics.py validate-rule
+```
+
+`plan-rule` opens a provenance record (`sa-rule-provenance.json` by default)
+at state `DRAFT` with the threat description, referenced fields, and mapping
+evidence. `validate-rule` runs deterministic validation of the supported Sigma
+subset — required keys, condition/selection integrity, a modifier allowlist
+(`contains`, `all`, `startswith`, `endswith`, `base64`, `base64offset`, `re`),
+logsource/log-type compatibility, level values, UUID form, duplicate-title
+refusal against the cluster's custom rules, embedded-secret refusal, and
+rejection of aggregation, correlation, and placeholder syntax. A rule cannot
+reach `SCHEMA_VALID` while any referenced field is unresolved. If a field is
+missing, rewrite the rule or declare synthetic fixture fields explicitly with
+`--extra-field`; the CLI never invents mappings.
 
 ### Step 3 — Create the rule
 
@@ -110,6 +154,13 @@ uv run python scripts/security_analytics.py create-rule \
 The API takes raw Sigma YAML as the request body with the category as a query
 parameter, and assigns its own rule `_id` — use that ID, not the Sigma `id`
 field. The CLI refuses to create a second rule in the same run.
+
+Pass `--provenance sa-rule-provenance.json` to tie creation to the evidence
+ledger: creation is refused unless the record is `SCHEMA_VALID`, and success
+advances it to `API_ACCEPTED`. OpenSearch cannot pre-validate raw Sigma
+content without creating the rule (`rules/validate` only checks already-created
+rule IDs against an index — see references/api-notes.md), so the dry-run
+preview is local static analysis, never OpenSearch API acceptance.
 
 ### Step 4 — Create the detector
 
@@ -138,6 +189,10 @@ document IDs, the translated query, and proof both fixtures were indexed
 after detector creation. Verification passes only when the positive fixture
 is attributed and the negative fixture has zero findings.
 
+With `--provenance`, verify requires `API_ACCEPTED` and advances the record
+to `REPLAY_VERIFIED` only when the positive finding is attributed AND both
+fixtures were eligible (indexed after detector creation).
+
 ### Step 6 — Cleanup
 
 ```bash
@@ -163,9 +218,13 @@ this skill.
 ## Current limitations
 
 - One rule and one detector per run manifest (by design, for attribution).
-- Sigma field extraction for `inspect` is a lightweight text parse — it
-  reports candidate fields, not a full Sigma semantic model.
-- No natural-language rule generation, correlation rules, or ATT&CK coverage
-  analysis in this slice.
+- Sigma field extraction for `inspect`/`plan-rule` is a lightweight text
+  parse; full semantic validation happens in `validate-rule` (PyYAML).
+- The validated Sigma subset is deliberately narrow: single-document
+  detections with the allowlisted modifiers. Aggregations, correlation
+  rules, placeholders, and arbitrary Sigma syntax are rejected, not silently
+  accepted.
+- Rule content is authored by the host agent, never by the CLI; there is no
+  embedded LLM and no model-provider dependency.
 - Findings latency depends on the detector schedule (minimum 1 minute);
   expect roughly 40-90 seconds before a finding appears.
