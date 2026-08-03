@@ -165,7 +165,7 @@ def cmd_list_shards(args):
     try:
         result = client.cat.shards(params=params, format="json")
         if state_filter and state_filter.upper() != "ALL":
-            result = [s for s in result if s.get("state", "").upper() == state_filter.upper()]
+            result = [s for s in result if (s.get("state") or "").upper() == state_filter.upper()]
         print(json.dumps(result, indent=2))
     except Exception as exc:
         print(json.dumps({"error": str(exc)}))
