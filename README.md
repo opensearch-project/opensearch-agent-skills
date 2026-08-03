@@ -11,6 +11,7 @@ Skills are organized in a tree — install the whole collection or pick individu
 | Category | Skill | Description |
 |----------|-------|-------------|
 | **Search** | [opensearch-launchpad](skills/opensearch-skills/search/opensearch-launchpad/) | Build search apps from scratch — BM25, semantic, hybrid, agentic search |
+| **Search** | [opensearch-vector-search](skills/opensearch-skills/search/opensearch-vector-search/) | Tune and operate vector search — k-NN, HNSW, quantization, sizing, latency, cost |
 | **Observability** | [log-analytics](skills/opensearch-skills/observability/log-analytics/) | Query and analyze logs with PPL — error patterns, anomaly detection |
 | **Observability** | [trace-analytics](skills/opensearch-skills/observability/trace-analytics/) | Investigate distributed traces — slow spans, service maps, agent invocations |
 | **Cloud** | [aws-setup](skills/opensearch-skills/cloud/aws-setup/) | Deploy to Amazon OpenSearch Service or Serverless |
@@ -30,6 +31,7 @@ npx skills add opensearch-project/opensearch-agent-skills
 
 # Install a specific skill
 npx skills add opensearch-project/opensearch-agent-skills@opensearch-launchpad --full-depth
+npx skills add opensearch-project/opensearch-agent-skills@opensearch-vector-search --full-depth
 npx skills add opensearch-project/opensearch-agent-skills@log-analytics --full-depth
 npx skills add opensearch-project/opensearch-agent-skills@trace-analytics --full-depth
 npx skills add opensearch-project/opensearch-agent-skills@aws-setup --full-depth
@@ -69,6 +71,10 @@ After installing, try:
 
 > *"I want to build a semantic search app with OpenSearch"*
 
+For vector search operations, try:
+
+> *"My OpenSearch k-NN queries over 100M vectors are slow. Help me tune HNSW, shard count, and memory usage."*
+
 Your agent reads the skill instructions and runs the scripts directly — no MCP server required.
 
 ---
@@ -94,6 +100,10 @@ skills/
       opensearch-launchpad/           # Search app builder
         SKILL.md
         *.md                          # Model guides, evaluation, strategies
+      opensearch-vector-search/       # Vector search tuning and operations
+        SKILL.md
+        references/                    # k-NN, HNSW, quantization, sizing, query tuning
+        scripts/                       # Read-only analyzer and optional pricing lookup
     observability/                    # Category: Observability
       SKILL.md
       log-analytics/                  # Log querying & analysis

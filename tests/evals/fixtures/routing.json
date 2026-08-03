@@ -18,6 +18,24 @@
     "rationale": "Document ingestion + search setup"
   },
   {
+    "id": "routing-vector-01",
+    "prompt": "My OpenSearch k-NN queries over 100M 768-dimensional vectors are slow. How should I tune HNSW and ef_search?",
+    "expected_skill": "opensearch-vector-search",
+    "rationale": "Existing vector workload tuning and HNSW parameters"
+  },
+  {
+    "id": "routing-vector-02",
+    "prompt": "I need capacity planning for 1 billion embeddings with byte quantization and disk mode",
+    "expected_skill": "opensearch-vector-search",
+    "rationale": "Vector memory sizing, quantization, and disk mode"
+  },
+  {
+    "id": "routing-vector-03",
+    "prompt": "Analyze my existing OpenSearch cluster's knn_vector mappings and shard distribution without changing anything",
+    "expected_skill": "opensearch-vector-search",
+    "rationale": "Read-only analysis of an existing vector search cluster"
+  },
+  {
     "id": "routing-logs-01",
     "prompt": "Show me the top 10 errors in my application logs from the last hour",
     "expected_skill": "log-analytics",
