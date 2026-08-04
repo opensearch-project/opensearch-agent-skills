@@ -29,7 +29,7 @@ Root-cause analysis for logs that audits its own premise and refuses to name a
 cause it cannot close.
 
 > **Hackathon entry.** All three gates are implemented, mutation-verified —
-> 65 load-bearing rules each deliberately broken, 0 undetected — and run end to
+> 69 load-bearing rules each deliberately broken, 0 undetected — and run end to
 > end against live clusters with and without the security plugin. Captured runs
 > are indexed in [evidence.md](evidence.md); the full harness is in the
 > [development repository](https://github.com/simpleciki/unclosed).

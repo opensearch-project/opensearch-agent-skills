@@ -13,7 +13,7 @@ this file ships the evidence for it:
 | [window-anchor.txt](https://github.com/simpleciki/unclosed/blob/main/examples/window-anchor.txt) | The wall-clock anchor defect reproduced, and the fix holding |
 | [closure-ceiling.txt](https://github.com/simpleciki/unclosed/blob/main/examples/closure-ceiling.txt) | Why chains could never close, in four measured stages |
 | [agent-ab.txt](https://github.com/simpleciki/unclosed/blob/main/examples/agent-ab.txt) | The skill against not having it: 18 runs, and the headline did not favor the skill |
-| [mutation-verification.txt](https://github.com/simpleciki/unclosed/blob/main/examples/mutation-verification.txt) | 65 load-bearing rules each broken on purpose; 0 survived undetected |
+| [mutation-verification.txt](https://github.com/simpleciki/unclosed/blob/main/examples/mutation-verification.txt) | 69 load-bearing rules each broken on purpose; 0 survived undetected |
 | [vendor-neutrality.txt](https://github.com/simpleciki/unclosed/blob/main/examples/vendor-neutrality.txt) | The same audit on a security-off and a security-on cluster, reports diffed |
 
 ## Known limits
