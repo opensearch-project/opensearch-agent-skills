@@ -1,4 +1,5 @@
 from .evidence_ledger import EvidenceLedger
+from .models import Classification
 from typing import Tuple
 
 class SufficiencyGate:
@@ -13,10 +14,13 @@ class SufficiencyGate:
 
         top_hypothesis = ranked[0]
         
-        # Check predicates
-        has_supporting = any(t.classification == "SUPPORTS" for t in top_hypothesis.tests)
+        # Check predicates. Compared against Classification members rather than
+        # raw string literals -- str-Enum equality with a plain string works
+        # today, but comparing to the enum directly means this stays correct
+        # even if that mixin ever changes, instead of silently returning False.
+        has_supporting = any(t.classification == Classification.SUPPORTS for t in top_hypothesis.tests)
         has_discriminating = len(top_hypothesis.tests) >= 2 # Simplistic check for now
-        has_strong_contradiction = any(t.classification == "CONTRADICTS" for t in top_hypothesis.tests)
+        has_strong_contradiction = any(t.classification == Classification.CONTRADICTS for t in top_hypothesis.tests)
         
         if not has_supporting:
             return False, f"Leading hypothesis '{top_hypothesis.id}' lacks supporting evidence."
@@ -49,7 +53,7 @@ class SufficiencyGate:
             
         # Check query failure rates across all tests
         all_tests = [t for h in ranked for t in h.tests]
-        failed_tests = [t for t in all_tests if t.classification == "QUERY_FAILED"]
+        failed_tests = [t for t in all_tests if t.classification == Classification.QUERY_FAILED]
         
         if all_tests and (len(failed_tests) / len(all_tests)) > 0.3:
             return False, "Query failure rate exceeds threshold."

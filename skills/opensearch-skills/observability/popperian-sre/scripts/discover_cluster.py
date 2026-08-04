@@ -36,9 +36,17 @@ def main():
 
     args = parser.parse_args()
 
+    password = os.environ.get("OPENSEARCH_PASSWORD")
+    if not password:
+        parser.error(
+            "OPENSEARCH_PASSWORD is not set. Refusing to connect with an empty "
+            "credential -- a misconfigured cluster that accepts empty-password "
+            "auth would otherwise succeed silently."
+        )
+
     client = OpenSearch(
         hosts=[{'host': args.host, 'port': args.port}],
-        http_auth=(os.environ.get("OPENSEARCH_USER", "admin"), os.environ.get("OPENSEARCH_PASSWORD", "")),
+        http_auth=(os.environ.get("OPENSEARCH_USER", "admin"), password),
         use_ssl=not args.no_ssl,
         verify_certs=not args.insecure
     )

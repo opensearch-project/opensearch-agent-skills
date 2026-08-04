@@ -35,6 +35,19 @@ class ReportGuard:
         re.compile(r'\bto (fix|resolve|remediate) this\b'),
     ]
 
+    # A match preceded closely by a negation ("we have NOT confirmed the root
+    # cause", "it is unclear what caused this") is hedged language, not an
+    # overclaim -- exactly the phrasing this guard exists to encourage. Without
+    # this check, the honest disclosure gets flagged for reusing the same
+    # words the ban list is watching for.
+    _NEGATION_LOOKBACK_CHARS = 25
+    _NEGATION_PATTERN = re.compile(r"\b(not|n't|no|never|unclear|unknown|cannot)\b")
+
+    @classmethod
+    def _is_negated(cls, lower_text: str, match_start: int) -> bool:
+        window = lower_text[max(0, match_start - cls._NEGATION_LOOKBACK_CHARS):match_start]
+        return bool(cls._NEGATION_PATTERN.search(window))
+
     @classmethod
     def find_violations(cls, report_text: str, gate_passed: bool) -> List[str]:
         violations = []
@@ -42,13 +55,14 @@ class ReportGuard:
 
         for pattern in cls.PROOF_CLAIM_PATTERNS:
             match = pattern.search(lower)
-            if match:
+            if match and not cls._is_negated(lower, match.start()):
                 violations.append(
                     f"Report claims proof (matched {match.group(0)!r}), but this system only "
                     "ranks candidate explanations by evidence score -- it never proves a cause."
                 )
 
-        if cls.PROBABILITY_CLAIM_PATTERN.search(lower):
+        prob_match = cls.PROBABILITY_CLAIM_PATTERN.search(lower)
+        if prob_match and not cls._is_negated(lower, prob_match.start()):
             violations.append(
                 "Report invents a Bayesian-style confidence percentage; SKILL.md requires "
                 "explicit evidence scoring instead."
@@ -57,7 +71,7 @@ class ReportGuard:
         if not gate_passed:
             for pattern in cls.RECOMMENDATION_PATTERNS:
                 match = pattern.search(lower)
-                if match:
+                if match and not cls._is_negated(lower, match.start()):
                     violations.append(
                         f"Sufficiency gate refused, but the report still recommends an action "
                         f"(matched {match.group(0)!r}). Refusal must mean refusal."

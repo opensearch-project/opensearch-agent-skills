@@ -349,6 +349,21 @@ def test_refusal_report_with_no_recommendation_is_fine():
     assert valid is True
 
 
+@pytest.mark.parametrize("phrase", [
+    "We have not confirmed the root cause; evidence remains ambiguous.",
+    "It is unclear what the cause is at this time.",
+    "We cannot say this was caused by connection pool exhaustion.",
+])
+def test_negated_proof_language_is_not_flagged(phrase):
+    # Regression: the proof-claim patterns matched on the bare words
+    # ("confirmed", "cause is", "caused by") regardless of a preceding
+    # negation, so correctly hedged disclosures were flagged as if they
+    # were the overclaims this guard exists to catch.
+    valid, violations = ReportGuard.validate(phrase, gate_passed=True)
+    assert valid is True
+    assert violations == []
+
+
 # ============================================================================
 # from tests/security/test_prompt_injection_in_logs.py
 # ============================================================================
@@ -370,6 +385,27 @@ def test_empty_query_rejected():
     is_valid, reason = PPLValidator.validate("   ")
     assert is_valid is False
     assert reason == "Query is empty."
+
+def test_hyphenated_identifier_containing_banned_word_is_not_rejected():
+    # Regression: a plain \b boundary treats "-" as a word boundary but not
+    # "_", so \bupdate\b used to match inside "logs-update-*" (a legitimate
+    # index pattern) while correctly ignoring "update_time". Both separators
+    # are common in OpenSearch naming and must be treated consistently.
+    is_valid, result = PPLValidator.validate("search source=logs-update-* | stats count()")
+    assert is_valid is True
+    assert "head 500" in result
+
+def test_underscored_identifier_containing_banned_word_is_not_rejected():
+    is_valid, result = PPLValidator.validate("search source=logs-* | where update_time > 0")
+    assert is_valid is True
+
+def test_head_as_substring_of_identifier_does_not_bypass_row_bound():
+    # Regression: "if 'head' not in lower_query" is a substring check, so an
+    # unrelated index/field name containing "head" (e.g. "headers-*") used to
+    # be mistaken for an existing head command and the query ran unbounded.
+    is_valid, result = PPLValidator.validate("search source=headers-* | where status = 500")
+    assert is_valid is True
+    assert "head 500" in result
 
 
 # ============================================================================
@@ -405,6 +441,15 @@ def test_redact_dict_recurses_into_nested_lists():
     redacted = Redactor.redact_dict(data)
     assert redacted["datarows"][0][0] == "checkout-service"
     assert "hunter2" not in redacted["datarows"][0][1]
+
+def test_redaction_covers_secrets_containing_slash_and_equals_padding():
+    # Regression: the value charset excluded "/" and "=", both common in
+    # base64/JWT-shaped secrets, so redaction silently stopped partway through
+    # the secret and left the remainder exposed in the output.
+    log = 'auth_header: token="abc/def+ghi==" status=200'
+    redacted = Redactor.redact_string(log)
+    assert "abc/def+ghi==" not in redacted
+    assert "def+ghi==" not in redacted
 
 def test_redact_dict_passes_through_non_string_values_unchanged():
     # Numbers, booleans, and None (e.g. duration_ms, cpu_usage_percent) aren't

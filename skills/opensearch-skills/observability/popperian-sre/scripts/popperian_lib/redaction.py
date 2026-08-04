@@ -5,7 +5,11 @@ class Redactor:
     """Redacts secrets and sensitive fields from raw telemetry."""
     
     PATTERNS = [
-        (re.compile(r'(?i)(password|secret|token|api_key|auth)["\':\s=]+([a-zA-Z0-9_\-\.\+]+)'), r'\1="[REDACTED]"'),
+        # Value runs to the next whitespace/quote/closing-bracket rather than an
+        # allow-listed charset: real secrets (base64, JWTs) routinely contain "/"
+        # and "=" padding, which a narrower charset would stop matching at,
+        # leaving the remainder of the secret exposed in the output.
+        (re.compile(r'(?i)(password|secret|token|api_key|auth)["\':\s=]+([^\s"\',}\]]+)'), r'\1="[REDACTED]"'),
         (re.compile(r'\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,7}\b'), '[REDACTED]'), # email
     ]
 
