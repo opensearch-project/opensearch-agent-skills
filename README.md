@@ -13,6 +13,7 @@ Skills are organized in a tree — install the whole collection or pick individu
 | **Search** | [opensearch-launchpad](skills/opensearch-skills/search/opensearch-launchpad/) | Build search apps from scratch — BM25, semantic, hybrid, agentic search |
 | **Observability** | [log-analytics](skills/opensearch-skills/observability/log-analytics/) | Query and analyze logs with PPL — error patterns, anomaly detection |
 | **Observability** | [trace-analytics](skills/opensearch-skills/observability/trace-analytics/) | Investigate distributed traces — slow spans, service maps, agent invocations |
+| **Observability** | [unclosed](skills/opensearch-skills/observability/unclosed/) | Audit whether a reported incident is real before investigating — reports the derivation tree, never asserts a cause |
 | **Cloud** | [aws-setup](skills/opensearch-skills/cloud/aws-setup/) | Deploy to Amazon OpenSearch Service or Serverless |
 | **Cloud** | [managed-ingestion-service](skills/opensearch-skills/cloud/managed-ingestion-service/) | Ingest chunks at scale via OSIS pipelines with ASE |
 
@@ -32,6 +33,7 @@ npx skills add opensearch-project/opensearch-agent-skills
 npx skills add opensearch-project/opensearch-agent-skills@opensearch-launchpad --full-depth
 npx skills add opensearch-project/opensearch-agent-skills@log-analytics --full-depth
 npx skills add opensearch-project/opensearch-agent-skills@trace-analytics --full-depth
+npx skills add opensearch-project/opensearch-agent-skills@unclosed --full-depth
 npx skills add opensearch-project/opensearch-agent-skills@aws-setup --full-depth
 npx skills add opensearch-project/opensearch-agent-skills@managed-ingestion-service --full-depth
 ```
@@ -104,6 +106,10 @@ skills/
         SKILL.md
         traces.md
         ppl-reference.md
+      unclosed/                       # Premise audit + derivation tree for incidents
+        SKILL.md
+        evidence.md                   # Measured limits, evaluation, capture index
+        scripts/                      # Three gates + fixtures (stdlib only)
     ingest/                           # Category: Ingest
       SKILL.md
       document-processing/            # Local document processing (Docling)

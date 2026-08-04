@@ -39,8 +39,8 @@
     "skill": "log-analytics",
     "prompt": "Investigate errors in my application logs",
     "rule": "Must ask which cluster to connect to before doing anything else",
-    "criteria": "The conversation must ask the user for cluster connection information \u2014 specifically cluster type (local, AOS, or AOSS), endpoint URL, and authentication method \u2014 before performing any discovery or querying. The assistant must not assume localhost or any default endpoint. It is acceptable to proceed with querying after the user provides cluster details, even if not every sub-detail (like exact profile name) has been confirmed.",
-    "rationale": "Phase 1 requires asking for cluster type, endpoint, and auth upfront \u2014 agent must not assume localhost"
+    "criteria": "The conversation must ask the user for cluster connection information — specifically cluster type (local, AOS, or AOSS), endpoint URL, and authentication method — before performing any discovery or querying. The assistant must not assume localhost or any default endpoint. It is acceptable to proceed with querying after the user provides cluster details, even if not every sub-detail (like exact profile name) has been confirmed.",
+    "rationale": "Phase 1 requires asking for cluster type, endpoint, and auth upfront — agent must not assume localhost"
   },
   {
     "id": "log-analytics-ask-cluster-aoss",
@@ -48,15 +48,15 @@
     "prompt": "I want to analyze logs stored in my Amazon OpenSearch Serverless collection. Can you help?",
     "rule": "Must ask for the AOSS endpoint URL and authentication method, not assume a default",
     "criteria": "The response must ask for the specific AOSS endpoint URL and how the user authenticates (AWS profile or credentials). It must not assume localhost, a generic endpoint, or skip asking for auth details when the user mentions Amazon OpenSearch Serverless.",
-    "rationale": "AOSS requires a collection-specific endpoint and SigV4 auth \u2014 agent must not default to localhost"
+    "rationale": "AOSS requires a collection-specific endpoint and SigV4 auth — agent must not default to localhost"
   },
   {
     "id": "log-analytics-discovery-first",
     "skill": "log-analytics",
     "prompt": "Write me a PPL query to find all ERROR logs in my application",
-    "rule": "Must not assume field names \u2014 must mention discovering the index mapping or schema first",
+    "rule": "Must not assume field names — must mention discovering the index mapping or schema first",
     "criteria": "The response must not assume specific field names like 'level' or 'log.level'. It must mention the need to discover the index mapping or inspect the schema before writing a query, since field names vary by log source.",
-    "rationale": "Key rule: discovery first \u2014 never assume field names"
+    "rationale": "Key rule: discovery first — never assume field names"
   },
   {
     "id": "log-analytics-ppl-primary",
@@ -80,7 +80,7 @@
     "prompt": "Find all error spans in my trace data",
     "rule": "Must mention discovering trace indices before querying",
     "criteria": "The response must mention discovering or looking for trace indices (such as otel-v1-apm-span-*) before writing any query. It must not jump straight to a query without first addressing index discovery.",
-    "rationale": "Key rule: discovery first \u2014 look for otel-v1-apm-span-* indices"
+    "rationale": "Key rule: discovery first — look for otel-v1-apm-span-* indices"
   },
   {
     "id": "trace-analytics-quote-dotted-fields",
@@ -112,7 +112,7 @@
     "prompt": "I want to set up agentic search with a flow agent on Serverless nextgen. My index uses BM25 only, no vectors.",
     "rule": "Must confirm nextgen supports flow agents and use SEARCH collection type for BM25-only agentic",
     "criteria": "The response must confirm that Serverless nextgen supports flow agents for agentic search. For BM25-only (no vectors), it should reference provisioning a nextgen collection with SEARCH type and the agentic setup guide. It must not say agentic search is unavailable on serverless.",
-    "rationale": "nextgen supports flow agents natively \u2014 SEARCH type when no knn_vector fields"
+    "rationale": "nextgen supports flow agents natively — SEARCH type when no knn_vector fields"
   },
   {
     "id": "aws-setup-flow-agent-with-vectors-on-nextgen",
@@ -120,7 +120,7 @@
     "prompt": "I want to deploy flow agent agentic search to Serverless NextGen. My index has a knn_vector embedding field for neural search.",
     "rule": "Must use VECTORSEARCH collection type when index has knn_vector fields",
     "criteria": "The response must recommend VECTORSEARCH collection type because the index has knn_vector fields. It must not suggest SEARCH type when the user explicitly states their index has vector/embedding fields. The flow agent is supported on NextGen regardless of collection type.",
-    "rationale": "Collection type depends on whether index has knn_vector fields \u2014 vectors require VECTORSEARCH"
+    "rationale": "Collection type depends on whether index has knn_vector fields — vectors require VECTORSEARCH"
   },
   {
     "id": "aws-setup-conversational-agent-needs-domain",
@@ -128,7 +128,7 @@
     "prompt": "I want to deploy conversational agentic search with memory to AWS. What are my options?",
     "rule": "Must state that conversational agents require a managed domain",
     "criteria": "The response must clearly state that conversational agents (with memory/RAG) require a managed domain and are not supported on Serverless nextgen. It should explain that nextgen only supports flow agents (stateless). It must not suggest deploying conversational agents to serverless.",
-    "rationale": "Key rule: nextgen supports only flow agents \u2014 conversational requires managed domain"
+    "rationale": "Key rule: nextgen supports only flow agents — conversational requires managed domain"
   },
   {
     "id": "aws-setup-collection-type-for-dense-vector",
@@ -214,7 +214,7 @@
     "prompt": "Set up a VECTORSEARCH collection called embeddings-store in us-east-1 with all required policies",
     "rule": "Must create encryption policy before creating the collection",
     "criteria": "The conversation must show the commands in correct dependency order: encryption policy first, then network policy, then collection group, then collection. The encryption and network policies must appear before the collection group or collection creation commands.",
-    "rationale": "Collections require encryption and network policies to exist first \u2014 wrong order causes failures"
+    "rationale": "Collections require encryption and network policies to exist first — wrong order causes failures"
   },
   {
     "id": "aoss-provision-valid-ocu-values",
@@ -246,7 +246,7 @@
     "prompt": "I have a PDF document I want to make searchable. Here's the file: ./reports/quarterly.pdf",
     "rule": "Must default to agentic strategy without asking user to choose",
     "criteria": "The response must treat the PDF as an unstructured document and proceed with processing it without asking the user to choose among all five search strategies. It should either explicitly state agentic is the default for unstructured docs, or simply proceed with a workflow suitable for unstructured document search (chunking, indexing, search setup) without presenting a strategy selection menu.",
-    "rationale": "Phase 2: unstructured documents default to agentic \u2014 only ask if user explicitly requests a different strategy",
+    "rationale": "Phase 2: unstructured documents default to agentic — only ask if user explicitly requests a different strategy",
     "references": [
       "document_processing_guide.md",
       "agentic_search_guide.md"
@@ -266,10 +266,10 @@
   {
     "id": "launchpad-unstructured-cloud-deploy-search-collection",
     "skill": "opensearch-launchpad",
-    "prompt": "I have a local index with sparse neural search (rank_features field from neural_sparse encoding). I want to deploy to AWS Serverless NextGen. What collection type should I provision \u2014 SEARCH or VECTORSEARCH?",
+    "prompt": "I have a local index with sparse neural search (rank_features field from neural_sparse encoding). I want to deploy to AWS Serverless NextGen. What collection type should I provision — SEARCH or VECTORSEARCH?",
     "rule": "Must route to SEARCH collection type (not VECTORSEARCH) for sparse enrichment",
     "criteria": "The response must indicate that a SEARCH collection type (not VECTORSEARCH) should be used for sparse/neural-sparse search on Serverless NextGen. VECTORSEARCH is for dense knn_vector fields, while SEARCH handles sparse enrichment via ASE.",
-    "rationale": "neural_sparse uses ASE on NextGen SEARCH collections \u2014 no knn_vector fields needed",
+    "rationale": "neural_sparse uses ASE on NextGen SEARCH collections — no knn_vector fields needed",
     "references": [
       "document_processing_guide.md"
     ]
@@ -279,7 +279,7 @@
     "skill": "opensearch-launchpad",
     "prompt": "I provisioned a SEARCH collection on Serverless NextGen for my PDF document search. Now I need to create the index. Should I manually deploy a sparse model and create an ingest pipeline, or is there an easier way on NextGen?",
     "rule": "Must use CreateIndex API with semantic_enrichment enabled on the text field",
-    "criteria": "The response must create an index that enables automatic semantic enrichment (ASE) on the text field, either via semantic_enrichment in the CreateIndex API or equivalent configuration. It should NOT require manually deploying a sparse model or creating an ingest pipeline on the cloud collection \u2014 ASE handles this automatically.",
+    "criteria": "The response must create an index that enables automatic semantic enrichment (ASE) on the text field, either via semantic_enrichment in the CreateIndex API or equivalent configuration. It should NOT require manually deploying a sparse model or creating an ingest pipeline on the cloud collection — ASE handles this automatically.",
     "rationale": "serverless-02-deploy-search.md Neural Sparse Path: ASE auto-deploys sparse model and pipelines",
     "references": [
       "document_processing_guide.md"
@@ -340,7 +340,7 @@
     "prompt": "I've already chunked my PDFs locally with Docling and the JSONL is in .opensearch/chunks/research-papers/. I want to ingest into my AOSS SEARCH collection with ASE (semantic_enrichment). Show me the OSIS pipeline YAML configuration for this local-chunking path.",
     "rule": "Must build an OSIS pipeline that uploads local JSONL chunks to S3 and ingests them with parse_json and a semantic_enrichment sink",
     "criteria": "The response must describe the local-chunking ingestion path: pre-chunked JSONL uploaded to S3, then ingested via an OSIS pipeline that reads the JSON and writes to OpenSearch. It should use parse_json or equivalent JSON parsing in the pipeline. It must NOT use document_extractor (cloud chunking) which is not yet available.",
-    "rationale": "managed-ingestion-service SKILL.md Local Chunking YAML: parse_json reads pre-made chunks; semantic_enrichment sink handles ASE \u2014 this is the GA cloud-scale path",
+    "rationale": "managed-ingestion-service SKILL.md Local Chunking YAML: parse_json reads pre-made chunks; semantic_enrichment sink handles ASE — this is the GA cloud-scale path",
     "references": [
       "iam-setup.md"
     ]
@@ -350,7 +350,7 @@
     "skill": "managed-ingestion-service",
     "prompt": "Show me how to configure the opensearch sink in my OSIS pipeline YAML to use semantic_enrichment for neural sparse search. My text field is called 'text' and the language is 'english'.",
     "rule": "Must configure semantic_enrichment in the OSIS opensearch sink for neural sparse (ASE)",
-    "criteria": "The response must configure the opensearch sink with a semantic_enrichment block (a fields list naming the text field and language) so that ASE creates the index and deploys the sparse model automatically. It must NOT instead manually deploy a sparse encoding model and attach a separate sparse_encoding ingest pipeline on the cloud collection \u2014 on AOSS, semantic_enrichment in the sink handles neural sparse enrichment.",
+    "criteria": "The response must configure the opensearch sink with a semantic_enrichment block (a fields list naming the text field and language) so that ASE creates the index and deploys the sparse model automatically. It must NOT instead manually deploy a sparse encoding model and attach a separate sparse_encoding ingest pipeline on the cloud collection — on AOSS, semantic_enrichment in the sink handles neural sparse enrichment.",
     "rationale": "managed-ingestion-service SKILL.md: neural sparse on AOSS uses the semantic_enrichment sink (ASE), which is available now",
     "references": [
       "iam-setup.md"
@@ -360,7 +360,7 @@
     "id": "aws-setup-full-flow-agent-workflow",
     "skill": "aws-setup",
     "prompt": "I want to deploy flow agent agentic search for a collection called my-search-app in us-east-1. Provision the infrastructure, deploy the agent search, test it, then show me how to clean up. Show the full workflow with exact commands and API calls.",
-    "rule": "Must show the full chained workflow: provision \u2192 deploy agent (with data access policy for model/agent) \u2192 test \u2192 deprovision",
+    "rule": "Must show the full chained workflow: provision → deploy agent (with data access policy for model/agent) → test → deprovision",
     "criteria": "The conversation must demonstrate the key steps of the agentic search workflow: credential validation, infrastructure provisioning (with NextGen and correct collection type), data access policy with model/agent permissions, model registration, agent creation, search pipeline setup, and cleanup. Not every command needs to be shown verbatim, but the logical flow and dependency chain must be evident.",
     "rationale": "Validates the skill can guide an agent through the full lifecycle with correct collection type detection and the critical data access policy for model/agent permissions"
   },
@@ -398,7 +398,7 @@
     "prompt": "My index has a rank_features field with sparse vectors from neural_sparse encoding. How does the flow agent search this field? Does it use QueryPlanningTool or something else?",
     "rule": "Must explain that sparse agentic uses NeuralSparseSearchTool (not QueryPlanningTool)",
     "criteria": "The response must explain that for sparse vector fields (rank_features), the flow agent uses neural sparse search (NeuralSparseSearchTool or neural_sparse query type) rather than dense vector search. It should clarify that sparse fields use a different search mechanism than knn_vector fields.",
-    "rationale": "QueryPlanningTool does not support neural_sparse \u2014 it always generates neural queries with k parameter which is incompatible with rank_features fields",
+    "rationale": "QueryPlanningTool does not support neural_sparse — it always generates neural queries with k parameter which is incompatible with rank_features fields",
     "references": [
       "agentic_search_guide.md"
     ]
@@ -408,7 +408,7 @@
     "skill": "opensearch-launchpad",
     "prompt": "I have a PDF research paper and want to build a local search app. Target is local.",
     "rule": "Must follow unstructured preset for local: document processing then local_ase (sparse model + pipeline + bulk-index), then sparse flow agent setup",
-    "criteria": "The response must follow the unstructured local workflow: (1) process the PDF into chunks using document processing/ingest, (2) deploy a sparse model and create a sparse ingest pipeline to index chunks locally \u2014 the index must have a rank_features field for sparse embeddings, (3) set up a flow agent with NeuralSparseSearchTool (--sparse) so search uses the flow agent. Exit state: index has sparse-encoded chunks (rank_features) AND a flow agent is configured for search. It must NOT ask which search strategy to use \u2014 agentic is the default for unstructured. It must NOT skip the sparse encoding step or the flow agent setup.",
+    "criteria": "The response must follow the unstructured local workflow: (1) process the PDF into chunks using document processing/ingest, (2) deploy a sparse model and create a sparse ingest pipeline to index chunks locally — the index must have a rank_features field for sparse embeddings, (3) set up a flow agent with NeuralSparseSearchTool (--sparse) so search uses the flow agent. Exit state: index has sparse-encoded chunks (rank_features) AND a flow agent is configured for search. It must NOT ask which search strategy to use — agentic is the default for unstructured. It must NOT skip the sparse encoding step or the flow agent setup.",
     "rationale": "Unstructured preset local path: document_processing_guide then local_ase.md then sparse flow agent"
   },
   {
@@ -416,7 +416,7 @@
     "skill": "opensearch-launchpad",
     "prompt": "I have PDF documents and want to deploy a search app on AWS. Target is aws.",
     "rule": "Must follow unstructured preset for cloud: provision AOSS, then managed-ingestion-service for OSIS ingestion, then flow agent setup on the collection",
-    "criteria": "The response must follow the unstructured cloud workflow: (1) provision an AOSS collection, (2) use managed-ingestion-service or OSIS for ingestion with semantic_enrichment \u2014 the index gets sparse embeddings automatically via ASE, (3) set up a flow agent (QueryPlanningTool + agentic_query_translator pipeline) on the collection so search uses the flow agent. Exit state: index has ASE sparse enrichment AND a flow agent pipeline is configured for search. It must NOT ask which search strategy to use \u2014 agentic is the default for unstructured. It must mention OSIS or managed ingestion for the cloud path, not just direct bulk-indexing.",
+    "criteria": "The response must follow the unstructured cloud workflow: (1) provision an AOSS collection, (2) use managed-ingestion-service or OSIS for ingestion with semantic_enrichment — the index gets sparse embeddings automatically via ASE, (3) set up a flow agent (QueryPlanningTool + agentic_query_translator pipeline) on the collection so search uses the flow agent. Exit state: index has ASE sparse enrichment AND a flow agent pipeline is configured for search. It must NOT ask which search strategy to use — agentic is the default for unstructured. It must mention OSIS or managed ingestion for the cloud path, not just direct bulk-indexing.",
     "rationale": "Unstructured preset cloud path: aws-setup provision, managed-ingestion-service OSIS+ASE, then serverless-04-agentic-setup"
   },
   {
@@ -424,7 +424,23 @@
     "skill": "opensearch-launchpad",
     "prompt": "I built a local search app with my PDF. Now I want to deploy it to AWS.",
     "rule": "Must hand off to managed-ingestion-service for cloud ingestion (not just aws-setup direct indexing) since data is unstructured",
-    "criteria": "The response must route unstructured data deployment through managed-ingestion-service (OSIS with semantic_enrichment) for cloud ingestion \u2014 not just direct bulk-indexing via aws-setup. Chunks already exist locally so they should be uploaded to S3 and ingested via OSIS. Exit state: cloud index has ASE sparse enrichment AND a flow agent pipeline is configured for search. It must mention provisioning the AOSS collection, OSIS ingestion, and setting up the flow agent after ingestion.",
+    "criteria": "The response must route unstructured data deployment through managed-ingestion-service (OSIS with semantic_enrichment) for cloud ingestion — not just direct bulk-indexing via aws-setup. Chunks already exist locally so they should be uploaded to S3 and ingested via OSIS. Exit state: cloud index has ASE sparse enrichment AND a flow agent pipeline is configured for search. It must mention provisioning the AOSS collection, OSIS ingestion, and setting up the flow agent after ingestion.",
     "rationale": "Phase 6 unstructured: provision AOSS, managed-ingestion-service handles OSIS ingestion, then agentic setup"
+  },
+  {
+    "id": "unclosed-never-names-a-cause",
+    "skill": "unclosed",
+    "prompt": "p99 latency on the checkout service jumped 5x at 14:20. Do a root cause analysis and tell me what caused it.",
+    "rule": "Must report the derivation tree and never assert a definitive root cause",
+    "criteria": "The response must not name a single definitive cause (no 'the cause is X' / 'this was caused by Y'). It must present the traversal instead: which branches have evidence, how much of the effect is accounted for, which alternatives were not ruled out, and which branches were never explored. Reporting 'the chain does not close' with the missing link named is a correct outcome, not a failure.",
+    "rationale": "The skill's contract: logs cannot establish causation, and emitting a cause would commit the error the skill exists to catch"
+  },
+  {
+    "id": "unclosed-premise-before-causes",
+    "skill": "unclosed",
+    "prompt": "An alert says error rate tripled in the last 10 minutes. Find the root cause.",
+    "rule": "Must audit the premise of the reported observation before investigating causes",
+    "criteria": "The response must run or instruct running the premise audit first -- checking whether the reported spike is real or an artifact of measurement (sample size, population shift, clock semantics, estimator choice, who chose the window and when it was judged) -- before walking any causal hypothesis. It must not jump directly into cause-hunting on the assumption the alert is correct.",
+    "rationale": "Gate 1 exists because an artifact looks exactly like an incident in a percentile chart, and an investigation of an artifact produces a confident wrong answer"
   }
 ]

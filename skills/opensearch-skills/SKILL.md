@@ -10,7 +10,9 @@ description: >
   ingestion, query logs with PPL, analyze error patterns, set up index
   lifecycle policies, investigate traces, or check stack health. Activate
   even if the user says log analysis, Fluent Bit, Fluentd, Logstash, syslog,
-  traceId, OpenTelemetry, or log analytics without mentioning OpenSearch.
+  traceId, OpenTelemetry, or log analytics without mentioning OpenSearch. For root
+  cause analysis, RCA, postmortem, incident investigation, or auditing whether
+  a reported latency spike or error-rate jump is real, use the unclosed skill.
 compatibility: Requires Docker and uv. AWS deployment requires AWS credentials.
 metadata:
   author: opensearch-project
@@ -26,6 +28,7 @@ This is the top-level skill for OpenSearch. It contains four category skills tha
 | [search](search/SKILL.md) | [opensearch-launchpad](search/opensearch-launchpad/SKILL.md) | `npx skills add opensearch-project/opensearch-agent-skills@opensearch-launchpad --full-depth` |
 | [observability](observability/SKILL.md) | [log-analytics](observability/log-analytics/SKILL.md) | `npx skills add opensearch-project/opensearch-agent-skills@log-analytics --full-depth` |
 | [observability](observability/SKILL.md) | [trace-analytics](observability/trace-analytics/SKILL.md) | `npx skills add opensearch-project/opensearch-agent-skills@trace-analytics --full-depth` |
+| [observability](observability/SKILL.md) | [unclosed](observability/unclosed/SKILL.md) | `npx skills add opensearch-project/opensearch-agent-skills@unclosed --full-depth` |
 | [cloud](cloud/SKILL.md) | [aws-setup](cloud/aws-setup/SKILL.md) | `npx skills add opensearch-project/opensearch-agent-skills@aws-setup --full-depth` |
 | [ingest](ingest/SKILL.md) | [document-processing](ingest/document-processing/SKILL.md) | `npx skills add opensearch-project/opensearch-agent-skills@document-processing --full-depth` |
 | [cloud](cloud/SKILL.md) | [managed-ingestion-service](cloud/managed-ingestion-service/SKILL.md) | `npx skills add opensearch-project/opensearch-agent-skills@managed-ingestion-service --full-depth` |
@@ -37,12 +40,15 @@ Route to the right skill based on user intent:
 | User Intent | Skill |
 |---|---|
 | Build a search app, set up an index, choose a search strategy | [opensearch-launchpad](search/opensearch-launchpad/SKILL.md) |
+| Verify a reported incident is real before investigating it -- premise audit, "is this spike real", root cause chain that must close | [unclosed](observability/unclosed/SKILL.md) |
 | Analyze logs, query with PPL, discover error patterns | [log-analytics](observability/log-analytics/SKILL.md) |
 | Investigate traces, debug spans, analyze service maps | [trace-analytics](observability/trace-analytics/SKILL.md) |
 | Deploy to AWS, provision a domain or collection | [aws-setup](cloud/aws-setup/SKILL.md) |
 | Process documents into chunks (PDF/DOCX → JSONL) | [document-processing](ingest/document-processing/SKILL.md) |
 | Ingest chunks at scale via OSIS, S3 to AOS/AOSS | [managed-ingestion-service](cloud/managed-ingestion-service/SKILL.md) |
 | General OpenSearch question | Search docs first, then route to the relevant skill |
+
+`unclosed` runs *before* log-analytics, not instead of it: route to [unclosed](observability/unclosed/SKILL.md) when the question is whether a reported spike or regression is real and what would prove its cause; route to [log-analytics](observability/log-analytics/SKILL.md) when the question is already what the logs contain.
 
 If the user's intent spans multiple skills (e.g., "build a search app and deploy it to AWS"), start with the appropriate skill and transition to the next when ready.
 

@@ -47,7 +47,8 @@ def test_skill_routing(case, eval_bag, bedrock_client):  # noqa: F811
         f"{case['prompt']}\n\n"
         "Which skill should handle this request? "
         "Reply with the skill name (e.g. opensearch-launchpad, log-analytics, "
-        "trace-analytics, aws-setup, managed-ingestion-service, document-processing) and a brief explanation."
+        "trace-analytics, aws-setup, managed-ingestion-service, document-processing, "
+        "unclosed) and a brief explanation."
     )
     response = call_skill(router_skill, wrapped_prompt, bedrock_client)
 

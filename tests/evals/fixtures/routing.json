@@ -106,5 +106,29 @@
     "prompt": "Bulk index my product catalog JSON into OpenSearch using the _bulk API",
     "expected_skill": "opensearch-launchpad",
     "rationale": "Structured bulk-indexing is NOT managed-ingestion-service — it's opensearch-launchpad"
+  },
+  {
+    "id": "routing-unclosed-01",
+    "prompt": "Our dashboard shows a p99 latency spike at 14:20. Before anyone starts digging into causes -- is this spike even real, and what would prove it?",
+    "expected_skill": "unclosed",
+    "rationale": "Premise audit of a reported observation, before any investigation"
+  },
+  {
+    "id": "routing-unclosed-02",
+    "prompt": "An alert fired saying error rate jumped 5x in the last 10 minutes, but I suspect the alert itself might be misleading. Can you audit the premise before we investigate?",
+    "expected_skill": "unclosed",
+    "rationale": "Explicit distrust of the observation itself"
+  },
+  {
+    "id": "routing-unclosed-03",
+    "prompt": "Do a root cause analysis of yesterday's checkout slowdown, and show me the causal chain including anything that could not be ruled out.",
+    "expected_skill": "unclosed",
+    "rationale": "RCA phrased as a chain that must close, with unruled-out alternatives visible"
+  },
+  {
+    "id": "routing-logs-04",
+    "prompt": "Write a PPL query that counts 5xx responses per service over the last 24 hours.",
+    "expected_skill": "log-analytics",
+    "rationale": "Pure log query -- guards the unclosed boundary from capturing log-analytics traffic"
   }
 ]
