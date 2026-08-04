@@ -5,7 +5,8 @@ description: >
   Use this skill when the user mentions OpenSearch, search app, index setup,
   search architecture, semantic search, vector search, hybrid search, BM25,
   dense vector, sparse vector, agentic search, RAG, embeddings, KNN, PDF
-  ingestion, document processing, or any related search topic. Also use for
+  ingestion, document processing, RAG poisoning, indirect prompt injection,
+  retrieval security, or any related search topic. Also use for
   log analytics and observability — when the user wants to set up log
   ingestion, query logs with PPL, analyze error patterns, set up index
   lifecycle policies, investigate traces, or check stack health. Activate
@@ -24,6 +25,7 @@ This is the top-level skill for OpenSearch. It contains four category skills tha
 | Category | Skill | Install individually |
 |---|---|---|
 | [search](search/SKILL.md) | [opensearch-launchpad](search/opensearch-launchpad/SKILL.md) | `npx skills add opensearch-project/opensearch-agent-skills@opensearch-launchpad --full-depth` |
+| [search](search/SKILL.md) | [rag-integrity-sentinel](search/rag-integrity-sentinel/SKILL.md) | `npx skills add opensearch-project/opensearch-agent-skills@rag-integrity-sentinel --full-depth` |
 | [observability](observability/SKILL.md) | [log-analytics](observability/log-analytics/SKILL.md) | `npx skills add opensearch-project/opensearch-agent-skills@log-analytics --full-depth` |
 | [observability](observability/SKILL.md) | [trace-analytics](observability/trace-analytics/SKILL.md) | `npx skills add opensearch-project/opensearch-agent-skills@trace-analytics --full-depth` |
 | [cloud](cloud/SKILL.md) | [aws-setup](cloud/aws-setup/SKILL.md) | `npx skills add opensearch-project/opensearch-agent-skills@aws-setup --full-depth` |
@@ -37,6 +39,7 @@ Route to the right skill based on user intent:
 | User Intent | Skill |
 |---|---|
 | Build a search app, set up an index, choose a search strategy | [opensearch-launchpad](search/opensearch-launchpad/SKILL.md) |
+| Investigate RAG poisoning, indirect prompt injection, or corpus integrity | [rag-integrity-sentinel](search/rag-integrity-sentinel/SKILL.md) |
 | Analyze logs, query with PPL, discover error patterns | [log-analytics](observability/log-analytics/SKILL.md) |
 | Investigate traces, debug spans, analyze service maps | [trace-analytics](observability/trace-analytics/SKILL.md) |
 | Deploy to AWS, provision a domain or collection | [aws-setup](cloud/aws-setup/SKILL.md) |

@@ -108,6 +108,31 @@ _MULTIMODAL_MIN_IMAGES = 3      # total sampled images at/above this => image-ri
 _DETECT_SAMPLE_PAGES = 5        # number of pages to sample for the heuristic
 
 
+def _page_image_count(page) -> int:
+    """Count page images, including resources pypdf cannot decode as images."""
+    try:
+        decoded_count = len(list(page.images))
+        if decoded_count:
+            return decoded_count
+    except Exception:
+        pass
+
+    try:
+        resources = page.get("/Resources") or {}
+        if hasattr(resources, "get_object"):
+            resources = resources.get_object()
+        xobjects = resources.get("/XObject") or {}
+        if hasattr(xobjects, "get_object"):
+            xobjects = xobjects.get_object()
+        return sum(
+            1
+            for value in xobjects.values()
+            if value.get_object().get("/Subtype") == "/Image"
+        )
+    except Exception:
+        return 0
+
+
 def detect_document_profile(source_path: str) -> dict:
     """Recommend a processing profile for a PDF using cheap pypdf heuristics.
 
@@ -147,10 +172,7 @@ def detect_document_profile(source_path: str) -> dict:
                 total_text += len((pg.extract_text() or "").strip())
             except Exception:
                 pass
-            try:
-                total_images += len(list(pg.images))
-            except Exception:
-                pass
+            total_images += _page_image_count(pg)
         mean_text = int(total_text / n) if n else 0
         signals = {"sampled_pages": n, "mean_text_chars": mean_text, "image_count": total_images}
     except Exception as e:
@@ -512,11 +534,11 @@ def _status_path() -> Path:
 
 
 def write_status(data: dict):
-    """Write ingestion status for UI polling. Uses atomic write (temp + rename)."""
+    """Write ingestion status for UI polling. Uses atomic write (temp + replace)."""
     path = _status_path()
     tmp_path = path.with_suffix(".tmp")
     tmp_path.write_text(json.dumps(data, indent=2))
-    tmp_path.rename(path)
+    tmp_path.replace(path)
 
 
 def read_status() -> dict:
@@ -530,6 +552,47 @@ def read_status() -> dict:
 # ---------------------------------------------------------------------------
 # Background ingestion
 # ---------------------------------------------------------------------------
+
+
+def _pid_is_alive(pid: int) -> bool:
+    """Return whether a process exists without signaling or mutating it."""
+    if pid <= 0:
+        return False
+    if os.name == "nt":
+        if pid > 0xFFFFFFFF:
+            return False
+        import ctypes
+
+        kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+        open_process = kernel32.OpenProcess
+        open_process.argtypes = [
+            ctypes.c_uint32,
+            ctypes.c_int,
+            ctypes.c_uint32,
+        ]
+        open_process.restype = ctypes.c_void_p
+        close_handle = kernel32.CloseHandle
+        close_handle.argtypes = [ctypes.c_void_p]
+        close_handle.restype = ctypes.c_int
+
+        process_query_limited_information = 0x1000
+        ctypes.set_last_error(0)
+        handle = open_process(
+            process_query_limited_information,
+            False,
+            pid,
+        )
+        if handle:
+            close_handle(handle)
+            return True
+        # Access denied (ERROR_ACCESS_DENIED = 5) still proves that the process exists.
+        return ctypes.get_last_error() == 5
+
+    try:
+        os.kill(pid, 0)
+        return True
+    except (ProcessLookupError, OSError):
+        return False
 
 
 def is_ingestion_running() -> bool:
@@ -549,7 +612,8 @@ def is_ingestion_running() -> bool:
 
     # Check if process is alive (signal 0 doesn't kill, just checks existence).
     try:
-        os.kill(pid, 0)
+        if not _pid_is_alive(pid):
+            raise ProcessLookupError(pid)
         return True
     except (ProcessLookupError, OSError):
         # Process is dead — clean up stale PID file.
