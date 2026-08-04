@@ -212,3 +212,17 @@ def test_a_naive_reported_at_is_refused_at_the_door_not_in_the_probes():
         aw.build_observation("http://nowhere.invalid", "idx", "latency_ms", "@timestamp",
                              "endpoint", 10, 6, reported_at="2026-08-04T14:50:00")
     assert "names no timezone" in str(exc.value)
+
+
+def test_equivalent_spellings_of_one_moment_all_match_the_bucket_key():
+    """The focus-window match is datetime equality, never string equality. A
+    review asked whether a caller omitting the milliseconds, or writing
+    +00:00 for Z, would silently fail to match the engine's key_as_string.
+    It cannot: fromisoformat equality is by moment, so every spelling of the
+    moment equals the engine's '.000Z' spelling of it. (Exercised end to end
+    too -- the timezone reproduction passed a millisecond-less window against
+    real bucket keys and matched.)"""
+    bucket = aw._parse_iso("2026-08-04T14:40:00.000Z")
+    assert aw._parse_iso("2026-08-04T14:40:00Z") == bucket
+    assert aw._parse_iso("2026-08-04T14:40:00+00:00") == bucket
+    assert aw._parse_iso("2026-08-04T09:40:00-05:00") == bucket
