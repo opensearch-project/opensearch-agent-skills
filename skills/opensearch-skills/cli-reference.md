@@ -184,12 +184,18 @@ uv run python scripts/opensearch_ops.py blueprint-lint --bundle blueprint.json -
 # Render the bundle as a dense single-block spec
 uv run python scripts/opensearch_ops.py blueprint-render --bundle blueprint.json
 
-# Lint and render without touching the cluster
+# Lint, render, and report the change plan without touching the cluster
 uv run python scripts/opensearch_ops.py blueprint-apply --bundle blueprint.json --dry-run
 
 # Create pipelines + index + ISM policy, probe analyzers via _analyze,
-# validate every named query via _validate/query
-uv run python scripts/opensearch_ops.py blueprint-apply --bundle blueprint.json --replace
+# validate every named query via _validate/query. Refused if the index exists.
+uv run python scripts/opensearch_ops.py blueprint-apply --bundle blueprint.json
+
+# Recreate an existing index. --replace alone is not enough: --yes confirms the
+# delete (or confirm interactively), and --allow-nonempty is additionally
+# required if the index holds documents. Deleted documents are unrecoverable.
+uv run python scripts/opensearch_ops.py blueprint-apply --bundle blueprint.json --replace --yes
+uv run python scripts/opensearch_ops.py blueprint-apply --bundle blueprint.json --replace --yes --allow-nonempty
 
 # Read an existing index back into a portable blueprint
 uv run python scripts/opensearch_ops.py blueprint-extract --index movies_v1 --out blueprint.json --lint

@@ -426,12 +426,34 @@ def cmd_blueprint_render(args):
     print(render_blueprint(load_bundle(args.bundle)))
 
 
+def _confirm_destructive_plan(plan, assume_yes):
+    """Gate a plan that deletes an index behind an explicit human confirmation.
+
+    ``--yes`` satisfies it non-interactively; otherwise an interactive session
+    is prompted. A non-TTY run without ``--yes`` is refused rather than assumed.
+    """
+    if not plan.get("will_delete"):
+        return True
+    if assume_yes:
+        return True
+
+    count = plan.get("doc_count")
+    shown = "an unknown number of" if count is None else count
+    print(f"\nThis will DELETE index '{plan['index']}' and its {shown} document(s).")
+    print("Deleted documents cannot be recovered.")
+    if not sys.stdin.isatty():
+        print("Refusing to delete without confirmation. Re-run with --yes.")
+        return False
+    return input("Type the index name to confirm: ").strip() == plan["index"]
+
+
 def cmd_blueprint_apply(args):
-    """Lint, probe analyzers, create the index, then validate every query."""
+    """Lint, preflight, create the index, then probe analyzers and queries."""
     from lib.client import create_client
     from lib.blueprint import (
         load_bundle, lint_bundle, has_errors, format_findings,
-        probe_analyzers, apply_bundle, validate_queries, render_blueprint,
+        probe_analyzers, apply_bundle, preflight_apply, validate_queries,
+        render_blueprint, BlueprintApplyError,
     )
 
     bundle = load_bundle(args.bundle)
@@ -444,12 +466,32 @@ def cmd_blueprint_apply(args):
     client = create_client()
     result = {"blueprint": render_blueprint(bundle)}
 
+    # Read-only: shows exactly what would change, including any delete, before
+    # anything is touched.
+    plan = preflight_apply(client, bundle, replace=args.replace)
+    result["plan"] = plan
+
     if args.dry_run:
         result["dry_run"] = True
         print(json.dumps(result, indent=2))
         return
 
-    result["applied"] = apply_bundle(client, bundle, replace=args.replace)
+    if not _confirm_destructive_plan(plan, args.yes):
+        sys.exit(1)
+
+    try:
+        result["applied"] = apply_bundle(
+            client, bundle,
+            replace=args.replace,
+            confirm=True,
+            allow_nonempty=args.allow_nonempty,
+            rollback=not args.no_rollback,
+        )
+    except BlueprintApplyError as exc:
+        result["error"] = {"code": exc.code, "message": str(exc), "details": exc.details}
+        print(json.dumps(result, indent=2))
+        sys.exit(1)
+
     result["analyzer_probes"] = probe_analyzers(client, bundle)
     result["query_validation"] = validate_queries(client, bundle.get("index"), bundle)
     print(json.dumps(result, indent=2))
@@ -709,8 +751,11 @@ def main():
     # blueprint-apply — lint, probe analyzers, create, validate queries
     p = sub.add_parser("blueprint-apply", help="Apply a blueprint bundle to a cluster and verify it")
     p.add_argument("--bundle", required=True, help="Path to the blueprint bundle JSON")
-    p.add_argument("--replace", action="store_true", help="Delete the index first if it exists")
-    p.add_argument("--dry-run", action="store_true", help="Lint and render only; touch nothing")
+    p.add_argument("--replace", action="store_true", help="Delete the index first if it exists (requires --yes)")
+    p.add_argument("--yes", action="store_true", help="Confirm a destructive --replace non-interactively")
+    p.add_argument("--allow-nonempty", action="store_true", help="Permit --replace to delete an index that holds documents")
+    p.add_argument("--no-rollback", action="store_true", help="Leave partial state in place if the apply fails")
+    p.add_argument("--dry-run", action="store_true", help="Lint, render, and report the change plan; mutate nothing")
     p.add_argument("--force", action="store_true", help="Apply even if lint reports errors")
 
     # blueprint-extract — live index back to a bundle

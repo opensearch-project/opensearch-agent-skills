@@ -54,6 +54,11 @@ last.
 4. **Probe analyzers before loading data** — every custom analyzer needs at
    least one `probes` entry. An analyzer that looks right and tokenizes wrong is
    the single most common cause of "search returns nothing".
+5. **Never pass `--replace --yes` on the user's behalf** — `--replace` deletes
+   an existing index and its documents, and no rollback can bring them back.
+   Run `--dry-run` first, show the user the reported `plan` (index name and doc
+   count), and let *them* confirm. `--allow-nonempty` means "delete data that
+   already exists"; only the user can make that call.
 
 ## Key Rules
 
@@ -73,9 +78,10 @@ uv run python scripts/opensearch_ops.py preflight-check
 uv run python scripts/opensearch_ops.py blueprint-lint --bundle blueprint.json
 uv run python scripts/opensearch_ops.py blueprint-render --bundle blueprint.json
 
-# Apply and verify against a cluster
+# Apply and verify against a cluster. --dry-run reports the change plan,
+# including anything that would be deleted, without mutating the cluster.
 uv run python scripts/opensearch_ops.py blueprint-apply --bundle blueprint.json --dry-run
-uv run python scripts/opensearch_ops.py blueprint-apply --bundle blueprint.json --replace
+uv run python scripts/opensearch_ops.py blueprint-apply --bundle blueprint.json
 
 # Reverse direction — read an existing index back into a blueprint
 uv run python scripts/opensearch_ops.py blueprint-extract --index movies_v1 --out blueprint.json --lint
@@ -135,10 +141,23 @@ rendered dense spec to the user and get approval.
 ### Phase 5 — Apply and verify
 
 ```bash
-uv run python scripts/opensearch_ops.py blueprint-apply --bundle blueprint.json --replace
+# 1. Read-only. Prints the change plan: what is created, what is overwritten,
+#    and whether an existing index (and how many documents) would be deleted.
+uv run python scripts/opensearch_ops.py blueprint-apply --bundle blueprint.json --dry-run
+
+# 2. Apply. Fresh index — no destructive flags needed.
+uv run python scripts/opensearch_ops.py blueprint-apply --bundle blueprint.json
 ```
 
-This creates the ingest pipeline, search pipeline, index, and ISM policy, then:
+If the index already exists, the apply is **refused** rather than silently
+skipped. Show the user the dry-run plan and let them choose: rename the index in
+the bundle, or re-run with `--replace --yes` (and `--allow-nonempty` if it holds
+documents). Do not add those flags yourself.
+
+Applying creates the ingest pipeline, search pipeline, index, and ISM policy in
+that order. The delete, if any, runs last before index creation, and a failure
+at any point unwinds what this run created — pipelines it added are removed,
+pipelines it overwrote are restored. Then it:
 
 - Runs every `probes` entry through `_analyze` and reports the token stream
 - Runs every named query through `_validate/query?explain=true`

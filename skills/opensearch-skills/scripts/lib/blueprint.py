@@ -873,45 +873,313 @@ def validate_queries(client, index, bundle):
     return results
 
 
-def apply_bundle(client, bundle, replace=False):
-    """Create ingest pipeline, search pipeline, index, and ISM policy."""
-    applied = {}
+class BlueprintApplyError(RuntimeError):
+    """Raised when an apply is refused by a safety gate, or fails mid-flight.
+
+    ``code`` is a stable machine-readable reason; ``details`` carries the
+    preflight plan and, for a mid-flight failure, what was rolled back.
+    """
+
+    def __init__(self, code, message, details=None):
+        super().__init__(message)
+        self.code = code
+        self.details = details or {}
+
+
+def _count_docs(client, index):
+    """Document count for an index, or ``None`` if it cannot be determined.
+
+    ``None`` is deliberately distinct from ``0``: callers must treat an unknown
+    count as non-empty so an unreachable count API can never widen the blast
+    radius of a delete.
+    """
+    try:
+        response = client.count(index=index)
+    except Exception:  # noqa: BLE001 - count is advisory; fail closed instead
+        return None
+    if isinstance(response, dict):
+        count = response.get("count")
+        return count if isinstance(count, int) else None
+    return None
+
+
+def _existing_ingest_pipeline(client, name):
+    try:
+        response = client.ingest.get_pipeline(id=name)
+    except Exception:  # noqa: BLE001 - absent pipeline raises 404
+        return None
+    return response.get(name) if isinstance(response, dict) else None
+
+
+def _existing_search_pipeline(client, name):
+    try:
+        response = client.transport.perform_request("GET", f"/_search/pipeline/{name}")
+    except Exception:  # noqa: BLE001
+        return None
+    return response.get(name) if isinstance(response, dict) else None
+
+
+def _existing_ism_policy(client, name):
+    try:
+        response = client.transport.perform_request(
+            "GET", f"/_plugins/_ism/policies/{name}"
+        )
+    except Exception:  # noqa: BLE001
+        return None
+    if isinstance(response, dict) and response.get("policy"):
+        return response
+    return None
+
+
+def _index_shell(client, index):
+    """Capture an existing index's settings + mappings before a replace.
+
+    Lets a failed replace restore the empty index structure. Documents are
+    **not** recoverable — that is why deleting a non-empty index needs its own
+    opt-in rather than relying on this.
+    """
+    try:
+        settings_response = client.indices.get_settings(index=index)
+        mappings_response = client.indices.get_mapping(index=index)
+    except Exception:  # noqa: BLE001
+        return None
+
+    settings_key = _resolve_response_key(settings_response, index)
+    mappings_key = _resolve_response_key(
+        mappings_response, index, preferred=settings_key
+    )
+    raw_settings = (settings_response.get(settings_key) or {}).get("settings") or {}
+    index_settings = dict(raw_settings.get("index") or {})
+    for key in _NON_PORTABLE_SETTINGS:
+        index_settings.pop(key, None)
+    mappings = (mappings_response.get(mappings_key) or {}).get("mappings") or {}
+
+    body = {}
+    if index_settings:
+        body["settings"] = {"index": index_settings}
+    if mappings:
+        body["mappings"] = mappings
+    return body
+
+
+def preflight_apply(client, bundle, replace=False):
+    """Read-only report of everything applying this bundle would change.
+
+    Touches nothing. Returns a plan describing what would be created, what
+    would be overwritten, and every hazard the caller must clear before any
+    mutation happens.
+    """
     index = bundle.get("index")
+    plan = {
+        "index": index,
+        "index_exists": False,
+        "doc_count": 0,
+        "will_delete": False,
+        "creates": [],
+        "overwrites": [],
+        "hazards": [],
+    }
+
+    exists = bool(client.indices.exists(index=index))
+    plan["index_exists"] = exists
+    if exists:
+        count = _count_docs(client, index)
+        plan["doc_count"] = count
+        if replace:
+            plan["will_delete"] = True
+            shown = "an unknown number of" if count is None else count
+            plan["hazards"].append({
+                "code": "destructive.delete_index",
+                "message": (
+                    f"index '{index}' exists and holds {shown} document(s); "
+                    "--replace deletes it and the documents cannot be restored"
+                ),
+            })
+        else:
+            plan["hazards"].append({
+                "code": "conflict.index_exists",
+                "message": (
+                    f"index '{index}' already exists; pass --replace to delete "
+                    "and recreate it, or change the bundle's index name"
+                ),
+            })
+    else:
+        plan["creates"].append({"kind": "index", "name": index})
 
     ingest = bundle.get("ingest_pipeline") or {}
     if ingest.get("name") and ingest.get("body"):
-        client.ingest.put_pipeline(id=ingest["name"], body=ingest["body"])
-        applied["ingest_pipeline"] = ingest["name"]
+        target = "overwrites" if _existing_ingest_pipeline(client, ingest["name"]) else "creates"
+        plan[target].append({"kind": "ingest_pipeline", "name": ingest["name"]})
 
     search_pipeline = bundle.get("search_pipeline") or {}
     if search_pipeline.get("name") and search_pipeline.get("body"):
-        client.transport.perform_request(
-            "PUT",
-            f"/_search/pipeline/{search_pipeline['name']}",
-            body=search_pipeline["body"],
+        target = (
+            "overwrites"
+            if _existing_search_pipeline(client, search_pipeline["name"])
+            else "creates"
         )
-        applied["search_pipeline"] = search_pipeline["name"]
-
-    if replace and client.indices.exists(index=index):
-        client.indices.delete(index=index)
-        applied["deleted_existing"] = True
-
-    body = {}
-    if bundle.get("settings"):
-        body["settings"] = bundle["settings"]
-    if bundle.get("mappings"):
-        body["mappings"] = bundle["mappings"]
-    client.indices.create(index=index, body=body)
-    applied["index"] = index
+        plan[target].append({"kind": "search_pipeline", "name": search_pipeline["name"]})
 
     ism = bundle.get("ism_policy") or {}
     if ism.get("name") and ism.get("body"):
-        client.transport.perform_request(
-            "PUT", f"/_plugins/_ism/policies/{ism['name']}", body=ism["body"]
+        target = "overwrites" if _existing_ism_policy(client, ism["name"]) else "creates"
+        plan[target].append({"kind": "ism_policy", "name": ism["name"]})
+
+    return plan
+
+
+def _unwind(undo_steps):
+    """Run rollback steps newest-first. Never raises — reports what failed."""
+    rolled_back, failed = [], []
+    for label, action in reversed(undo_steps):
+        try:
+            action()
+            rolled_back.append(label)
+        except Exception as exc:  # noqa: BLE001 - report, do not mask the cause
+            failed.append({"step": label, "error": str(exc)})
+    return rolled_back, failed
+
+
+def apply_bundle(client, bundle, replace=False, confirm=False,
+                 allow_nonempty=False, rollback=True):
+    """Create ingest pipeline, search pipeline, index, and ISM policy.
+
+    Every hazard is resolved by a read-only preflight *before* the first
+    mutation, so a refused apply leaves the cluster untouched. Deleting an
+    existing index requires ``replace``; deleting one that holds documents
+    additionally requires ``allow_nonempty``; either way ``confirm`` must be
+    set. The delete runs as late as possible, and any failure after the first
+    mutation unwinds what this call created (restoring overwritten pipelines
+    and policies, and recreating the replaced index's empty shell).
+    """
+    index = bundle.get("index")
+    plan = preflight_apply(client, bundle, replace=replace)
+
+    if plan["index_exists"] and not replace:
+        raise BlueprintApplyError(
+            "index_exists",
+            f"index '{index}' already exists; refusing to apply without --replace",
+            {"plan": plan},
         )
-        applied["ism_policy"] = ism["name"]
+    if plan["will_delete"] and plan["doc_count"] != 0:
+        if not allow_nonempty:
+            shown = "an unknown number of" if plan["doc_count"] is None else plan["doc_count"]
+            raise BlueprintApplyError(
+                "index_not_empty",
+                f"index '{index}' holds {shown} document(s); refusing to delete it. "
+                "Re-run with --allow-nonempty if that data is genuinely disposable",
+                {"plan": plan},
+            )
+    if plan["will_delete"] and not confirm:
+        raise BlueprintApplyError(
+            "confirmation_required",
+            f"applying this blueprint deletes index '{index}'; confirm with --yes",
+            {"plan": plan},
+        )
+
+    applied = {"plan": plan}
+    undo = []
+
+    try:
+        ingest = bundle.get("ingest_pipeline") or {}
+        if ingest.get("name") and ingest.get("body"):
+            name = ingest["name"]
+            prior = _existing_ingest_pipeline(client, name)
+            client.ingest.put_pipeline(id=name, body=ingest["body"])
+            applied["ingest_pipeline"] = name
+            undo.append((
+                f"ingest_pipeline:{name}",
+                (lambda n=name, p=prior: client.ingest.put_pipeline(id=n, body=p))
+                if prior is not None
+                else (lambda n=name: client.ingest.delete_pipeline(id=n)),
+            ))
+
+        search_pipeline = bundle.get("search_pipeline") or {}
+        if search_pipeline.get("name") and search_pipeline.get("body"):
+            name = search_pipeline["name"]
+            prior = _existing_search_pipeline(client, name)
+            client.transport.perform_request(
+                "PUT", f"/_search/pipeline/{name}", body=search_pipeline["body"]
+            )
+            applied["search_pipeline"] = name
+            undo.append((
+                f"search_pipeline:{name}",
+                (lambda n=name, p=prior: client.transport.perform_request(
+                    "PUT", f"/_search/pipeline/{n}", body=p))
+                if prior is not None
+                else (lambda n=name: client.transport.perform_request(
+                    "DELETE", f"/_search/pipeline/{n}")),
+            ))
+
+        # Destructive step, deliberately as late as possible: everything above
+        # is restorable, so a failure before this point costs nothing.
+        if plan["will_delete"]:
+            shell = _index_shell(client, index)
+            client.indices.delete(index=index)
+            applied["deleted_existing"] = True
+            if shell is not None:
+                undo.append((
+                    f"index-shell:{index}",
+                    lambda i=index, b=shell: client.indices.create(index=i, body=b),
+                ))
+
+        body = {}
+        if bundle.get("settings"):
+            body["settings"] = bundle["settings"]
+        if bundle.get("mappings"):
+            body["mappings"] = bundle["mappings"]
+        client.indices.create(index=index, body=body)
+        applied["index"] = index
+        undo.append((f"index:{index}", lambda i=index: client.indices.delete(index=i)))
+
+        ism = bundle.get("ism_policy") or {}
+        if ism.get("name") and ism.get("body"):
+            name = ism["name"]
+            prior = _existing_ism_policy(client, name)
+            path = f"/_plugins/_ism/policies/{name}"
+            if prior is not None:
+                seq_no = prior.get("_seq_no")
+                primary_term = prior.get("_primary_term")
+                suffix = (
+                    f"?if_seq_no={seq_no}&if_primary_term={primary_term}"
+                    if seq_no is not None and primary_term is not None
+                    else ""
+                )
+                client.transport.perform_request("PUT", path + suffix, body=ism["body"])
+            else:
+                client.transport.perform_request("PUT", path, body=ism["body"])
+            applied["ism_policy"] = name
+            undo.append((
+                f"ism_policy:{name}",
+                (lambda p=path, b={"policy": prior["policy"]}: client.transport.perform_request(
+                    "PUT", p, body=b))
+                if prior is not None
+                else (lambda p=path: client.transport.perform_request("DELETE", p)),
+            ))
+    except Exception as exc:  # noqa: BLE001 - re-raised with rollback detail
+        if not rollback:
+            raise
+        # The index we just created (if any) is not part of the damage to undo
+        # when it is also the thing that failed — _unwind reports either way.
+        rolled_back, failed = _unwind(undo)
+        details = {"applied": applied, "rolled_back": rolled_back, "rollback_failed": failed}
+        if applied.get("deleted_existing"):
+            details["irreversible"] = [
+                f"index '{index}' was deleted before the failure; its structure was "
+                "restored if possible, but its documents are gone"
+            ]
+        raise BlueprintApplyError(
+            "apply_failed", f"blueprint apply failed: {exc}", details
+        ) from exc
 
     return applied
+
+
+# Cluster-assigned settings that describe *this* index instance rather than the
+# design, so they are stripped from anything meant to be portable or replayed.
+_NON_PORTABLE_SETTINGS = (
+    "uuid", "version", "provided_name", "creation_date", "routing",
+)
 
 
 def _resolve_response_key(response, index, preferred=None):
@@ -948,7 +1216,7 @@ def extract_bundle(client, index):
     index_settings = dict(raw_settings.get("index") or {})
 
     # Drop cluster-assigned metadata that is not part of a portable design.
-    for key in ("uuid", "version", "provided_name", "creation_date", "routing"):
+    for key in _NON_PORTABLE_SETTINGS:
         index_settings.pop(key, None)
 
     mappings = (mappings_response.get(mappings_key) or {}).get("mappings") or {}

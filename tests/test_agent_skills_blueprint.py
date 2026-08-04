@@ -14,6 +14,7 @@ _SCRIPTS_DIR = _REPO_ROOT / "skills" / "opensearch-skills" / "scripts"
 sys.path.insert(0, str(_SCRIPTS_DIR))
 
 from lib.blueprint import (  # noqa: E402
+    BlueprintApplyError,
     apply_bundle,
     extract_bundle,
     format_findings,
@@ -21,6 +22,7 @@ from lib.blueprint import (  # noqa: E402
     iter_fields,
     lint_bundle,
     load_bundle,
+    preflight_apply,
     probe_analyzers,
     render_blueprint,
     validate_queries,
@@ -50,11 +52,14 @@ def minimal_bundle(**overrides):
 
 
 class _FakeIndices:
-    def __init__(self, *, exists=False, settings=None, mappings=None, analyze=None):
+    def __init__(self, *, exists=False, settings=None, mappings=None, analyze=None,
+                 create_fails=False):
         self._exists = exists
         self._settings = settings or {}
         self._mappings = mappings or {}
         self._analyze = analyze or {"tokens": []}
+        # When set, the first create() raises; later creates (rollback) succeed.
+        self._create_fails = create_fails
         self.created = []
         self.deleted = []
         self.analyzed = []
@@ -68,6 +73,9 @@ class _FakeIndices:
         self.deleted.append(index)
 
     def create(self, index, body):
+        if self._create_fails:
+            self._create_fails = False
+            raise RuntimeError("mapper_parsing_exception: bad mapping")
         self.created.append((index, body))
 
     def analyze(self, body, index=None):
@@ -88,6 +96,7 @@ class _FakeIndices:
 class _FakeIngest:
     def __init__(self, pipelines=None):
         self.put = []
+        self.deleted = []
         self._pipelines = pipelines or {}
 
     def put_pipeline(self, id, body):  # noqa: A002 - matches opensearch-py signature
@@ -95,6 +104,9 @@ class _FakeIngest:
 
     def get_pipeline(self, id):  # noqa: A002
         return self._pipelines
+
+    def delete_pipeline(self, id):  # noqa: A002
+        self.deleted.append(id)
 
 
 class _FakeTransport:
@@ -112,6 +124,13 @@ class _FakeClient:
         self.indices = _FakeIndices(**kwargs.pop("indices", {}))
         self.ingest = _FakeIngest(kwargs.pop("pipelines", None))
         self.transport = _FakeTransport(kwargs.pop("responses", None))
+        # None models a count API that cannot be reached.
+        self._count = kwargs.pop("doc_count", 0)
+
+    def count(self, index):
+        if self._count is None:
+            raise RuntimeError("cluster_block_exception")
+        return {"count": self._count}
 
 
 # ---------------------------------------------------------------------------
@@ -741,14 +760,136 @@ class TestApplyBundle:
 
     def test_replace_deletes_existing_index_first(self):
         client = _FakeClient(indices={"exists": True})
-        applied = apply_bundle(client, minimal_bundle(), replace=True)
+        applied = apply_bundle(client, minimal_bundle(), replace=True, confirm=True)
         assert applied["deleted_existing"] is True
         assert client.indices.deleted == ["things_v1"]
 
-    def test_without_replace_existing_index_is_untouched(self):
+
+class TestApplySafetyGates:
+    """Every refusal must happen before the first mutation."""
+
+    def test_existing_index_without_replace_is_refused_not_silently_skipped(self):
         client = _FakeClient(indices={"exists": True})
-        apply_bundle(client, minimal_bundle(), replace=False)
+        with pytest.raises(BlueprintApplyError) as excinfo:
+            apply_bundle(client, minimal_bundle(), replace=False)
+        assert excinfo.value.code == "index_exists"
         assert client.indices.deleted == []
+        assert client.indices.created == []
+        assert client.ingest.put == []
+
+    def test_replace_without_confirmation_refuses_and_mutates_nothing(self):
+        client = _FakeClient(indices={"exists": True})
+        with pytest.raises(BlueprintApplyError) as excinfo:
+            apply_bundle(client, minimal_bundle(), replace=True, confirm=False)
+        assert excinfo.value.code == "confirmation_required"
+        assert client.indices.deleted == []
+        assert client.ingest.put == []
+
+    def test_nonempty_index_is_refused_even_with_confirmation(self):
+        client = _FakeClient(indices={"exists": True}, doc_count=4200)
+        with pytest.raises(BlueprintApplyError) as excinfo:
+            apply_bundle(client, minimal_bundle(), replace=True, confirm=True)
+        assert excinfo.value.code == "index_not_empty"
+        assert "4200" in str(excinfo.value)
+        assert client.indices.deleted == []
+
+    def test_nonempty_index_deletable_with_explicit_opt_in(self):
+        client = _FakeClient(indices={"exists": True}, doc_count=4200)
+        applied = apply_bundle(
+            client, minimal_bundle(), replace=True, confirm=True, allow_nonempty=True
+        )
+        assert applied["deleted_existing"] is True
+
+    def test_unknown_doc_count_fails_closed(self):
+        """An unreachable count API must never be read as 'empty, safe to delete'."""
+        client = _FakeClient(indices={"exists": True}, doc_count=None)
+        with pytest.raises(BlueprintApplyError) as excinfo:
+            apply_bundle(client, minimal_bundle(), replace=True, confirm=True)
+        assert excinfo.value.code == "index_not_empty"
+        assert client.indices.deleted == []
+
+
+class TestPreflightApply:
+    def test_reports_the_delete_without_performing_it(self):
+        client = _FakeClient(indices={"exists": True}, doc_count=7)
+        plan = preflight_apply(client, minimal_bundle(), replace=True)
+        assert plan["will_delete"] is True
+        assert plan["doc_count"] == 7
+        assert {h["code"] for h in plan["hazards"]} == {"destructive.delete_index"}
+        assert client.indices.deleted == []
+
+    def test_flags_conflict_when_replace_not_requested(self):
+        client = _FakeClient(indices={"exists": True})
+        plan = preflight_apply(client, minimal_bundle(), replace=False)
+        assert plan["will_delete"] is False
+        assert {h["code"] for h in plan["hazards"]} == {"conflict.index_exists"}
+
+    def test_clean_create_has_no_hazards(self):
+        plan = preflight_apply(_FakeClient(), load_bundle(_EXAMPLE_BUNDLE))
+        assert plan["hazards"] == []
+        kinds = {c["kind"] for c in plan["creates"]}
+        assert {"index", "ingest_pipeline", "search_pipeline", "ism_policy"} <= kinds
+
+    def test_separates_overwrites_from_creates(self):
+        client = _FakeClient(pipelines={"movies_embed": {"processors": []}})
+        plan = preflight_apply(client, load_bundle(_EXAMPLE_BUNDLE))
+        assert {o["name"] for o in plan["overwrites"]} == {"movies_embed"}
+        assert "movies_embed" not in {c["name"] for c in plan["creates"]}
+
+
+class TestApplyRollback:
+    def test_failed_index_create_unwinds_the_pipelines_it_made(self):
+        client = _FakeClient(indices={"create_fails": True})
+        with pytest.raises(BlueprintApplyError) as excinfo:
+            apply_bundle(client, load_bundle(_EXAMPLE_BUNDLE))
+
+        assert excinfo.value.code == "apply_failed"
+        # The ingest pipeline it created is deleted again, not left orphaned.
+        assert client.ingest.deleted == ["movies_embed"]
+        assert ("DELETE", "/_search/pipeline/movies_hybrid", None) in client.transport.requests
+        assert excinfo.value.details["rollback_failed"] == []
+
+    def test_preexisting_pipeline_is_restored_not_deleted(self):
+        prior = {"description": "the original", "processors": []}
+        client = _FakeClient(
+            indices={"create_fails": True},
+            pipelines={"movies_embed": prior},
+        )
+        with pytest.raises(BlueprintApplyError):
+            apply_bundle(client, load_bundle(_EXAMPLE_BUNDLE))
+
+        assert client.ingest.deleted == []
+        assert client.ingest.put[-1] == ("movies_embed", prior)
+
+    def test_replaced_index_shell_is_recreated_after_a_failure(self):
+        client = _FakeClient(
+            indices={
+                "exists": True,
+                "create_fails": True,
+                "settings": {"things_v1": {"settings": {"index": {
+                    "number_of_shards": "3", "uuid": "abc",
+                }}}},
+                "mappings": {"things_v1": {"mappings": {
+                    "properties": {"title": {"type": "text"}}
+                }}},
+            },
+        )
+        with pytest.raises(BlueprintApplyError) as excinfo:
+            apply_bundle(client, minimal_bundle(), replace=True, confirm=True)
+
+        restored = dict(client.indices.created)["things_v1"]
+        assert restored["settings"]["index"]["number_of_shards"] == "3"
+        assert "uuid" not in restored["settings"]["index"]
+        assert restored["mappings"]["properties"]["title"]["type"] == "text"
+        # Data loss is reported plainly rather than implied by a restored shell.
+        assert excinfo.value.details["irreversible"]
+
+    def test_no_rollback_flag_leaves_partial_state_and_reraises_cause(self):
+        client = _FakeClient(indices={"create_fails": True})
+        with pytest.raises(RuntimeError) as excinfo:
+            apply_bundle(client, load_bundle(_EXAMPLE_BUNDLE), rollback=False)
+        assert not isinstance(excinfo.value, BlueprintApplyError)
+        assert client.ingest.deleted == []
 
 
 class TestExtractBundle:
