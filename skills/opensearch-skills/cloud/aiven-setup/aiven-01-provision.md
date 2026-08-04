@@ -8,8 +8,7 @@ All Aiven calls go through the **`aiven-mcp`** MCP server. The Aiven Console equ
 
 Before starting:
 1. Read `.opensearch-deploy-state.json` for current deployment state
-2. Verify the `aiven-mcp` server is connected and reachable — call `aiven_project_list`. If it fails with an auth error, the user needs to (re)connect with a valid Aiven token.
-3. Confirm `aiven-mcp` was connected with full access and `allow_secrets=true` (a connection flag that lets `aiven_service_connection_info` return the real credentials instead of `[REDACTED]`). If `aiven_service_create` is not available, the connection is read-only — tell the user to reconnect with full access (or at minimum `write_allowlist=aiven_service_create`).
+2. Confirm `aiven-mcp` was connected with full access and `allow_secrets=true` (a connection flag that lets `aiven_service_connection_info` return the real credentials instead of `[REDACTED]`). If the connection is read-only, tell the user to reconnect with full access.
 
 ## Step 1: Select the Project
 
