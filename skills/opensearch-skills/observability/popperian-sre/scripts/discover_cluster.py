@@ -27,6 +27,14 @@ def main():
     parser.add_argument("--user", default=os.environ.get("OPENSEARCH_USER", "admin"), help="OpenSearch user")
     parser.add_argument("--password", default=os.environ.get("OPENSEARCH_PASSWORD", ""), help="OpenSearch password")
     parser.add_argument("--no-ssl", action="store_true", help="Disable TLS")
+    parser.add_argument(
+        "--insecure", action="store_true",
+        help=(
+            "Skip TLS certificate verification (e.g. for a local cluster's self-signed cert). "
+            "Off by default -- credentials otherwise traverse an unverified connection, which "
+            "is a MITM exposure on anything but a fully trusted local network."
+        )
+    )
 
     args = parser.parse_args()
 
@@ -34,7 +42,7 @@ def main():
         hosts=[{'host': args.host, 'port': args.port}],
         http_auth=(args.user, args.password),
         use_ssl=not args.no_ssl,
-        verify_certs=False
+        verify_certs=not args.insecure
     )
 
     discovery = SchemaDiscovery(client)

@@ -29,12 +29,14 @@ You MUST execute the workflow below sequentially. Complex logic and query execut
   "mcpServers": {
     "opensearch-mcp-server": {
       "command": "uvx",
-      "args": ["opensearch-mcp-server-py@latest"],
+      "args": ["opensearch-mcp-server-py==0.11.0"],
       "env": { "FASTMCP_LOG_LEVEL": "ERROR" }
     }
   }
 }
 ```
+
+Pinned rather than `@latest`: an unpinned `uvx` invocation fetches and runs whatever is published as latest on PyPI at execution time, with full access to the OpenSearch credentials passed via env — a supply-chain vector if that package were ever compromised or typosquatted. Bump the pin deliberately when upgrading.
 
 If no MCP server or cluster endpoint is available, state that explicitly and produce hypotheses without evidence — the sufficiency gate (step 12) will then correctly refuse to recommend anything, which is the right outcome, not a failure to route around.
 
