@@ -276,3 +276,25 @@ def test_the_null_keeps_each_group_its_own_spread():
     even = cn.assess(even_values, even_labels, trials=200)
     pooled = _shuffled_threshold(even_values, even_labels, [f"/{c}" for c in "abcd"])
     assert even.null_threshold == pytest.approx(pooled, rel=0.35)
+
+
+def test_an_empty_baseline_is_an_attempted_read_not_an_absent_one():
+    """`baseline_values=[]` means the baseline was read and held nothing --
+    materially different from None, where no baseline was offered at all.
+    Truthiness conflated the two and silently fell back to the weaker
+    gap-question; `is not None` routes the empty read into the refusal that
+    names what could not be normalized. Found by an automated review, kept
+    because absent-versus-empty is this module's own stated rule."""
+    rng = random.Random(7)
+    values = [rng.gauss(100, 10) for _ in range(120)]
+    labels = ["a", "b"] * 60
+
+    silently_weaker = cn.assess(values, labels, None, None)
+    refused = cn.assess(values, labels, [], [])
+
+    # No baseline offered: the probe answers the gap question.
+    assert silently_weaker.excess is not None
+    # Baseline offered and empty: the probe refuses rather than substituting.
+    assert refused.excess is None
+    assert refused.baseline_referenced is False
+    assert refused.compared == 0

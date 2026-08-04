@@ -65,6 +65,7 @@ import re
 import sys
 from dataclasses import dataclass, field
 from enum import Enum
+from pathlib import Path
 from typing import Optional
 
 
@@ -272,9 +273,16 @@ def check(report: str, narration: str, closed: Optional[bool] = None) -> GuardRe
     else:
         verdict = Verdict.GROUNDED
 
+    # First-seen order without list.index: index() rescans per element and
+    # raises if a token ever arrives from anywhere but `narrated`.
+    deduped = []
+    for tok in unsourced:
+        if tok not in deduped:
+            deduped.append(tok)
+
     return GuardReport(
         verdict=verdict,
-        unsourced_numbers=sorted(set(unsourced), key=narrated.index),
+        unsourced_numbers=deduped,
         unsourced_timestamps=unsourced_moments,
         contract_violations=violations,
         checked_numbers=len(narrated),
@@ -288,8 +296,8 @@ def main() -> int:
     ap.add_argument("--narration", required=True, help="File holding the summary to check")
     args = ap.parse_args()
 
-    report = open(args.report, encoding="utf-8").read()
-    narration = open(args.narration, encoding="utf-8").read()
+    report = Path(args.report).read_text(encoding="utf-8")
+    narration = Path(args.narration).read_text(encoding="utf-8")
     result = check(report, narration)
     print(result.to_text())
     return 0 if result.verdict is Verdict.GROUNDED else 1

@@ -297,7 +297,12 @@ def assess(values, labels, baseline_values=None, baseline_labels=None,
     for label in labels:
         focus_counts[label] = focus_counts.get(label, 0) + 1
 
-    offered = bool(baseline_values)
+    # `is not None`, not truthiness: a baseline that was supplied and came back
+    # empty is an attempted read that found nothing, and must land in the
+    # offered-but-not-referenced refusal below. Truthiness would silently
+    # reclassify it as "no baseline supplied" and answer the weaker question --
+    # the absent-versus-empty substitution this module exists to refuse.
+    offered = baseline_values is not None
     offsets, baseline_grouped = ({}, {})
     if offered:
         offsets, baseline_grouped = _normals(baseline_values, baseline_labels, focus_counts)

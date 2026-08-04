@@ -158,3 +158,21 @@ def test_an_unreconstructable_gap_is_named_as_unquantified_not_as_small():
 def test_no_documents_ingested_by_then_says_so_rather_than_reading_zero():
     ev = probe_observation_moment(_observation(focus_count_as_reported=0)).evidence
     assert "No document had been ingested by then" in ev
+
+
+def test_a_total_reported_as_a_bare_int_is_read_the_same_way(monkeypatch):
+    """`hits.total` is a dict by default but a plain int under
+    rest_total_hits_as_int and older compatibility modes. The sampler already
+    handled both; this reader gained the same tolerance after an automated
+    review pointed out the asymmetry."""
+    class IntTotalCluster(FakeCluster):
+        def __call__(self, endpoint, path, body=None):
+            res = super().__call__(endpoint, path, body)
+            res["hits"]["total"] = res["hits"]["total"]["value"]
+            return res
+
+    monkeypatch.setattr(aw, "_get", IntTotalCluster(total=46, value=3418.66))
+    value, n = aw.value_as_reported("http://c", "i", "@timestamp", "latency_ms",
+                                    "ingested_at", FOCUS_START, FOCUS_END, EARLY)
+    assert n == 46
+    assert value == pytest.approx(3418.66)

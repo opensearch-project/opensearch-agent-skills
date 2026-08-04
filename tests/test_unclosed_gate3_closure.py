@@ -277,3 +277,22 @@ def test_closes_carries_the_uncertainty_through():
              gate1=Gate1Carryover("SUBSTANTIATED", ()))
     assert not closes(t, OBSERVED)[0]
     assert closes(t, OBSERVED, measurement_uncertainty=0.30)[0]
+
+
+# --- a window that got faster is still an effect to account for ------------
+
+
+@pytest.mark.parametrize("accounts, expected", [
+    (-8.0, Accounting.UNDER_ACCOUNTED),    # explains 2% of a -400ms drop
+    (-380.0, Accounting.ACCOUNTED),        # explains 95% of it
+    (-900.0, Accounting.OVER_ACCOUNTED),   # explains 225% of it
+])
+def test_a_negative_effect_keeps_the_same_verdicts(accounts, expected):
+    """The residual fraction is residual over the SIGNED effect, so the two
+    signs cancel and under/over keep their meaning when latency fell instead
+    of rose. Pinned because an automated review read the arithmetic as
+    inverting for negative effects; it does not, and now cannot without a
+    test going red."""
+    t = tree(confirmed("rollback at 14:18", confirmed("old query plan", accounts=accounts),
+                       ruled_out("GC pause")))
+    assert audit_closure(t, -400.0).verdict is expected

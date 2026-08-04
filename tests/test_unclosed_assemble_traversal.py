@@ -113,7 +113,7 @@ def sample_from(groups, seed=7):
 
 
 def _concentration(monkeypatch, sample, removal_p99=None, focus_p99=900.0, truncated=False,
-                   baseline=()):
+                   baseline=None):
     monkeypatch.setattr(at, "_percentiles", lambda *a, **k: {"99.0": removal_p99})
     return at._concentration_node("e", "i", "endpoint", "the rise is confined to one endpoint",
                                   "latency_ms", {"q": 1}, focus_p99, sample, truncated,
@@ -334,3 +334,39 @@ def test_the_observation_travels_with_the_run(monkeypatch, stub_observation):
     assert run.observation is obs
     assert run.observed_effect == pytest.approx(360.0)
     assert run.uncertainty == pytest.approx(abs(360.0 - 348.0) / 360.0)
+
+
+def test_the_sampler_drops_documents_missing_the_metric(monkeypatch):
+    """Downstream reads `r[metric]` without a guard, which an automated review
+    flagged as a KeyError. The guard exists -- it lives one stage up, in the
+    sampler that builds the rows -- so this pins where it lives: a document
+    carrying the dimension but not the metric never reaches the value lists."""
+    hits = [
+        {"_source": {"latency_ms": 100.0, "endpoint": "/a"}},
+        {"_source": {"endpoint": "/b"}},                       # metric absent
+        {"_source": {"latency_ms": 250.0, "endpoint": "/c"}},
+    ]
+
+    def fake(endpoint, path, body=None):
+        return {"hits": {"total": {"value": len(hits)}, "hits": hits}}
+
+    monkeypatch.setattr(at, "_request", fake)
+    rows, truncated = at._sample("http://c", "i", {"match_all": {}},
+                                 "latency_ms", ("endpoint",))
+    assert [r["latency_ms"] for r in rows] == [100.0, 250.0]
+    assert all("latency_ms" in r for r in rows)
+    # And the drop is not silent: a document the sampler could not use counts
+    # toward the window's total, so the sample reports itself as truncated.
+    assert truncated is True
+
+
+def test_an_empty_baseline_read_refuses_instead_of_answering_blind(monkeypatch):
+    """baseline=[] is a read that happened and found nothing -- different from
+    baseline=None, where no baseline exists to read. The blind gap-question is
+    only available when there is genuinely no baseline; an empty read names
+    the groups it could not normalize and declines."""
+    value, node = _concentration(monkeypatch, sample_from({"/a": (50, 600.0), "/b": (150, 80.0)}),
+                                 removal_p99=550.0, baseline=[])
+    assert value is None
+    assert node.state is NodeState.INCONCLUSIVE
+    assert "baseline n=0" in node.evidence

@@ -225,7 +225,10 @@ def _bucket_medians(endpoint, index, time_field, metric, gte, lt, bucket_minutes
     res = _post(endpoint, f"/{index}/_search", body)
     out = []
     for b in res["aggregations"]["per_bucket"]["buckets"]:
-        v = b["aggs"]["p"]["values"]["50.0"] if "aggs" in b else b["p"]["values"]["50.0"]
+        # Sub-aggregation results are siblings of the bucket metadata, never
+        # nested under an "aggs" key; the fallback that guessed otherwise was
+        # dead code, and dead code in a parser reads as a supported shape.
+        v = b["p"]["values"]["50.0"]
         if v is not None:
             out.append((b["key_as_string"], v))
     return out
@@ -338,7 +341,7 @@ def _immaterial(excess, observed_effect, tolerance):
 
 
 def _concentration_node(endpoint, index, dim, statement, metric, focus_q, focus_p99,
-                        sample, truncated, baseline_sample=(), baseline_truncated=False,
+                        sample, truncated, baseline_sample=None, baseline_truncated=False,
                         observed_effect=None, tolerance=RESIDUAL_TOLERANCE):
     """Has one value of this dimension moved further than the rest of the window?
 
@@ -393,9 +396,18 @@ def _concentration_node(endpoint, index, dim, statement, metric, focus_q, focus_
                       "cannot separate a concentrated rise from a uniform one"),
         )
 
-    baseline_rows = [r for r in baseline_sample if dim in r]
+    # None means no baseline was offered at all; a list -- however empty -- is
+    # a read that happened, and the null keeps that distinction: an empty read
+    # is refused with its groups named, never silently downgraded to the
+    # weaker no-baseline question.
+    if baseline_sample is None:
+        baseline_vals, baseline_dims = None, None
+    else:
+        baseline_rows = [r for r in baseline_sample if dim in r]
+        baseline_vals = [float(r[metric]) for r in baseline_rows]
+        baseline_dims = [r[dim] for r in baseline_rows]
     result = assess([float(r[metric]) for r in rows], [r[dim] for r in rows],
-                    [float(r[metric]) for r in baseline_rows], [r[dim] for r in baseline_rows],
+                    baseline_vals, baseline_dims,
                     sample_truncated=truncated, baseline_truncated=baseline_truncated)
     if result.excess is None:
         missing = result.too_small + result.without_normal

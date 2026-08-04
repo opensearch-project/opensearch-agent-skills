@@ -327,7 +327,11 @@ def value_as_reported(endpoint, index, time_field, metric, second_clock, gte, lt
         "aggs": _percentile_aggs(metric),
     }
     res = _get(endpoint, f"/{index}/_search", body)
-    n = res["hits"]["total"]["value"]
+    # total is a dict by default but an int under rest_total_hits_as_int or
+    # older compatibility modes; the sampler already handles both and this
+    # reader has to reach the same deployments it does.
+    total = res["hits"]["total"]
+    n = total["value"] if isinstance(total, dict) else total
     if not n:
         return None, 0
     value = _read(res["aggregations"], PRIMARY_ESTIMATOR)
