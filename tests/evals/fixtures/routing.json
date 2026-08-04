@@ -105,6 +105,30 @@
     "id": "routing-negative-01",
     "prompt": "Bulk index my product catalog JSON into OpenSearch using the _bulk API",
     "expected_skill": "opensearch-launchpad",
-    "rationale": "Structured bulk-indexing is NOT managed-ingestion-service — it's opensearch-launchpad"
+    "rationale": "Structured bulk-indexing is NOT managed-ingestion-service \u2014 it's opensearch-launchpad"
+  },
+  {
+    "id": "routing-blueprint-01",
+    "prompt": "Design the index mapping and analyzer chain for a movie catalog before I load any data",
+    "expected_skill": "opensearch-blueprint",
+    "rationale": "Mapping + analysis design as a reviewable artifact, no data loading yet"
+  },
+  {
+    "id": "routing-blueprint-02",
+    "prompt": "My hybrid search returns nothing useful - can you check the normalization weights on my search pipeline?",
+    "expected_skill": "opensearch-blueprint",
+    "rationale": "Hybrid weight/normalization auditing is a blueprint lint concern"
+  },
+  {
+    "id": "routing-blueprint-03",
+    "prompt": "Extract the mapping and settings from my existing products index so I can port it to another cluster",
+    "expected_skill": "opensearch-blueprint",
+    "rationale": "Audit/extract mode - reading a live index back into a portable design"
+  },
+  {
+    "id": "routing-negative-blueprint-01",
+    "prompt": "Load my CSV into OpenSearch and give me a running search UI",
+    "expected_skill": "opensearch-launchpad",
+    "rationale": "Data loading + running UI is launchpad, NOT blueprint (which stops at a verified empty index)"
   }
 ]

@@ -426,5 +426,37 @@
     "rule": "Must hand off to managed-ingestion-service for cloud ingestion (not just aws-setup direct indexing) since data is unstructured",
     "criteria": "The response must route unstructured data deployment through managed-ingestion-service (OSIS with semantic_enrichment) for cloud ingestion \u2014 not just direct bulk-indexing via aws-setup. Chunks already exist locally so they should be uploaded to S3 and ingested via OSIS. Exit state: cloud index has ASE sparse enrichment AND a flow agent pipeline is configured for search. It must mention provisioning the AOSS collection, OSIS ingestion, and setting up the flow agent after ingestion.",
     "rationale": "Phase 6 unstructured: provision AOSS, managed-ingestion-service handles OSIS ingestion, then agentic setup"
+  },
+  {
+    "id": "blueprint-lint-before-apply",
+    "skill": "opensearch-blueprint",
+    "prompt": "Here is my blueprint.json for a hybrid product index. Apply it to my cluster.",
+    "rule": "Must lint the bundle and read the findings before applying it",
+    "criteria": "The response must run 'blueprint-lint' (or 'blueprint-apply --dry-run') and review the findings before running a real 'blueprint-apply'. It must not apply the bundle to the cluster as its first action, and must not pass --force without naming the specific error being overridden.",
+    "rationale": "Critical Rule 2 - lint before apply; --force must be justified explicitly"
+  },
+  {
+    "id": "blueprint-probe-analyzers",
+    "skill": "opensearch-blueprint",
+    "prompt": "Design an autocomplete analyzer using edge n-grams for my titles field",
+    "rule": "Every custom analyzer needs a probe verified through the _analyze API",
+    "criteria": "The response must include at least one 'probes' entry for the custom analyzer and state that it will be verified via the _analyze API before data is loaded. It must also split 'analyzer' and 'search_analyzer' rather than applying the edge_ngram analyzer at search time.",
+    "rationale": "Critical Rule 4 - unprobed analyzers are the top cause of empty result sets"
+  },
+  {
+    "id": "blueprint-no-invented-dimension",
+    "skill": "opensearch-blueprint",
+    "prompt": "Add a knn_vector field to my index for embeddings from some sentence-transformers model",
+    "rule": "Must not invent a vector dimension",
+    "criteria": "The response must ask which embedding model is being used, or look up the model's dimension, rather than assuming a dimension value. It must not silently pick a number like 384 or 768 without tying it to a named model.",
+    "rationale": "Critical Rule 3 - a dimension mismatch fails silently until ingest"
+  },
+  {
+    "id": "blueprint-field-roles-first",
+    "skill": "opensearch-blueprint",
+    "prompt": "Build me an index blueprint for a 2 million document support ticket archive",
+    "rule": "Must establish field roles before writing mappings",
+    "criteria": "The response must ask which fields are matched, filtered, sorted, aggregated, or returned only, before proposing concrete field types. It must not emit a full mapping without knowing the field roles.",
+    "rationale": "Phase 1 - field role determines text vs keyword, which drives index size"
   }
 ]

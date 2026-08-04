@@ -11,6 +11,7 @@ Skills are organized in a tree — install the whole collection or pick individu
 | Category | Skill | Description |
 |----------|-------|-------------|
 | **Search** | [opensearch-launchpad](skills/opensearch-skills/search/opensearch-launchpad/) | Build search apps from scratch — BM25, semantic, hybrid, agentic search |
+| **Search** | [opensearch-blueprint](skills/opensearch-skills/search/opensearch-blueprint/) | Compile requirements into a linted, cluster-verified index design — mappings, analyzers, k-NN, pipelines, ISM |
 | **Observability** | [log-analytics](skills/opensearch-skills/observability/log-analytics/) | Query and analyze logs with PPL — error patterns, anomaly detection |
 | **Observability** | [trace-analytics](skills/opensearch-skills/observability/trace-analytics/) | Investigate distributed traces — slow spans, service maps, agent invocations |
 | **Cloud** | [aws-setup](skills/opensearch-skills/cloud/aws-setup/) | Deploy to Amazon OpenSearch Service or Serverless |
@@ -30,6 +31,7 @@ npx skills add opensearch-project/opensearch-agent-skills
 
 # Install a specific skill
 npx skills add opensearch-project/opensearch-agent-skills@opensearch-launchpad --full-depth
+npx skills add opensearch-project/opensearch-agent-skills@opensearch-blueprint --full-depth
 npx skills add opensearch-project/opensearch-agent-skills@log-analytics --full-depth
 npx skills add opensearch-project/opensearch-agent-skills@trace-analytics --full-depth
 npx skills add opensearch-project/opensearch-agent-skills@aws-setup --full-depth
@@ -94,6 +96,11 @@ skills/
       opensearch-launchpad/           # Search app builder
         SKILL.md
         *.md                          # Model guides, evaluation, strategies
+      opensearch-blueprint/           # Index design compiler + validator
+        SKILL.md
+        blueprint-format.md           # Bundle schema and density rules
+        opensearch-vocabulary.md      # Field types, analysis, k-NN, pipelines
+        example-bundle.json           # Reference hybrid blueprint
     observability/                    # Category: Observability
       SKILL.md
       log-analytics/                  # Log querying & analysis

@@ -1,0 +1,188 @@
+{
+  "name": "MOVIE-SEARCH",
+  "pitch": "hybrid movie discovery over 1.2m titles",
+  "opensearch_version": "3.x",
+  "index": "movies_v1",
+  "settings": {
+    "index": {
+      "number_of_shards": 1,
+      "number_of_replicas": 0,
+      "refresh_interval": "30s",
+      "codec": "best_compression",
+      "knn": true,
+      "default_pipeline": "movies_embed",
+      "analysis": {
+        "filter": {
+          "english_stop": { "type": "stop", "stopwords": "_english_" },
+          "english_stemmer": { "type": "stemmer", "language": "english" },
+          "title_edge_ngram": { "type": "edge_ngram", "min_gram": 2, "max_gram": 20 }
+        },
+        "analyzer": {
+          "title_en": {
+            "type": "custom",
+            "tokenizer": "standard",
+            "filter": ["lowercase", "asciifolding", "english_stop", "english_stemmer"]
+          },
+          "title_autocomplete": {
+            "type": "custom",
+            "tokenizer": "standard",
+            "filter": ["lowercase", "asciifolding", "title_edge_ngram"]
+          }
+        },
+        "normalizer": {
+          "keyword_lc": { "type": "custom", "filter": ["lowercase", "asciifolding"] }
+        }
+      }
+    }
+  },
+  "mappings": {
+    "properties": {
+      "title": {
+        "type": "text",
+        "analyzer": "title_en",
+        "fields": {
+          "raw": { "type": "keyword", "ignore_above": 256 },
+          "ac": {
+            "type": "text",
+            "analyzer": "title_autocomplete",
+            "search_analyzer": "standard"
+          }
+        }
+      },
+      "plot": { "type": "text", "analyzer": "title_en" },
+      "genres": { "type": "keyword", "normalizer": "keyword_lc" },
+      "year": { "type": "integer" },
+      "rating": { "type": "scaled_float", "scaling_factor": 10 },
+      "popularity": { "type": "rank_feature" },
+      "released": {
+        "type": "date",
+        "format": "strict_date_optional_time||epoch_millis"
+      },
+      "embedding": {
+        "type": "knn_vector",
+        "dimension": 384,
+        "method": {
+          "name": "hnsw",
+          "engine": "lucene",
+          "space_type": "l2",
+          "parameters": { "ef_construction": 256, "m": 16 }
+        }
+      }
+    }
+  },
+  "ingest_pipeline": {
+    "name": "movies_embed",
+    "body": {
+      "description": "Embed the title into a 384-dim vector on write",
+      "processors": [
+        {
+          "text_embedding": {
+            "model_id": "huggingface/sentence-transformers/all-MiniLM-L6-v2",
+            "field_map": { "title": "embedding" }
+          }
+        }
+      ]
+    }
+  },
+  "search_pipeline": {
+    "name": "movies_hybrid",
+    "body": {
+      "description": "Normalize and blend BM25 with vector scores",
+      "phase_results_processors": [
+        {
+          "normalization-processor": {
+            "normalization": { "technique": "min_max" },
+            "combination": {
+              "technique": "arithmetic_mean",
+              "parameters": { "weights": [0.3, 0.7] }
+            }
+          }
+        }
+      ]
+    }
+  },
+  "ism_policy": {
+    "name": "movies_lifecycle",
+    "body": {
+      "policy": {
+        "description": "Roll over weekly, force-merge warm, delete at 90d",
+        "default_state": "hot",
+        "states": [
+          {
+            "name": "hot",
+            "actions": [{ "rollover": { "min_index_age": "7d", "min_size": "20gb" } }],
+            "transitions": [
+              { "state_name": "warm", "conditions": { "min_index_age": "7d" } }
+            ]
+          },
+          {
+            "name": "warm",
+            "actions": [{ "force_merge": { "max_num_segments": 1 } }],
+            "transitions": [
+              { "state_name": "delete", "conditions": { "min_index_age": "90d" } }
+            ]
+          },
+          {
+            "name": "delete",
+            "actions": [{ "delete": {} }],
+            "transitions": []
+          }
+        ]
+      }
+    }
+  },
+  "queries": [
+    {
+      "name": "bm25_title",
+      "body": {
+        "query": {
+          "bool": {
+            "must": [
+              {
+                "multi_match": {
+                  "query": "space opera",
+                  "fields": ["title^3", "plot"],
+                  "type": "best_fields"
+                }
+              }
+            ],
+            "filter": [{ "range": { "year": { "gte": 1980 } } }],
+            "should": [{ "rank_feature": { "field": "popularity" } }]
+          }
+        }
+      }
+    },
+    {
+      "name": "hybrid_semantic",
+      "body": {
+        "query": {
+          "hybrid": {
+            "queries": [
+              { "match": { "title": { "query": "space opera" } } },
+              {
+                "neural": {
+                  "embedding": {
+                    "query_text": "space opera",
+                    "model_id": "huggingface/sentence-transformers/all-MiniLM-L6-v2",
+                    "k": 50
+                  }
+                }
+              }
+            ]
+          }
+        }
+      }
+    }
+  ],
+  "probes": [
+    {
+      "analyzer": "title_en",
+      "text": "The Lord of the Rings",
+      "expect_tokens": ["lord", "ring"]
+    },
+    {
+      "analyzer": "title_autocomplete",
+      "text": "Blade Runner"
+    }
+  ]
+}
