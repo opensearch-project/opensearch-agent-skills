@@ -5,6 +5,7 @@ description = "OpenSearch Agent Skills"
 requires-python = ">=3.11"
 dependencies = [
     "opensearch-py",
+    "pydantic>=2.0.0",  # used by skills/opensearch-skills/observability/popperian-sre
 ]
 
 [dependency-groups]
