@@ -22,23 +22,9 @@ You MUST execute the workflow below sequentially. Complex logic and query execut
 
 **Scope relative to other skills:** route here when the task is "generate and adjudicate between competing explanations for an incident." Route to [`observability/log-analytics`](../log-analytics/SKILL.md) or [`observability/trace-analytics`](../trace-analytics/SKILL.md) instead when the task is already "query the logs/traces for X" with no hypothesis to weigh — this skill orchestrates an investigation across signals, it doesn't replace ad hoc querying within one signal.
 
-## Optional MCP Servers
+This skill talks to OpenSearch directly through `scripts/run_ppl.py` and `scripts/discover_cluster.py` (both read credentials only from `OPENSEARCH_USER`/`OPENSEARCH_PASSWORD` env vars, never as CLI arguments) — no MCP server is required or used.
 
-```json
-{
-  "mcpServers": {
-    "opensearch-mcp-server": {
-      "command": "uvx",
-      "args": ["opensearch-mcp-server-py==0.11.0"],
-      "env": { "FASTMCP_LOG_LEVEL": "ERROR" }
-    }
-  }
-}
-```
-
-Pinned rather than `@latest`: an unpinned `uvx` invocation fetches and runs whatever is published as latest on PyPI at execution time, with full access to the OpenSearch credentials passed via env — a supply-chain vector if that package were ever compromised or typosquatted. Bump the pin deliberately when upgrading.
-
-If no MCP server or cluster endpoint is available, state that explicitly and produce hypotheses without evidence — the sufficiency gate (step 12) will then correctly refuse to recommend anything, which is the right outcome, not a failure to route around.
+If no cluster endpoint is available, state that explicitly and produce hypotheses without evidence — the sufficiency gate (step 12) will then correctly refuse to recommend anything, which is the right outcome, not a failure to route around.
 
 ## The Workflow
 

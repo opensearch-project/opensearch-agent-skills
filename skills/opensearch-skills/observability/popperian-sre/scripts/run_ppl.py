@@ -1,12 +1,13 @@
 #!/usr/bin/env python3
-# /// script
-# requires-python = ">=3.11"
-# dependencies = ["opensearch-py>=2.6.0"]
-# ///
 """Execute a validated, read-only PPL query and print the (context-bounded) result.
 
+Credentials are read only from OPENSEARCH_USER / OPENSEARCH_PASSWORD -- not
+accepted as CLI arguments, since a --password flag would put the credential
+in process listings (ps, /proc) visible to other users on the host.
+
 Usage:
-    uv run python scripts/run_ppl.py "source=traces-* | stats avg(duration_ms) by service"
+    OPENSEARCH_USER=admin OPENSEARCH_PASSWORD=... \
+        uv run python scripts/run_ppl.py "source=traces-* | stats avg(duration_ms) by service"
 """
 import os
 import sys
@@ -24,8 +25,6 @@ def main():
     parser.add_argument("query", help="PPL query to execute")
     parser.add_argument("--host", default="localhost", help="OpenSearch host")
     parser.add_argument("--port", type=int, default=9200, help="OpenSearch port")
-    parser.add_argument("--user", default=os.environ.get("OPENSEARCH_USER", "admin"), help="OpenSearch user")
-    parser.add_argument("--password", default=os.environ.get("OPENSEARCH_PASSWORD", ""), help="OpenSearch password")
     parser.add_argument("--no-ssl", action="store_true", help="Disable TLS")
     parser.add_argument(
         "--insecure", action="store_true",
@@ -48,7 +47,7 @@ def main():
 
     client = OpenSearch(
         hosts=[{'host': args.host, 'port': args.port}],
-        http_auth=(args.user, args.password),
+        http_auth=(os.environ.get("OPENSEARCH_USER", "admin"), os.environ.get("OPENSEARCH_PASSWORD", "")),
         use_ssl=not args.no_ssl,
         verify_certs=not args.insecure
     )
