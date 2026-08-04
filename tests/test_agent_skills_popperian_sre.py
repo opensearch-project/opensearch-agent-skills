@@ -14,7 +14,6 @@ from pathlib import Path
 _SCRIPTS_DIR = Path(__file__).resolve().parents[1] / "skills" / "opensearch-skills" / "observability" / "popperian-sre" / "scripts"
 sys.path.insert(0, str(_SCRIPTS_DIR))
 
-from pydantic import ValidationError
 from unittest.mock import MagicMock
 import pytest
 
@@ -116,10 +115,11 @@ def test_valid_classifications_are_accepted():
 
 @pytest.mark.parametrize("bad_value", ["SUPPORT", "supports", "Supports", "SUPPORTS ", "UNKNOWN"])
 def test_invalid_classification_is_rejected_not_silently_scored_as_zero(bad_value):
-    # Before this was a Literal type, a typo like "SUPPORT" would construct
-    # fine and just silently contribute 0 to score() forever -- no error,
-    # no signal, nothing. It must fail at construction instead.
-    with pytest.raises(ValidationError):
+    # Before classification was validated in __post_init__, a typo like
+    # "SUPPORT" would construct fine and just silently contribute 0 to
+    # score() forever -- no error, no signal, nothing. It must fail at
+    # construction instead.
+    with pytest.raises(ValueError):
         _test_result(classification=bad_value)
 
 

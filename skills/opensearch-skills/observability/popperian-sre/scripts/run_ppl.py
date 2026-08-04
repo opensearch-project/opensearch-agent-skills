@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # /// script
 # requires-python = ">=3.11"
-# dependencies = ["opensearch-py>=2.6.0", "pydantic>=2.0.0"]
+# dependencies = ["opensearch-py>=2.6.0"]
 # ///
 """Execute a validated, read-only PPL query and print the (context-bounded) result.
 

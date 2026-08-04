@@ -2081,7 +2081,6 @@ version = "0.4.0"
 source = { virtual = "." }
 dependencies = [
     { name = "opensearch-py" },
-    { name = "pydantic" },
 ]
 
 [package.dev-dependencies]
@@ -2105,10 +2104,7 @@ ingestion = [
 ]
 
 [package.metadata]
-requires-dist = [
-    { name = "opensearch-py" },
-    { name = "pydantic", specifier = ">=2.0.0" },
-]
+requires-dist = [{ name = "opensearch-py" }]
 
 [package.metadata.requires-dev]
 dev = [
