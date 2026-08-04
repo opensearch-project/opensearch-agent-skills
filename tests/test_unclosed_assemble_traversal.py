@@ -353,6 +353,29 @@ def test_only_the_strongest_dimension_keeps_its_number(monkeypatch, stub_observa
     assert "may be the same documents seen from two angles" in weaker[0].evidence
 
 
+def test_a_negative_carrier_never_outranks_the_one_that_explains_the_rise(
+        monkeypatch, stub_observation):
+    """A CONFIRMED subgroup's removal can leave p99 *higher* -- a group of fast
+    requests that stood out from the null while holding the percentile down.
+    Its magnitude is negative: removing it made the effect bigger, so it
+    explains none of the rise. An automated review suggested ranking carriers
+    by absolute magnitude, which would crown exactly that branch whenever its
+    |value| is larger. The sort is signed on purpose: a carrier that explains
+    the rise outranks one that deepens it, whatever their absolute sizes."""
+    stub_observation(clean_observation())
+    _stub_nodes(monkeypatch, {
+        "endpoint": _confirmed("endpoint", "/api/fast-tier", -400.0),
+        "region": _confirmed("region", "us-east-1", 120.0),
+        "service": _ruled_out("service"),
+        "status": _ruled_out("status"),
+    })
+
+    run = at.assemble("e", "i", "latency_ms", "@timestamp", "endpoint", 10, 6)
+    carriers = [n for n in run.traversal.nodes() if n.magnitude_accounted is not None]
+    assert [n.magnitude_accounted for n in carriers] == [120.0]
+    assert run.concentrations == (("region", "us-east-1"),)
+
+
 def test_a_downgraded_dimension_is_not_reported_as_a_finding(monkeypatch, stub_observation):
     # `concentrations` is what a grader reads instead of parsing prose. It has
     # to reflect the state after the single-carrier rule, never before it --

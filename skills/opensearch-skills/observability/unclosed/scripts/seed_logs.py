@@ -104,7 +104,7 @@ def _configure_connection(url: str, username: str | None, ca_cert: str | None, i
     username = username or os.environ.get(USERNAME_ENV)
     password = os.environ.get(PASSWORD_ENV)
     if username and password is None:
-        raise SystemExit(f"--username was given but ${PASSWORD_ENV} is not set.")
+        raise SystemExit(f"a username was provided but ${PASSWORD_ENV} is not set.")
     if username:
         token = base64.b64encode(f"{username}:{password}".encode("utf-8")).decode("ascii")
         _AUTH = f"Basic {token}"
