@@ -179,3 +179,36 @@ def test_a_report_built_without_a_recorded_scan_says_nothing_rather_than_guessin
     text = audit(_observation(scan_window_start=None, scan_window_end=None,
                               scan_anchor=None, scan_anchor_source=None)).to_text()
     assert "SCAN:" not in text
+
+
+# --------------------------------------------------------------------------
+# A moment without a zone
+# --------------------------------------------------------------------------
+
+def test_a_caller_moment_without_a_timezone_is_refused_with_the_reason():
+    """Three reproduced failures, each lying about its cause: a naive
+    --focus-window compares False against every aware bucket and reports the
+    window missing from a range that plainly shows it; a naive --as-of is
+    read as UTC by the engine and anchors a complete report five hours off a
+    CT caller's meaning; a naive --reported-at dies in a TypeError inside
+    the elapsed arithmetic, three layers from the flag that caused it. The
+    door refuses instead, and names what is missing."""
+    with pytest.raises(SystemExit) as exc:
+        aw._parse_iso("2026-08-04T14:40:00")
+    assert "names no timezone" in str(exc.value)
+
+
+def test_a_zoned_moment_passes_in_either_spelling():
+    z = aw._parse_iso("2026-08-04T14:40:00Z")
+    offset = aw._parse_iso("2026-08-04T09:40:00-05:00")
+    assert z == offset  # the same moment, named from two zones
+
+
+def test_a_naive_reported_at_is_refused_at_the_door_not_in_the_probes():
+    # The guard sits before any transport call, so a refused moment never
+    # reaches the network -- which is also what pins it: were the guard
+    # removed, this endpoint would raise a connection error, not SystemExit.
+    with pytest.raises(SystemExit) as exc:
+        aw.build_observation("http://nowhere.invalid", "idx", "latency_ms", "@timestamp",
+                             "endpoint", 10, 6, reported_at="2026-08-04T14:50:00")
+    assert "names no timezone" in str(exc.value)

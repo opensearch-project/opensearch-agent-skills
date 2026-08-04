@@ -158,7 +158,23 @@ def _iso(dt):
 
 
 def _parse_iso(ts):
-    return datetime.fromisoformat(ts.replace("Z", "+00:00"))
+    """A moment without a zone is a different moment in every zone.
+
+    Refused rather than guessed, because each downstream failure lies about
+    the cause: a naive --focus-window compares False against every aware
+    bucket and reports the window missing from a range that plainly shows it;
+    a naive --as-of is read as UTC by the engine and anchors the whole scan
+    five hours off for a CT caller, producing a complete report about the
+    wrong moment; a naive --reported-at reaches the elapsed-time arithmetic
+    and dies in a TypeError. All three were reproduced before this guard.
+    """
+    dt = datetime.fromisoformat(ts.replace("Z", "+00:00"))
+    if dt.tzinfo is None:
+        raise SystemExit(
+            f"{ts!r} names no timezone. Add Z or an offset (+00:00, -05:00) "
+            f"so the window is anchored on the clock you mean -- a bare local "
+            f"time would be silently read as UTC, which is a different moment.")
+    return dt
 
 
 def discover_fields(endpoint, index, metric):
@@ -372,6 +388,12 @@ def ingest_lag_p50(endpoint, index, time_field, second_clock, gte, lt):
 
 def build_observation(endpoint, index, metric, time_field, dim, bucket_minutes, lookback_hours,
                       focus_window=None, reported_at=None, as_of=None):
+    # The zone check runs at the door for every caller-supplied moment.
+    # --focus-window and --as-of pass through _parse_iso on their own paths;
+    # reported_at is stored as a string and not parsed until the probes run,
+    # which is where a naive value used to surface as a TypeError.
+    if reported_at:
+        _parse_iso(reported_at)
     resolved, metric_types, date_fields = discover_fields(endpoint, index, metric)
     gte, lt, anchor, anchor_source = resolve_scan_window(
         endpoint, index, time_field, bucket_minutes, lookback_hours, as_of)
