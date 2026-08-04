@@ -33,6 +33,19 @@ Commands:
     create-flow-agentic-pipeline Create and attach a flow agent search pipeline
     create-conversational-agent-pipeline Create and attach a conversational agent pipeline with RAG
     search-docs            Search documentation via DuckDuckGo (default: opensearch.org)
+
+    cluster-health         Show cluster health summary
+    cluster-stats          Show cluster-wide statistics
+    allocation-explain     Explain why a shard is unassigned
+    list-shards            List shards by state (default: UNASSIGNED)
+    node-stats             Show per-node JVM, CPU, and circuit breaker stats
+    hot-threads            Capture hot thread snapshots for CPU diagnosis
+    reroute-retry          Retry all previously failed shard allocations
+    set-replicas           Set replica count for an index
+    clear-cache            Clear index caches
+    disk-usage             Show disk usage per node with watermark warnings
+    list-ism-policies      List all ISM policies on the cluster
+    apply-ism-policy       Attach an ISM policy to an existing index
 """
 
 import argparse
@@ -42,6 +55,9 @@ import sys
 
 # Ensure the scripts directory is on sys.path for lib/ imports
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+
+# Register cluster-operations commands
+import opensearch_ops_cluster as _cluster_ops
 
 
 def cmd_status(args):
@@ -624,6 +640,9 @@ def main():
     p.add_argument("--verdict", default="", help="Verdict as a JSON string")
     p.add_argument("--verdict-file", default="", help="Path to a JSON file with the verdict (alternative to --verdict)")
 
+    # cluster-operations sub-commands
+    _cluster_ops.register_commands(sub)
+
     args = parser.parse_args()
 
     dispatch = {
@@ -653,6 +672,7 @@ def main():
         "ingest-status": cmd_ingest_status,
         "eval-document": cmd_eval_document,
         "save-quality": cmd_save_quality,
+        **_cluster_ops.DISPATCH,
     }
 
     fn = dispatch.get(args.command)
