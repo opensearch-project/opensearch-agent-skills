@@ -97,6 +97,52 @@ def test_an_empty_percentile_is_inconclusive_not_zero(monkeypatch):
     assert median_rise is None
 
 
+def test_a_speedup_whose_median_fell_with_the_tail_is_confirmed_without_an_abs(monkeypatch):
+    """An automated review suggested the signed ratio needs abs() to survive an
+    audit of a speed-up. It does not: when both ends move the same way the signs
+    cancel, so the ratio is positive for exactly the runs where "uniform shift"
+    is true -- here -200/-1000 = +0.20, over the threshold. An abs() would do
+    damage instead: it would stamp the uniform-shift label on a window whose
+    median moved *against* the tail (the case two tests down)."""
+    def fake(endpoint, index, query, metric, percents):
+        return {"50.0": 300.0, "99.0": 900.0} if query == "FOCUS" else {"50.0": 500.0, "99.0": 1900.0}
+    monkeypatch.setattr(at, "_percentiles", fake)
+
+    node, median_rise = at._shape_node("e", "i", "latency_ms", "FOCUS", "BASE", -1000.0)
+    assert node.state is NodeState.CONFIRMED
+    assert median_rise == pytest.approx(-200.0)
+
+
+def test_a_speedup_whose_median_held_is_a_tail_only_event_too(monkeypatch):
+    # -2/-1000 = +0.002: far under the threshold, same verdict as the slow-down
+    # twin above. The sign of the effect never changes which side of the
+    # threshold a held median lands on.
+    def fake(endpoint, index, query, metric, percents):
+        return {"50.0": 498.0, "99.0": 900.0} if query == "FOCUS" else {"50.0": 500.0, "99.0": 1900.0}
+    monkeypatch.setattr(at, "_percentiles", fake)
+
+    node, median_rise = at._shape_node("e", "i", "latency_ms", "FOCUS", "BASE", -1000.0)
+    assert node.state is NodeState.RULED_OUT
+    assert "median held" in node.evidence
+
+
+def test_a_median_that_moved_against_the_tail_is_not_reported_as_held(monkeypatch):
+    """p99 fell by 1000ms while the median rose 150ms. The signed ratio is
+    negative, so the uniform-shift claim is refused -- that part was always
+    right. But the wording then said "the median held", on the same line as
+    numbers showing it moved. A report may not contradict its own evidence
+    line: both ends moved, and they moved apart. Say that instead."""
+    def fake(endpoint, index, query, metric, percents):
+        return {"50.0": 650.0, "99.0": 900.0} if query == "FOCUS" else {"50.0": 500.0, "99.0": 1900.0}
+    monkeypatch.setattr(at, "_percentiles", fake)
+
+    node, median_rise = at._shape_node("e", "i", "latency_ms", "FOCUS", "BASE", -1000.0)
+    assert node.state is NodeState.RULED_OUT
+    assert median_rise == pytest.approx(150.0)
+    assert "median held" not in node.evidence
+    assert "moved against" in node.evidence
+
+
 # --------------------------------------------------------------------------
 # The concentration probe
 # --------------------------------------------------------------------------
@@ -357,6 +403,25 @@ def test_the_sampler_drops_documents_missing_the_metric(monkeypatch):
     assert all("latency_ms" in r for r in rows)
     # And the drop is not silent: a document the sampler could not use counts
     # toward the window's total, so the sample reports itself as truncated.
+    assert truncated is True
+
+
+def test_a_floor_total_still_reads_as_the_truncation_it_is(monkeypatch):
+    """Past `track_total_hits` the engine stops counting and returns
+    {"value": 10000, "relation": "gte"} -- a floor, not a count. An automated
+    review asked whether a floor could make the flag under-read. It cannot:
+    this request never lowers `track_total_hits`, so the only floor the engine
+    can produce is 10,000, the cap keeps len(rows) at or under 5,000, and a
+    total known to be *at least* the floor is above the rows either way."""
+    hits = [{"_source": {"latency_ms": float(i), "endpoint": "/a"}} for i in range(50)]
+
+    def fake(endpoint, path, body=None):
+        return {"hits": {"total": {"value": 10000, "relation": "gte"}, "hits": hits}}
+
+    monkeypatch.setattr(at, "_request", fake)
+    rows, truncated = at._sample("http://c", "i", {"match_all": {}},
+                                 "latency_ms", ("endpoint",), cap=50)
+    assert len(rows) == 50
     assert truncated is True
 
 

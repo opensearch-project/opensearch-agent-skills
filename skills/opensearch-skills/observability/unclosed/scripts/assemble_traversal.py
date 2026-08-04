@@ -154,6 +154,11 @@ def _sample(endpoint, index, query, metric, dimensions, cap=SAMPLE_CAP, seed=SAM
         src = hit["_source"]
         if metric in src:
             rows.append(src)
+    # `total` can be a floor rather than a count: past `track_total_hits` the
+    # engine reports {"value": 10000, "relation": "gte"}. The comparison holds
+    # because this request never lowers `track_total_hits`, so the only floor
+    # the engine can produce (10,000) sits above every cap this module passes --
+    # a caller raising `cap` past it would have to revisit this line.
     return rows, bool(total and total > len(rows))
 
 
@@ -475,6 +480,17 @@ def _shape_node(endpoint, index, metric, focus_q, baseline_q, observed_effect):
                      probe="compared p50 and p99 across focus and baseline", explanatory=False,
                      evidence=ev + " -- a uniform shift. This says where to look next, "
                                    "and it is the observation restated, so it explains nothing on its own"),
+                median_shift)
+    # The ratio is signed on purpose: same-direction movement cancels signs and
+    # clears the threshold whichever way the incident points, so an audit of a
+    # speed-up needs no abs(). What a negative share past the threshold means is
+    # that both ends moved and moved apart -- which "the median held" would
+    # contradict on its own evidence line.
+    if share <= -MEDIAN_SHIFT_SHARE:
+        return (Node("the whole distribution moved, not just the tail", NodeState.RULED_OUT,
+                     probe="compared p50 and p99 across focus and baseline", explanatory=False,
+                     evidence=ev + " -- the median moved against the tail: not a uniform shift, and "
+                                   "not a tail-only event either; the two ends went opposite ways"),
                 median_shift)
     return (Node("the whole distribution moved, not just the tail", NodeState.RULED_OUT,
                  probe="compared p50 and p99 across focus and baseline", explanatory=False,
