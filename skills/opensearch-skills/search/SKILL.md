@@ -21,6 +21,7 @@ Category skill for building search applications with OpenSearch.
 | Skill | Description |
 |---|---|
 | [opensearch-launchpad](opensearch-launchpad/SKILL.md) | End-to-end search application builder — from sample data to a running search UI with BM25, semantic, hybrid, or agentic search |
+| [ai-search-tuner](ai-search-tuner/SKILL.md) | Benchmark and Pareto-tune an existing retrieval setup across dense k-NN, neural sparse, and hybrid — quality@k vs latency vs footprint — and recommend the cost-optimal config |
 
 ## When to Use
 
@@ -30,3 +31,10 @@ Read [opensearch-launchpad/SKILL.md](opensearch-launchpad/SKILL.md) when the use
 - Deploy ML models for semantic or hybrid search
 - Evaluate and tune search quality
 - Process documents (PDF, DOCX) for search ingestion
+
+Read [ai-search-tuner/SKILL.md](ai-search-tuner/SKILL.md) when the user wants to:
+- Tune an EXISTING retrieval configuration rather than build a new app
+- Choose HNSW / quantization settings that hold recall while cutting graph memory (OOM)
+- Set neural sparse `prune_ratio` / two-phase to shrink an oversized sparse index
+- Find the empirically optimal dense:sparse hybrid weight ratio
+- Detect silent recall/NDCG regressions before they reach production
