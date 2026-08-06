@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import base64
+import http.client
 import ipaddress
 import json
 import math
@@ -13,9 +14,14 @@ import ssl
 import sys
 from pathlib import Path
 from typing import Any
-from urllib.error import HTTPError, URLError
-from urllib.parse import parse_qsl, unquote, urlencode, urlsplit, urlunsplit
-from urllib.request import HTTPRedirectHandler, HTTPSHandler, Request, build_opener
+from urllib.parse import (
+    SplitResult,
+    parse_qsl,
+    unquote,
+    urlencode,
+    urlsplit,
+    urlunsplit,
+)
 
 from .core import (
     WorkflowError,
@@ -28,11 +34,67 @@ from .core import (
 _MAX_RESPONSE_BYTES = 1024 * 1024
 
 
-class _NoRedirectHandler(HTTPRedirectHandler):
-    def redirect_request(self, request, file_pointer, code, message, headers, new_url):
-        # Returning None makes urllib surface the 3xx as HTTPError. _probe_step
-        # records that response without replaying Authorization to Location.
-        return None
+class _PinnedHTTPConnection(http.client.HTTPConnection):
+    def __init__(
+        self,
+        host: str,
+        port: int,
+        address: ipaddress.IPv4Address | ipaddress.IPv6Address,
+        timeout: float,
+    ):
+        super().__init__(host, port=port, timeout=timeout)
+        self._pinned_address = address
+
+    def connect(self) -> None:
+        self.sock = _connect_pinned_address(
+            self._pinned_address, self.port, self.timeout
+        )
+
+
+class _PinnedHTTPSConnection(http.client.HTTPSConnection):
+    def __init__(
+        self,
+        host: str,
+        port: int,
+        address: ipaddress.IPv4Address | ipaddress.IPv6Address,
+        timeout: float,
+        context: ssl.SSLContext,
+    ):
+        super().__init__(host, port=port, timeout=timeout, context=context)
+        self._pinned_address = address
+
+    def connect(self) -> None:
+        raw_socket = _connect_pinned_address(
+            self._pinned_address, self.port, self.timeout
+        )
+        try:
+            self.sock = self._context.wrap_socket(
+                raw_socket, server_hostname=self.host
+            )
+        except Exception:
+            raw_socket.close()
+            raise
+
+
+def _connect_pinned_address(
+    address: ipaddress.IPv4Address | ipaddress.IPv6Address,
+    port: int,
+    timeout: float,
+) -> socket.socket:
+    family = socket.AF_INET6 if address.version == 6 else socket.AF_INET
+    connection = socket.socket(family, socket.SOCK_STREAM)
+    try:
+        connection.settimeout(timeout)
+        target = (
+            (str(address), port, 0, 0)
+            if family == socket.AF_INET6
+            else (str(address), port)
+        )
+        connection.connect(target)
+        return connection
+    except Exception:
+        connection.close()
+        raise
 
 
 def _load_json(path: Path) -> Any:
@@ -112,7 +174,9 @@ def _resolved_probe_addresses(
     return addresses
 
 
-def _validate_probe_url(base_url: str, allow_private_target: bool = False) -> None:
+def _probe_url_parts(
+    base_url: str,
+) -> tuple[SplitResult, ipaddress.IPv4Address | ipaddress.IPv6Address | None]:
     parts = urlsplit(base_url)
     scheme = parts.scheme.lower()
     host = (parts.hostname or "").lower()
@@ -144,6 +208,19 @@ def _validate_probe_url(base_url: str, allow_private_target: bool = False) -> No
             "probe refuses to send credentials over a non-HTTPS URL; "
             "plaintext HTTP is allowed only for loopback development clusters"
         )
+    if parts.query or parts.fragment:
+        raise WorkflowError("probe base URL must not contain a query or fragment")
+    return parts, literal_address
+
+
+def _validate_probe_url(
+    base_url: str, allow_private_target: bool = False
+) -> tuple[ipaddress.IPv4Address | ipaddress.IPv6Address, ...]:
+    parts, literal_address = _probe_url_parts(base_url)
+    scheme = parts.scheme.lower()
+    host = (parts.hostname or "").lower()
+    explicit_port = parts.port
+    is_literal_loopback = literal_address is not None and literal_address.is_loopback
     port = explicit_port or (443 if scheme == "https" else 80)
     addresses = (
         {literal_address}
@@ -172,20 +249,23 @@ def _validate_probe_url(base_url: str, allow_private_target: bool = False) -> No
             )
         if not address.is_global and not (address.is_private or address.is_loopback):
             raise WorkflowError("probe refuses non-global target addresses")
-    if parts.query or parts.fragment:
-        raise WorkflowError("probe base URL must not contain a query or fragment")
+    return tuple(sorted(addresses, key=lambda address: (address.version, int(address))))
 
 
-def _compose_probe_url(
-    base_url: str, path: str, allow_private_target: bool = False
-) -> str:
-    _validate_probe_url(base_url, allow_private_target)
+def _compose_probe_url(base_url: str, path: str) -> str:
+    base_parts, _ = _probe_url_parts(base_url)
     permission_path = _permission_check_path(path)
     if not permission_path.startswith("/") or permission_path.startswith("//"):
         raise WorkflowError("workflow step path must begin with exactly one slash")
-    base_parts = urlsplit(base_url)
     permission_parts = urlsplit(permission_path)
     base_path = base_parts.path.rstrip("/")
+    decoded_base_path = base_path
+    for _ in range(2):
+        decoded_base_path = unquote(decoded_base_path)
+    if "\\" in decoded_base_path or any(
+        segment in {".", ".."} for segment in decoded_base_path.split("/")
+    ):
+        raise WorkflowError("probe base URL path contains an unsafe segment")
     combined_path = base_path + permission_parts.path
     url = urlunsplit(
         (
@@ -243,43 +323,52 @@ def _probe_step(
     timeout: float,
     allow_private_target: bool = False,
 ) -> dict[str, Any]:
-    url = _compose_probe_url(base_url, step["path"], allow_private_target)
+    addresses = _validate_probe_url(base_url, allow_private_target)
+    url = _compose_probe_url(base_url, step["path"])
     _validate_credentials(username, password)
     body = step.get("body")
     data = None if body is None else json.dumps(body).encode("utf-8")
-    request = Request(url, data=data, method=str(step.get("method", "GET")).upper())
     token = base64.b64encode(f"{username}:{password}".encode("utf-8")).decode("ascii")
-    request.add_header("Authorization", f"Basic {token}")
-    request.add_header("Accept", "application/json")
+    headers = {"Authorization": f"Basic {token}", "Accept": "application/json"}
     if data is not None:
-        request.add_header("Content-Type", "application/json")
-    try:
-        opener = build_opener(
-            _NoRedirectHandler(), HTTPSHandler(context=_ssl_context(ca_cert))
-        )
-        with opener.open(request, timeout=timeout) as response:
+        headers["Content-Type"] = "application/json"
+    url_parts = urlsplit(url)
+    host = url_parts.hostname or ""
+    port = url_parts.port or (443 if url_parts.scheme == "https" else 80)
+    request_target = urlunsplit(("", "", url_parts.path or "/", url_parts.query, ""))
+    last_error: Exception | None = None
+    for address in addresses:
+        connection: http.client.HTTPConnection
+        if url_parts.scheme == "https":
+            connection = _PinnedHTTPSConnection(
+                host, port, address, timeout, _ssl_context(ca_cert)
+            )
+        else:
+            connection = _PinnedHTTPConnection(host, port, address, timeout)
+        try:
+            connection.request(
+                str(step.get("method", "GET")).upper(),
+                request_target,
+                body=data,
+                headers=headers,
+            )
+            response = connection.getresponse()
             try:
                 payload = _read_response_body(response)
             except WorkflowError as exc:
                 return {"response_error": str(exc), "status": response.status}
-            parsed = json.loads(payload) if payload else {}
+            try:
+                parsed = json.loads(payload) if payload else {}
+            except json.JSONDecodeError:
+                parsed = {"error_body": payload}
             if isinstance(parsed, dict):
                 parsed.setdefault("status", response.status)
             return parsed
-    except HTTPError as exc:
-        try:
-            payload = _read_response_body(exc)
-        except WorkflowError as error:
-            return {"response_error": str(error), "status": exc.code}
-        try:
-            parsed = json.loads(payload)
-        except json.JSONDecodeError:
-            parsed = {"error_body": payload}
-        if isinstance(parsed, dict):
-            parsed.setdefault("status", exc.code)
-        return parsed
-    except URLError as exc:
-        return {"connection_error": str(exc.reason), "status": 0}
+        except (OSError, ssl.SSLError, http.client.HTTPException) as exc:
+            last_error = exc
+        finally:
+            connection.close()
+    return {"connection_error": str(last_error), "status": 0}
 
 
 def _command_compile(args: argparse.Namespace) -> int:
@@ -308,7 +397,6 @@ def _command_probe(args: argparse.Namespace) -> int:
     base_url = args.url or os.getenv("OPENSEARCH_URL")
     if not base_url:
         raise WorkflowError("probe requires --url or OPENSEARCH_URL")
-    _validate_probe_url(base_url, args.allow_private_target)
     evidence = []
     connection_failures = []
     for step in workflow["steps"]:

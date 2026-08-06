@@ -426,6 +426,11 @@ def test_composed_probe_url_defends_single_slash_boundary(monkeypatch):
         _compose_probe_url("https://search.example.com", "/_search")
 
 
+def test_composed_probe_url_rejects_encoded_base_path_traversal():
+    with pytest.raises(WorkflowError, match="unsafe segment"):
+        _compose_probe_url("https://search.example.com/api%2f..", "/_search")
+
+
 def test_http_status_alone_does_not_infer_permission_outcome():
     evidence = parse_evidence_document(
         {"step_id": "search", "response": {"status": 200}}
@@ -558,6 +563,42 @@ def test_probe_url_private_opt_in_never_allows_metadata_resolution(monkeypatch):
         _validate_probe_url(
             "https://attacker-controlled.example", allow_private_target=True
         )
+
+
+def test_pinned_https_connection_preserves_tls_hostname(monkeypatch):
+    raw_socket = object()
+    wrapped_socket = object()
+    observed = {}
+
+    class Context:
+        def wrap_socket(self, sock, server_hostname):
+            observed["raw_socket"] = sock
+            observed["server_hostname"] = server_hostname
+            return wrapped_socket
+
+    def connect(address, port, timeout):
+        observed["address"] = address
+        observed["port"] = port
+        observed["timeout"] = timeout
+        return raw_socket
+
+    monkeypatch.setattr(compiler_cli, "_connect_pinned_address", connect)
+    address = compiler_cli.ipaddress.ip_address("8.8.8.8")
+    connection = compiler_cli._PinnedHTTPSConnection(
+        "search.example.com", 443, address, 4.0, Context()
+    )
+
+    connection.connect()
+
+    assert observed == {
+        "address": address,
+        "port": 443,
+        "timeout": 4.0,
+        "raw_socket": raw_socket,
+        "server_hostname": "search.example.com",
+    }
+    assert connection.host == "search.example.com"
+    assert connection.sock is wrapped_socket
 
 
 @pytest.mark.parametrize(
