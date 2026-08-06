@@ -184,14 +184,8 @@ def _permission_parse_warnings(response: Any) -> tuple[str, ...]:
 
 
 def _infer_allowed(response: Any) -> bool | None:
-    observed: set[bool] = set()
-    for value in _walk_json(response):
-        if isinstance(value, dict) and isinstance(value.get("accessAllowed"), bool):
-            observed.add(value["accessAllowed"])
-    if False in observed:
-        return False
-    if True in observed:
-        return True
+    if isinstance(response, dict) and isinstance(response.get("accessAllowed"), bool):
+        return response["accessAllowed"]
     return None
 
 

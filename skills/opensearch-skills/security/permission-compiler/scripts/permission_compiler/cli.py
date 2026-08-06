@@ -29,6 +29,8 @@ _MAX_RESPONSE_BYTES = 1024 * 1024
 
 class _NoRedirectHandler(HTTPRedirectHandler):
     def redirect_request(self, request, file_pointer, code, message, headers, new_url):
+        # Returning None makes urllib surface the 3xx as HTTPError. _probe_step
+        # records that response without replaying Authorization to Location.
         return None
 
 
@@ -103,10 +105,24 @@ def _validate_probe_url(base_url: str) -> None:
     except ValueError as exc:
         raise WorkflowError("probe base URL contains an invalid port") from exc
     is_literal_loopback = False
+    literal_address = None
     try:
-        is_literal_loopback = ipaddress.ip_address(host).is_loopback
+        literal_address = ipaddress.ip_address(host)
+        is_literal_loopback = literal_address.is_loopback
     except ValueError:
         pass
+    if literal_address is not None and (
+        literal_address.is_link_local
+        or literal_address.is_unspecified
+        or literal_address.is_multicast
+        or (literal_address.is_reserved and not literal_address.is_loopback)
+    ):
+        raise WorkflowError(
+            "probe refuses literal link-local, unspecified, multicast, or "
+            "reserved target addresses"
+        )
+    if host in {"metadata.google.internal", "metadata.azure.internal"}:
+        raise WorkflowError("probe refuses known cloud metadata hostnames")
     if scheme != "https" and not (scheme == "http" and is_literal_loopback):
         raise WorkflowError(
             "probe refuses to send credentials over a non-HTTPS URL; "

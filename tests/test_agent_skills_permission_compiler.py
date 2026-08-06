@@ -412,7 +412,7 @@ def test_http_status_alone_does_not_infer_permission_outcome():
     assert evidence[0].allowed is None
 
 
-def test_nested_access_allowed_is_detected_conservatively():
+def test_nested_access_allowed_does_not_decide_step_outcome():
     evidence = parse_evidence_document(
         {
             "step_id": "search",
@@ -424,7 +424,7 @@ def test_nested_access_allowed_is_detected_conservatively():
             },
         }
     )
-    assert evidence[0].allowed is False
+    assert evidence[0].allowed is None
 
 
 def test_missing_privileges_are_denied_without_http_status_inference():
@@ -468,6 +468,20 @@ def test_probe_url_requires_host_and_rejects_userinfo():
         _validate_probe_url("https:///opensearch")
     with pytest.raises(WorkflowError, match="user information"):
         _validate_probe_url("https://user@example.com")
+
+
+@pytest.mark.parametrize(
+    "url",
+    [
+        "https://169.254.169.254/latest/meta-data",
+        "https://[fe80::1]/",
+        "https://0.0.0.0/",
+        "https://metadata.google.internal/",
+    ],
+)
+def test_probe_url_rejects_metadata_and_special_use_targets(url):
+    with pytest.raises(WorkflowError, match="refuses"):
+        _validate_probe_url(url)
 
 
 @pytest.mark.parametrize(
