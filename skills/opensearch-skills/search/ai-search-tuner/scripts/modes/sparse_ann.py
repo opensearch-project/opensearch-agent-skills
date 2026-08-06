@@ -28,7 +28,10 @@ Verified parameters (per DESIGN.md §5, Mode B2, since 3.3+):
 - n_postings (ingest): max docs per posting list (default 0.0005 × seg doc count)
 - cluster_ratio (ingest): cluster granularity ((0,1), default 0.1)
 - summary_prune_ratio (ingest): cluster-summary weight retained ((0,1], default 0.4)
-- approximate_threshold (ingest): min seg docs to activate ANN (default 1,000,000)
+- approximate_threshold (ingest): min seg docs to activate ANN (default 1,000,000).
+  ⚠ BELOW this, segments are indexed as plain rank_features and queried EXACTLY —
+  heap_factor/top_n become no-ops and recall-vs-exact is trivially 1.0. Benchmarks
+  on <1M-doc samples MUST set this to 0 (we do) or they measure exact-vs-exact.
 - quantization_ceiling_ingest/search: weight → uint8 scaling
 - method_parameters.top_n (query): top query tokens retained (int, rec. 10)
 - method_parameters.heap_factor (query): cluster-selection recall/perf — the
@@ -207,7 +210,16 @@ class SparseAnnIndexBuilder(IndexBuilder):
                 }
 
             index_body = {
-                "settings": {"default_pipeline": pipeline_id, "number_of_shards": 1},
+                "settings": {
+                    "default_pipeline": pipeline_id,
+                    "number_of_shards": 1,
+                    # REQUIRED for SEISMIC: without index.sparse=true the
+                    # sparse_vector field is created but the SEISMIC token
+                    # structures don't engage, and a neural_sparse query fails at
+                    # parse time with "Query tokens should be valid integer".
+                    # (Verified on OpenSearch 3.8: false -> that error; true -> works.)
+                    "index.sparse": True,
+                },
                 "mappings": {
                     "properties": {
                         "id": {"type": "keyword"},
@@ -286,6 +298,15 @@ class SparseAnnQueryRunner(QueryRunner):
             # method_parameters on the neural_sparse clause.
             method_parameters = {**method_parameters, "quantization_ceiling_search": quant_search}
 
+        # The SEISMIC ANN layer returns at most `method_parameters.k` candidates
+        # per segment (default 10). If we leave it at 10 but request size=100, the
+        # result set is SILENTLY capped below the eval depth — deflating every
+        # recall@k number vs the exact reference (verified on 3.8: 40 matching
+        # docs, size=100 → 20 hits without k, 40 with k=100). So pin k to the
+        # result size so recall is measured at full depth.
+        SIZE = 100
+        method_parameters = {**method_parameters, "k": SIZE}
+
         per_query: list[QueryResult] = []
 
         for query in queries:
@@ -302,7 +323,7 @@ class SparseAnnQueryRunner(QueryRunner):
 
             query_body = {
                 "query": {"neural_sparse": {"sparse_vector": inner}},
-                "size": 100,
+                "size": SIZE,
             }
 
             resp = self.client.search(index_name, query_body)
@@ -461,35 +482,41 @@ class SparseAnnConfigGenerator(ConfigGenerator):
         base_summary_prune = 0.4
         base_top_n = 10
 
-        # 1) Sweep heap_factor first (the ef_search analog).
-        heap_factors = [0.5, 1.0, 1.5, 2.0]
-        for hf in heap_factors:
-            params: dict[str, Any] = {
-                "model_id": model_id,
-                "n_postings": base_n_postings,
-                "cluster_ratio": base_cluster_ratio,
-                "summary_prune_ratio": base_summary_prune,
-                "method_parameters": {"top_n": base_top_n, "heap_factor": hf},
-            }
-            if is_doc_only:
-                params["analyzer"] = "bert-uncased"
-            label = f"{model_id[:12]}-heap={hf}-npost={base_n_postings}"
-            configs.append(Config.make(self.mode, label, params))
+        # CRITICAL: force the SEISMIC ANN path to ENGAGE on the benchmark sample.
+        # SEISMIC only builds/uses its approximate structures once a segment holds
+        # >= approximate_threshold docs (default ~1,000,000); below that it
+        # SILENTLY scores exactly. We benchmark on a *sample*, which is far below
+        # 1M, so without lowering this the whole mode would measure exact-vs-exact
+        # (recall trivially 1.0) and heap_factor/top_n would be no-ops — verified
+        # on OpenSearch 3.8: with the default threshold, heap_factor=0.3 and 2.0
+        # return identical results; with approximate_threshold=0 they differ.
+        # We set 0 so ANN is active for any sample size; on a full production
+        # index the user can raise it via the emitted template.
+        base_approximate_threshold = 0
 
-        # 2) A couple of n_postings variants at mid heap_factor to surface the
-        #    index-size/recall knee (higher n_postings ⇒ better recall, bigger index).
-        for n_postings in (2000, 8000):
-            params = {
+        def _mk(model_id, n_postings, hf, top_n=base_top_n):
+            params: dict[str, Any] = {
                 "model_id": model_id,
                 "n_postings": n_postings,
                 "cluster_ratio": base_cluster_ratio,
                 "summary_prune_ratio": base_summary_prune,
-                "method_parameters": {"top_n": base_top_n, "heap_factor": 1.0},
+                "approximate_threshold": base_approximate_threshold,
+                "method_parameters": {"top_n": top_n, "heap_factor": hf},
             }
             if is_doc_only:
                 params["analyzer"] = "bert-uncased"
+            return params
+
+        # 1) Sweep heap_factor first (the ef_search analog).
+        for hf in [0.5, 1.0, 1.5, 2.0]:
+            label = f"{model_id[:12]}-heap={hf}-npost={base_n_postings}"
+            configs.append(Config.make(self.mode, label, _mk(model_id, base_n_postings, hf)))
+
+        # 2) A couple of n_postings variants at mid heap_factor to surface the
+        #    index-size/recall knee (higher n_postings ⇒ better recall, bigger index).
+        for n_postings in (2000, 8000):
             label = f"{model_id[:12]}-heap=1.0-npost={n_postings}"
-            configs.append(Config.make(self.mode, label, params))
+            configs.append(Config.make(self.mode, label, _mk(model_id, n_postings, 1.0)))
             if len(configs) >= 12:
                 break
 

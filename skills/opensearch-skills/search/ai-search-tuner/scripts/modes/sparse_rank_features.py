@@ -207,7 +207,7 @@ class SparseRankFeaturesIndexBuilder(IndexBuilder):
                 tp = _as_dict(two_phase)
                 proc_params = {
                     k: tp[k]
-                    for k in ("prune_ratio", "expansion_rate", "max_window_size")
+                    for k in ("prune_type", "prune_ratio", "expansion_rate", "max_window_size")
                     if k in tp
                 }
                 try:

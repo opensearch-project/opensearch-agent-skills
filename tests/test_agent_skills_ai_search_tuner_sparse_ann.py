@@ -426,3 +426,66 @@ def test_lower_top_n_cuts_latency(fake_client, corpus, queries, capabilities):
         return ms[0].latency_p95_ms
 
     assert p95_for(5) < p95_for(10), "lower top_n should reduce latency"
+
+
+# --- Regression: silent-trap guards (audit 2026-08, verified on OpenSearch 3.8) ---
+
+
+def test_seed_configs_force_approximate_threshold_zero(capabilities, corpus):
+    """SEISMIC only activates ANN above approximate_threshold (default 1,000,000);
+    below it, segments score EXACTLY and heap_factor/top_n are silent no-ops. Every
+    seed config MUST pin approximate_threshold=0 so the sample-sized benchmark
+    measures real ANN, not exact-vs-exact."""
+    gen = SparseAnnConfigGenerator()
+    configs = gen.seed_configs(capabilities, corpus)
+    assert configs
+    for c in configs:
+        params = dict(c.params)
+        assert params.get("approximate_threshold") == 0, (
+            f"{c.label} must set approximate_threshold=0 (got "
+            f"{params.get('approximate_threshold')!r}) or SEISMIC silently scores exactly"
+        )
+
+
+def test_index_builder_sets_index_sparse_true(fake_client, corpus, capabilities):
+    """The SEISMIC index MUST be created with settings index.sparse=true; without
+    it, neural_sparse queries fail with 'Query tokens should be valid integer'."""
+    plugin = SparseAnnPlugin()
+    builder = plugin.index_builder(fake_client)
+    config = SparseAnnConfigGenerator().seed_configs(capabilities, corpus)[0]
+    with builder.build(config, corpus) as built:
+        body = fake_client.indices[built.index_name]["body"]
+        settings = body.get("settings", {})
+        assert settings.get("index.sparse") is True, (
+            f"index must set index.sparse=true; got settings={settings}"
+        )
+
+
+def test_query_runner_pins_k_to_result_size(fake_client, corpus, capabilities):
+    """The ANN layer returns at most method_parameters.k candidates per segment
+    (default 10). Leaving k=10 while size>10 silently truncates results below the
+    eval depth and deflates recall. The runner must pin k to the result size."""
+    plugin = SparseAnnPlugin()
+    builder = plugin.index_builder(fake_client)
+    runner = plugin.query_runner(fake_client)
+
+    captured = {}
+    orig_search = fake_client.search
+
+    def capture(index, body, params=None):
+        mp = body.get("query", {}).get("neural_sparse", {}).get("sparse_vector", {}).get("method_parameters", {})
+        captured["k"] = mp.get("k")
+        captured["size"] = body.get("size")
+        return orig_search(index, body, params)
+
+    fake_client.search = capture
+    config = SparseAnnConfigGenerator().seed_configs(capabilities, corpus)[0]
+    with builder.build(config, corpus) as built:
+        runner.run(built, QuerySet([Query(id="q1", text="neural sparse search")]))
+    fake_client.search = orig_search
+
+    assert captured.get("k") is not None, "SEISMIC query must set method_parameters.k"
+    assert captured["k"] == captured["size"], (
+        f"k ({captured['k']}) must equal result size ({captured['size']}) so ANN "
+        f"returns enough candidates for recall@size"
+    )

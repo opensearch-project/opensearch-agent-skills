@@ -356,3 +356,51 @@ if __name__ == "__main__":
     test_config_generator_caps_count()
     test_config_generator_sweeps_ef_search_first()
     print("\n✅ All tests passed!")
+
+
+# --- Regression: quantization multi-ef sweep + refine escalation (2026-08 review) ---
+
+def _dense_cfg_labels(cap, corpus):
+    from dense_knn import DenseConfigGenerator
+    return [c.label for c in DenseConfigGenerator().seed_configs(cap, corpus)]
+
+
+def test_quant_encoder_tested_at_multiple_ef_search():
+    """fp16 must be swept at BOTH a low and high ef_search so the agent can tell
+    quantization precision loss (recall flat across ef) from traversal loss —
+    without hand-writing a follow-up sweep (the friction seen in review)."""
+    from model import Capabilities
+    from corpus import Corpus, Document
+    cap = Capabilities(version="3.8.0", dense_knn=True, quantization=("fp32", "fp16"))
+    corpus = Corpus(documents=[Document(id=f"d{i}", vector=[0.1, 0.2, 0.3, 0.4]) for i in range(5)], dim=4)
+    fp16_efs = sorted(
+        int(lbl.split("efs")[1]) for lbl in _dense_cfg_labels(cap, corpus) if lbl.startswith("fp16-")
+    )
+    assert len(fp16_efs) >= 2, f"fp16 must be tested at >=2 ef_search values, got {fp16_efs}"
+    assert min(fp16_efs) < max(fp16_efs), "fp16 ef_search points must span low..high"
+
+
+def test_refine_escalates_ef_search_when_floor_unmet():
+    """When no config meets the recall floor, dense refine() proposes higher
+    ef_search on the best config (one-shot); returns [] otherwise."""
+    from dense_knn import DenseConfigGenerator
+    from model import Config, Cost, Measurement, Metric, Mode, QualityScore
+
+    def meas(label, ef, recall):
+        q = QualityScore(by_metric_k={(Metric.RECALL, 10): recall})
+        cfg = Config.make(Mode.DENSE_KNN, label, {"m": 16, "ef_construction": 100, "ef_search": ef, "encoder": "fp32"})
+        return Measurement(config=cfg, quality=q, latency_p50_ms=1, latency_p95_ms=1, latency_p99_ms=1, cost=Cost())
+
+    gen = DenseConfigGenerator()
+    gen._refined = False
+    # nothing meets floor 0.95 -> escalate
+    unmet = [meas("fp32-m16-efc100-efs400", 400, 0.90)]
+    follow = gen.refine(unmet, quality_floor=0.95, latency_budget_ms=None)
+    assert follow, "expected ef_search escalation when floor unmet"
+    assert all(dict(c.params)["ef_search"] > 400 for c in follow)
+    assert gen.refine(unmet, 0.95, None) == []  # one-shot: stop on 2nd call
+
+    # something already meets floor -> no refine
+    gen2 = DenseConfigGenerator(); gen2._refined = False
+    met = [meas("fp32-m16-efc100-efs100", 100, 0.99)]
+    assert gen2.refine(met, quality_floor=0.95, latency_budget_ms=None) == []

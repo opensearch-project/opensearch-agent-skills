@@ -62,6 +62,35 @@ class RealOSClient:
     def __init__(self, client: Any):
         self._c = client
 
+    @staticmethod
+    def _autodetect_localhost_url() -> str:
+        """Return a reachable localhost:9200 URL, probing HTTP then HTTPS.
+
+        Defaults to http://localhost:9200 if neither responds (the most common
+        local dev setup), so behavior is deterministic when no cluster is up.
+        """
+        import urllib.request
+        import urllib.error
+        import ssl
+
+        ctx = ssl.create_default_context()
+        ctx.check_hostname = False
+        ctx.verify_mode = ssl.CERT_NONE
+        for cand in ("http://localhost:9200", "https://localhost:9200"):
+            try:
+                kw = {"timeout": 2}
+                if cand.startswith("https"):
+                    kw["context"] = ctx
+                with urllib.request.urlopen(urllib.request.Request(cand), **kw):
+                    return cand
+            except urllib.error.HTTPError:
+                # An HTTP error (e.g. 401 on a secured cluster) still means the
+                # endpoint is REACHABLE at this scheme — use it.
+                return cand
+            except Exception:
+                continue
+        return "http://localhost:9200"
+
     @classmethod
     def from_env(cls) -> "RealOSClient":
         try:
@@ -71,9 +100,29 @@ class RealOSClient:
                 "opensearch-py is required for live runs: pip install opensearch-py"
             ) from e
 
-        url = os.environ.get("OPENSEARCH_URL", "https://localhost:9200")
+        # Resolve the cluster URL. If OPENSEARCH_URL is unset, auto-detect the
+        # scheme on localhost:9200 rather than blindly defaulting to HTTPS — a
+        # local dev cluster (gradlew run / security disabled) speaks plain HTTP,
+        # and defaulting to HTTPS made the very first probe fail and forced the
+        # agent to diagnose + retry. We probe HTTP first (the common dev case),
+        # then HTTPS, and fall back to HTTP if neither answers.
+        url = os.environ.get("OPENSEARCH_URL")
+        if not url:
+            url = cls._autodetect_localhost_url()
         verify = os.environ.get("OPENSEARCH_VERIFY_CERTS", "true").lower() != "false"
-        kwargs: dict[str, Any] = {"hosts": [url], "verify_certs": verify, "ssl_show_warn": False}
+        # A local HTTPS dev cluster uses a self-signed cert; don't fail on it
+        # unless the user explicitly asked to verify.
+        if url.startswith("https://localhost") and "OPENSEARCH_VERIFY_CERTS" not in os.environ:
+            verify = False
+        # Generous timeout + retries: bulk-indexing through a neural-sparse /
+        # embedding ingest pipeline runs model inference per doc and can far
+        # exceed the 10s default on larger corpora (the default timed out on a
+        # 1.5k-doc SPLADE bulk). Override via OPENSEARCH_TIMEOUT (seconds).
+        timeout = int(os.environ.get("OPENSEARCH_TIMEOUT", "120"))
+        kwargs: dict[str, Any] = {
+            "hosts": [url], "verify_certs": verify, "ssl_show_warn": False,
+            "timeout": timeout, "max_retries": 3, "retry_on_timeout": True,
+        }
 
         api_key = os.environ.get("OPENSEARCH_API_KEY")
         user = os.environ.get("OPENSEARCH_USERNAME")
@@ -154,12 +203,27 @@ class RealOSClient:
     def delete_index(self, index: str) -> dict[str, Any]:
         return self._c.indices.delete(index=index, ignore=[404])
 
-    def bulk(self, index: str, docs: list[dict[str, Any]]) -> dict[str, Any]:
-        lines: list[dict[str, Any]] = []
-        for d in docs:
-            lines.append({"index": {"_index": index, "_id": d.get("id")}})
-            lines.append(d)
-        return self._c.bulk(body=lines, refresh=False)
+    def bulk(self, index: str, docs: list[dict[str, Any]], chunk_size: int = 1000) -> dict[str, Any]:
+        """Index docs, splitting into chunks so no single request body is huge.
+
+        Sending the whole corpus in ONE _bulk body breaks on any realistic
+        dense corpus: the body easily exceeds http.max_content_length (default
+        100mb -> HTTP 413), and buffering a multi-hundred-MB request on the node
+        can OOM a small single-node cluster. We split by document count
+        (chunk_size docs per request) which bounds both the request size and the
+        node's transient memory. Returns the LAST chunk's response (callers use
+        it only for error propagation; opensearch-py raises on transport errors).
+        """
+        last_resp: dict[str, Any] = {}
+        for start in range(0, len(docs), chunk_size):
+            batch = docs[start:start + chunk_size]
+            lines: list[dict[str, Any]] = []
+            for d in batch:
+                lines.append({"index": {"_index": index, "_id": d.get("id")}})
+                lines.append(d)
+            if lines:
+                last_resp = self._c.bulk(body=lines, refresh=False)
+        return last_resp
 
     def refresh(self, index: str) -> dict[str, Any]:
         return self._c.indices.refresh(index=index)

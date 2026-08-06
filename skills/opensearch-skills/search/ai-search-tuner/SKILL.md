@@ -1,16 +1,20 @@
 ---
 name: ai-search-tuner
 description: >
-  Benchmark and Pareto-tune OpenSearch retrieval configurations across dense k-NN,
-  neural sparse, and hybrid modes. Measures quality@k (Recall/NDCG/MAP) vs latency
-  vs footprint, detects silent recall regressions, and recommends cost-optimal
-  settings. Use when tuning OpenSearch vector search, k-NN recall, neural sparse
-  prune_ratio, hybrid normalization weights, or investigating HNSW quantization
-  tradeoffs. Generates the exact index template and search pipeline JSON for the
-  winning config. Read-only by default, runs on temporary sample indices, requires
-  confirmation for production writes. Keywords: OpenSearch retrieval tuning, vector
-  search optimization, k-NN recall, neural sparse pruning, hybrid search weights,
-  HNSW graph memory, dense quantization, NDCG at k, Pareto frontier.
+  Benchmark and Pareto-tune OpenSearch retrieval across dense k-NN, neural
+  sparse, and hybrid modes. Measures quality@k (Recall/NDCG/MAP) vs latency vs
+  footprint, detects silent recall regressions, and recommends the cost-optimal
+  config — emitting the exact index template and search-pipeline JSON. Read-only
+  by default; runs on temporary sample indices. Use this skill when the user
+  wants to tune or benchmark an EXISTING retrieval setup (not build a new app):
+  choose HNSW/quantization that holds recall while cutting graph memory (OOM),
+  set neural sparse prune_ratio to shrink an oversized index, tune SEISMIC
+  heap_factor, find the optimal dense:sparse hybrid weight ratio, catch silent
+  recall/NDCG regressions before production, or get a Pareto-optimal
+  quality-vs-latency-vs-footprint recommendation rather than one config.
+  Keywords: OpenSearch retrieval tuning, vector search optimization, k-NN recall,
+  neural sparse pruning, hybrid search weights, HNSW graph memory, dense
+  quantization, NDCG at k, Pareto frontier.
 compatibility: Requires uv and a running OpenSearch cluster with the k-NN plugin. Neural sparse and hybrid modes additionally require the neural-search plugin and a deployed ML model; sparse ANN (SEISMIC) requires OpenSearch 3.3+.
 metadata:
   author: zirui-song-18
@@ -135,6 +139,42 @@ The agent will:
    benchmarks (pruning sweep) and hybrid (weight sweep).
 4. Return the winning index template or search-pipeline JSON with the
    recommendation.
+
+### Running it (agent quick-start — read this before shelling out)
+
+Run the orchestrator; it prints per-config tables and (with `--report`) an HTML
+Pareto. **Do not hand-write your own benchmark script — the CLI already sweeps
+each mode and refines. Just pick the flags:**
+
+```bash
+# From the skill dir. localhost cluster is auto-detected (HTTP/HTTPS) — you do
+# NOT need to set OPENSEARCH_URL for a local cluster.
+python3 scripts/ai_search_tuner_cli.py \
+  --corpus assets/scifact/corpus.jsonl \
+  --queries assets/scifact/queries.jsonl \   # explicit labeled queries (ids match --qrels)
+  --qrels  assets/scifact/qrels.json \
+  --modes dense_knn \                         # comma list; omit to run all supported
+  --k 10 --quality-floor 0.95 \               # floor drives flagging + refine()
+  --report /tmp/report.html
+```
+
+- **Connection:** a local cluster on `localhost:9200` is auto-detected (HTTP
+  first, then HTTPS; self-signed certs accepted). Only set env vars for a remote
+  or secured cluster: `OPENSEARCH_URL`, `OPENSEARCH_USERNAME`/`PASSWORD` or
+  `OPENSEARCH_API_KEY`, or `OPENSEARCH_AWS_REGION` (SigV4).
+- **Slow modes:** sparse / hybrid index every doc through the ML model, so a
+  few-thousand-doc corpus takes minutes. Set `OPENSEARCH_TIMEOUT=300` and be
+  patient; for a fast demo use `--modes dense_knn` (seconds) or a smaller corpus.
+- **Per-mode metric:** dense & sparse-ANN report **recall@k vs exact**; sparse
+  `rank_features` & hybrid report **NDCG@k** (they're exact / relevance-graded).
+  A config below the floor is tagged `silent-quality-drop` — that's the #21
+  detector, not an error.
+- **Quantization reads:** the dense sweep already tests fp16 at a low AND high
+  `ef_search`. If fp16 recall stays flat across both, it's precision loss that
+  ef_search can't recover — recommend fp32. (You don't need to re-test this.)
+- **Reading results programmatically** (if you inspect `Measurement` objects
+  directly instead of the printed table): quality = `m.quality.get(Metric.RECALL, k)`
+  or `Metric.NDCG`; latency = `m.latency_p95_ms`; footprint = `m.cost.primary_bytes()`.
 
 ## Safety model
 
@@ -291,20 +331,6 @@ Plus the search-pipeline JSON with `normalization_processor` (min_max) and
   *sample* only; document scale caveats in reports.
 - **Config-space pruning** is agentic but greedy; exhaustive Cartesian sweeps
   are out of scope.
-
-## When to use this skill
-
-- You're configuring OpenSearch vector search (dense k-NN, sparse, hybrid) and
-  need empirical guidance.
-- You've hit HNSW graph OOM or heap pressure and want to evaluate quantization
-  tradeoffs without guessing.
-- Your sparse index is 4–7× larger than BM25 and you want to tune
-  `prune_ratio`.
-- You're combining dense + sparse and need to find the optimal weight ratio.
-- You want to detect silent recall regressions before they reach production
-  (the tool flags any config below a quality threshold).
-- You need a Pareto-optimal recommendation trading quality against latency and
-  footprint, not a single "best" config.
 
 ## Further reading
 

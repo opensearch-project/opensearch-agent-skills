@@ -78,6 +78,26 @@ def load_corpus(path: str | Path) -> Corpus:
     return Corpus(documents=docs, dim=dim)
 
 
+def load_queries(path: str | Path) -> QuerySet:
+    """Load an explicit query set from JSON/JSONL: {"id","text","vector"?} per row.
+
+    Use this for real labeled evaluation (e.g. a BEIR query set) whose ids match
+    the keys in a --qrels file, instead of the default of sampling held-out
+    documents from the corpus as queries.
+    """
+    p = Path(path)
+    text = p.read_text()
+    rows = (
+        [json.loads(line) for line in text.splitlines() if line.strip()]
+        if p.suffix == ".jsonl"
+        else json.loads(text)
+    )
+    return QuerySet(queries=[
+        Query(id=str(r["id"]), text=r.get("text"), vector=r.get("vector"))
+        for r in rows
+    ])
+
+
 def _iter_docs(path: Path) -> Iterator[Document]:
     text = path.read_text()
     if path.suffix == ".jsonl":

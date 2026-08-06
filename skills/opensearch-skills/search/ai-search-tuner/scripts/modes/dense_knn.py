@@ -31,10 +31,11 @@ from __future__ import annotations
 
 import hashlib
 import logging
+import time
 from contextlib import contextmanager
 from typing import TYPE_CHECKING, Any
 
-from model import Capabilities, Config, Cost, Mode, QueryResult, RunResult
+from model import Capabilities, Config, Cost, Metric, Mode, QueryResult, RunResult
 from interfaces import (
     BuiltConfig,
     ConfigGenerator,
@@ -167,6 +168,19 @@ class DenseIndexBuilder(IndexBuilder):
                 self.client.bulk(index_name, docs_to_index)
                 self.client.refresh(index_name)
                 logger.info(f"Indexed {len(docs_to_index)} vectors into {index_name}")
+
+            # Readiness gate: a freshly created+bulked index can briefly 404 on
+            # the FIRST search while the shard/mapping becomes visible on a busy
+            # node (observed intermittently on a shared cluster — it silently
+            # dropped a config from the sweep and even shifted the recommended
+            # value). Poll a cheap size:0 search until it answers before we hand
+            # the index to the query phase. Best-effort: bounded, never fatal.
+            for _attempt in range(20):
+                try:
+                    self.client.search(index_name, {"size": 0, "query": {"match_all": {}}})
+                    break
+                except Exception:  # not-yet-visible / transient — retry
+                    time.sleep(0.25)
 
             # Yield control (pass dim in extra for CostProbe)
             built = BuiltConfig(
@@ -486,8 +500,19 @@ class DenseConfigGenerator(ConfigGenerator):
 
     mode = Mode.DENSE_KNN
 
+    # ef_search escalation ladder for refine() — the cheap, query-time recall
+    # dial. Larger values recover HNSW *traversal* loss (but NOT quantization
+    # precision loss), so refine can distinguish the two by whether recall moves.
+    _REFINE_EF_SEARCH = (800, 1600)
+
+    def __init__(self) -> None:
+        # refine() proposes its escalation at most once, then returns [] so the
+        # CLI's refine loop terminates deterministically.
+        self._refined = False
+
     def seed_configs(self, cap: Capabilities, corpus: Corpus) -> list[Config]:
         """Generate initial config sweep."""
+        self._refined = False
         configs = []
 
         # Baseline build params (sweep these only if recall floor unmet)
@@ -513,48 +538,82 @@ class DenseConfigGenerator(ConfigGenerator):
                 )
             )
 
-        # Add quantized encoders at mid ef_search (if supported by cluster).
-        # Only emit encoders the IndexBuilder can actually MAP to a Lucene
-        # mapping (fp16→sq/bits=7, binary→sq/bits=1); otherwise we'd label a
-        # config e.g. "int8-..." that silently builds as fp32. probe only ever
-        # reports fp32/fp16 today, so this just future-proofs a hand-built cap.
+        # Add quantized encoders at BOTH a low and a high ef_search. Testing a
+        # quantized encoder at a single ef_search is a trap: quantization recall
+        # loss looks worst at low ef_search, so a single mid point can't tell
+        # "precision loss" (recall stays low even at high ef_search) from
+        # "traversal loss" (recall recovers as ef_search rises). Sweeping two
+        # points surfaces that distinction directly — the recommender then knows
+        # whether spending ef_search buys the cheaper encoder back to the floor.
+        # Only emit encoders the IndexBuilder can MAP to a Lucene mapping
+        # (fp16→sq/bits=7, binary→sq/bits=1); probe reports fp32/fp16 today.
         buildable = {"fp16", "binary"}
-        mid_ef_search = 100
+        quant_ef_search = [100, 400]  # low + high, to expose precision-vs-traversal
         supported_encoders = [
             enc for enc in cap.quantization
             if enc.lower() != "fp32" and enc.lower() in buildable
         ]
 
         for encoder in supported_encoders:
-            configs.append(
-                Config.make(
-                    mode=Mode.DENSE_KNN,
-                    label=f"{encoder}-m{m_baseline}-efc{ef_construction_baseline}-efs{mid_ef_search}",
-                    params={
-                        "m": m_baseline,
-                        "ef_construction": ef_construction_baseline,
-                        "ef_search": mid_ef_search,
-                        "encoder": encoder,
-                        "k": 10,
-                    },
+            for ef_search in quant_ef_search:
+                configs.append(
+                    Config.make(
+                        mode=Mode.DENSE_KNN,
+                        label=f"{encoder}-m{m_baseline}-efc{ef_construction_baseline}-efs{ef_search}",
+                        params={
+                            "m": m_baseline,
+                            "ef_construction": ef_construction_baseline,
+                            "ef_search": ef_search,
+                            "encoder": encoder,
+                            "k": 10,
+                        },
+                    )
                 )
-            )
 
         # Cap at 12 configs (design constraint)
         return configs[:12]
 
     def refine(
-        self, measured, quality_floor: float, latency_budget_ms: float | None
+        self, measured, quality_floor: float | None, latency_budget_ms: float | None
     ) -> list[Config]:
-        """Propose follow-up configs if quality floor not met.
+        """Escalate ef_search when nothing met the recall floor (DESIGN §7).
 
-        If the best config doesn't meet the recall floor, propose higher ef_search
-        or larger m. If already at limits, return [] to stop.
+        ef_search is the cheapest recall dial (query-time, zero extra heap). If no
+        seed config cleared the floor, re-test the highest-recall config at much
+        larger ef_search. This also disambiguates the failure mode: if recall
+        rises, the seed just under-searched (traversal loss); if it stays flat,
+        it's quantization precision loss that ef_search can't fix (e.g. fp16 on
+        high-dim vectors) — either way the recommender then has the evidence.
 
-        For MVP, we keep this simple: no refinement (seed_configs is sufficient).
+        Returns [] (stop) when: no floor set, everything already met the floor, or
+        we've already escalated once.
         """
-        # MVP: no adaptive refinement; seed_configs covers the space
-        return []
+        if self._refined or not quality_floor or not measured:
+            return []
+        # If something already clears the floor, no escalation needed.
+        best = max(measured, key=lambda m: (m.quality.get(Metric.RECALL, 10) or 0.0))
+        if (best.quality.get(Metric.RECALL, 10) or 0.0) >= quality_floor:
+            return []
+        self._refined = True
+
+        base = best.config.as_dict()
+        base_ef = base.get("ef_search", 100)
+        follow_ups: list[Config] = []
+        for ef in self._REFINE_EF_SEARCH:
+            if ef <= base_ef:
+                continue
+            params = dict(base)
+            params["ef_search"] = ef
+            enc = params.get("encoder", "fp32")
+            label = f"{enc}-m{params.get('m')}-efc{params.get('ef_construction')}-efs{ef}"
+            follow_ups.append(Config.make(Mode.DENSE_KNN, label, params))
+        if follow_ups:
+            logger.info(
+                "dense refine: best recall %.3f < floor %.2f; escalating ef_search to %s",
+                best.quality.get(Metric.RECALL, 10) or 0.0, quality_floor,
+                [ef for ef in self._REFINE_EF_SEARCH if ef > base_ef],
+            )
+        return follow_ups
 
 
 # ============================= ModePlugin =============================

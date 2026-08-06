@@ -103,6 +103,16 @@ SEISMIC cluster-based approximate scoring over sparse vectors. **Approximate**
 | `quantization_ceiling_search` | float | Weight → uint8 scaling at query | float | 3.3 | Sparse ANN docs |
 | `method_parameters.top_n` (query) | int | Top query tokens retained | int, typical 10 | 3.3 | Sparse ANN docs |
 | `method_parameters.heap_factor` (query) | float | Cluster-selection recall/perf — **the `ef_search` analog for sparse ANN** | float, default 1.0, typical [0.5, 2.0] | 3.3 | Sparse ANN docs |
+| `method_parameters.k` (query) | int | Candidates the ANN layer returns per segment | int, default 10 | 3.3 | Sparse ANN docs |
+
+> ⚠ **Two silent traps (both verified on 3.8, both handled in code):**
+> 1. **`approximate_threshold`** — below it, segments are stored as plain
+>    `rank_features` and queried **exactly**, so `heap_factor`/`top_n` do nothing
+>    and recall-vs-exact is trivially 1.0. Benchmarking on a <1M-doc sample MUST
+>    set it to `0` (the tool does) or the whole mode measures exact-vs-exact.
+> 2. **`method_parameters.k`** (default 10) — caps ANN candidates per segment. If
+>    left at 10 while `size` > 10, results are silently truncated below the eval
+>    depth, deflating recall. The tool pins `k` to the result size.
 
 **Quality reference:** EXACT `rank_features` scoring on same tokens.
 

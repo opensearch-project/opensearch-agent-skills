@@ -37,7 +37,7 @@ for _p in (_SCRIPTS, _SCRIPTS / "harness", _SCRIPTS / "modes"):
 
 # Flat imports (dirs added to sys.path just above).
 from model import Capabilities, Measurement, Metric, Mode
-from corpus import load_corpus, load_qrels, sample_queries_from_corpus
+from corpus import load_corpus, load_qrels, load_queries, sample_queries_from_corpus
 import probe as probe_mod
 from runner import benchmark
 from pareto import recommend, flag_regressions
@@ -119,8 +119,13 @@ def run(args: argparse.Namespace) -> dict[Mode, list[Measurement]]:
     cap = probe_mod.detect_capabilities(client)
     logger.info("\n%s", probe_mod.capability_summary(cap))
 
-    # Queries: sampled from corpus unless the corpus has none to sample.
-    queries = sample_queries_from_corpus(corpus, n=args.num_queries, seed=args.seed)
+    # Queries: an explicit query set (real labeled eval, ids matching --qrels)
+    # takes precedence; otherwise sample held-out documents from the corpus.
+    if args.queries:
+        queries = load_queries(args.queries)
+        logger.info("loaded %d explicit queries from %s", len(queries), args.queries)
+    else:
+        queries = sample_queries_from_corpus(corpus, n=args.num_queries, seed=args.seed)
     if len(queries) == 0:
         logger.error("no queries could be derived from the corpus; aborting")
         return {}
@@ -220,10 +225,12 @@ def run(args: argparse.Namespace) -> dict[Mode, list[Measurement]]:
     # Output — render each mode on its own ranking metric (no RECALL/NDCG mixup).
     print(report_mod.text_summary(results, recommendations, mode_metric, args.k))
     if args.report:
+        meta = {"corpus_docs": len(corpus), "queries": len(queries),
+                "version": cap.version, "qrels": bool(qrels)}
+        if args.quality_floor is not None:
+            meta["quality_floor"] = args.quality_floor
         html = report_mod.render_html(
-            results, recommendations, mode_metric, args.k,
-            meta={"corpus_docs": len(corpus), "queries": len(queries),
-                  "version": cap.version, "qrels": bool(qrels)},
+            results, recommendations, mode_metric, args.k, meta=meta,
         )
         Path(args.report).write_text(html)
         logger.info("wrote HTML report → %s", args.report)
@@ -239,6 +246,8 @@ def main(argv: list[str] | None = None) -> int:
     )
     p.add_argument("--corpus", required=True, help="JSON/JSONL corpus (minimum input)")
     p.add_argument("--qrels", help="optional relevance judgments (unlocks NDCG/MAP)")
+    p.add_argument("--queries", help="optional explicit query set (JSON/JSONL: id/text/vector); "
+                                     "ids should match --qrels. Default: sample held-out corpus docs.")
     p.add_argument("--modes", help="comma list: dense_knn,sparse_rank_features,... (default: all supported)")
     p.add_argument("--k", type=int, default=10, help="the k for quality@k ranking (default 10)")
     p.add_argument("--num-queries", type=int, default=50, dest="num_queries",
