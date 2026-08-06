@@ -4,6 +4,7 @@ import argparse
 import importlib
 import io
 import json
+import socket
 import ssl
 import sys
 import threading
@@ -44,6 +45,26 @@ from permission_compiler.core import (
     validate_workflow,
     verify_workflow,
 )
+
+
+@pytest.fixture(autouse=True)
+def stable_public_probe_dns(monkeypatch):
+    real_getaddrinfo = socket.getaddrinfo
+
+    def getaddrinfo(host, port, *args, **kwargs):
+        if host == "search.example.com":
+            return [
+                (
+                    socket.AF_INET,
+                    socket.SOCK_STREAM,
+                    socket.IPPROTO_TCP,
+                    "",
+                    ("8.8.8.8", port),
+                )
+            ]
+        return real_getaddrinfo(host, port, *args, **kwargs)
+
+    monkeypatch.setattr(compiler_cli.socket, "getaddrinfo", getaddrinfo)
 
 
 def workflow():
@@ -482,6 +503,61 @@ def test_probe_url_requires_host_and_rejects_userinfo():
 def test_probe_url_rejects_metadata_and_special_use_targets(url):
     with pytest.raises(WorkflowError, match="refuses"):
         _validate_probe_url(url)
+
+
+def test_probe_url_rejects_hostname_resolving_to_private_address(monkeypatch):
+    monkeypatch.setattr(
+        compiler_cli.socket,
+        "getaddrinfo",
+        lambda *args, **kwargs: [
+            (
+                socket.AF_INET,
+                socket.SOCK_STREAM,
+                socket.IPPROTO_TCP,
+                "",
+                ("10.0.0.5", 443),
+            )
+        ],
+    )
+    with pytest.raises(WorkflowError, match="private or loopback"):
+        _validate_probe_url("https://cluster.internal")
+
+
+def test_probe_url_allows_explicit_private_https_target(monkeypatch):
+    monkeypatch.setattr(
+        compiler_cli.socket,
+        "getaddrinfo",
+        lambda *args, **kwargs: [
+            (
+                socket.AF_INET,
+                socket.SOCK_STREAM,
+                socket.IPPROTO_TCP,
+                "",
+                ("10.0.0.5", 443),
+            )
+        ],
+    )
+    _validate_probe_url("https://cluster.internal", allow_private_target=True)
+
+
+def test_probe_url_private_opt_in_never_allows_metadata_resolution(monkeypatch):
+    monkeypatch.setattr(
+        compiler_cli.socket,
+        "getaddrinfo",
+        lambda *args, **kwargs: [
+            (
+                socket.AF_INET,
+                socket.SOCK_STREAM,
+                socket.IPPROTO_TCP,
+                "",
+                ("169.254.169.254", 443),
+            )
+        ],
+    )
+    with pytest.raises(WorkflowError, match="link-local"):
+        _validate_probe_url(
+            "https://attacker-controlled.example", allow_private_target=True
+        )
 
 
 @pytest.mark.parametrize(

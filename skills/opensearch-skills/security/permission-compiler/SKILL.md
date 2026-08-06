@@ -70,6 +70,14 @@ uv run python scripts/permission_compiler.py probe \
 The probe adds `perform_permission_check=true`. Write-like requests are checked
 for authorization but are not executed.
 
+The probe resolves the target before each request and rejects metadata,
+link-local, and other special-use addresses. Public HTTPS targets work by
+default. For a private-network or loopback HTTPS cluster, explicitly add
+`--allow-private-target`; this does not permit cloud metadata or redirect
+targets. Plaintext HTTP remains limited to literal loopback addresses for local
+development. Redirects are recorded but never followed, so credentials are not
+replayed to a `Location` target.
+
 ### 3. Compile exact observed actions
 
 ```bash

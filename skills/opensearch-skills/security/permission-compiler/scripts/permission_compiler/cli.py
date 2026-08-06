@@ -8,6 +8,7 @@ import ipaddress
 import json
 import math
 import os
+import socket
 import ssl
 import sys
 from pathlib import Path
@@ -92,7 +93,26 @@ def _read_response_body(stream: Any) -> str:
     return payload.decode("utf-8", errors="replace")
 
 
-def _validate_probe_url(base_url: str) -> None:
+def _resolved_probe_addresses(
+    host: str, port: int
+) -> set[ipaddress.IPv4Address | ipaddress.IPv6Address]:
+    try:
+        results = socket.getaddrinfo(host, port, type=socket.SOCK_STREAM)
+    except socket.gaierror as exc:
+        raise WorkflowError("probe host could not be resolved") from exc
+    addresses: set[ipaddress.IPv4Address | ipaddress.IPv6Address] = set()
+    for result in results:
+        raw_address = result[4][0].split("%", 1)[0]
+        address = ipaddress.ip_address(raw_address)
+        if isinstance(address, ipaddress.IPv6Address) and address.ipv4_mapped:
+            address = address.ipv4_mapped
+        addresses.add(address)
+    if not addresses:
+        raise WorkflowError("probe host did not resolve to an IP address")
+    return addresses
+
+
+def _validate_probe_url(base_url: str, allow_private_target: bool = False) -> None:
     parts = urlsplit(base_url)
     scheme = parts.scheme.lower()
     host = (parts.hostname or "").lower()
@@ -101,39 +121,65 @@ def _validate_probe_url(base_url: str) -> None:
     if parts.username is not None or parts.password is not None:
         raise WorkflowError("probe base URL must not contain user information")
     try:
-        parts.port
+        explicit_port = parts.port
     except ValueError as exc:
         raise WorkflowError("probe base URL contains an invalid port") from exc
-    is_literal_loopback = False
     literal_address = None
     try:
         literal_address = ipaddress.ip_address(host)
-        is_literal_loopback = literal_address.is_loopback
+        if (
+            isinstance(literal_address, ipaddress.IPv6Address)
+            and literal_address.ipv4_mapped
+        ):
+            literal_address = literal_address.ipv4_mapped
     except ValueError:
         pass
-    if literal_address is not None and (
-        literal_address.is_link_local
-        or literal_address.is_unspecified
-        or literal_address.is_multicast
-        or (literal_address.is_reserved and not literal_address.is_loopback)
-    ):
-        raise WorkflowError(
-            "probe refuses literal link-local, unspecified, multicast, or "
-            "reserved target addresses"
-        )
     if host in {"metadata.google.internal", "metadata.azure.internal"}:
         raise WorkflowError("probe refuses known cloud metadata hostnames")
-    if scheme != "https" and not (scheme == "http" and is_literal_loopback):
+    if scheme not in {"http", "https"}:
+        raise WorkflowError("probe base URL must use HTTPS or loopback HTTP")
+    is_literal_loopback = literal_address is not None and literal_address.is_loopback
+    if scheme == "http" and not is_literal_loopback:
         raise WorkflowError(
             "probe refuses to send credentials over a non-HTTPS URL; "
             "plaintext HTTP is allowed only for loopback development clusters"
         )
+    port = explicit_port or (443 if scheme == "https" else 80)
+    addresses = (
+        {literal_address}
+        if literal_address is not None
+        else _resolved_probe_addresses(host, port)
+    )
+    for address in addresses:
+        if (
+            address.is_link_local
+            or address.is_unspecified
+            or address.is_multicast
+            or (address.is_reserved and not address.is_loopback)
+        ):
+            raise WorkflowError(
+                "probe refuses link-local, unspecified, multicast, or reserved "
+                "target addresses"
+            )
+        if (
+            (address.is_private or address.is_loopback)
+            and not allow_private_target
+            and not (scheme == "http" and is_literal_loopback)
+        ):
+            raise WorkflowError(
+                "probe refuses private or loopback HTTPS targets unless "
+                "--allow-private-target is set"
+            )
+        if not address.is_global and not (address.is_private or address.is_loopback):
+            raise WorkflowError("probe refuses non-global target addresses")
     if parts.query or parts.fragment:
         raise WorkflowError("probe base URL must not contain a query or fragment")
 
 
-def _compose_probe_url(base_url: str, path: str) -> str:
-    _validate_probe_url(base_url)
+def _compose_probe_url(
+    base_url: str, path: str, allow_private_target: bool = False
+) -> str:
+    _validate_probe_url(base_url, allow_private_target)
     permission_path = _permission_check_path(path)
     if not permission_path.startswith("/") or permission_path.startswith("//"):
         raise WorkflowError("workflow step path must begin with exactly one slash")
@@ -195,8 +241,9 @@ def _probe_step(
     password: str,
     ca_cert: str | None,
     timeout: float,
+    allow_private_target: bool = False,
 ) -> dict[str, Any]:
-    url = _compose_probe_url(base_url, step["path"])
+    url = _compose_probe_url(base_url, step["path"], allow_private_target)
     _validate_credentials(username, password)
     body = step.get("body")
     data = None if body is None else json.dumps(body).encode("utf-8")
@@ -261,7 +308,7 @@ def _command_probe(args: argparse.Namespace) -> int:
     base_url = args.url or os.getenv("OPENSEARCH_URL")
     if not base_url:
         raise WorkflowError("probe requires --url or OPENSEARCH_URL")
-    _validate_probe_url(base_url)
+    _validate_probe_url(base_url, args.allow_private_target)
     evidence = []
     connection_failures = []
     for step in workflow["steps"]:
@@ -272,6 +319,7 @@ def _command_probe(args: argparse.Namespace) -> int:
             password=password,
             ca_cert=args.ca_cert,
             timeout=args.timeout,
+            allow_private_target=args.allow_private_target,
         )
         evidence.append({"step_id": step["id"], "response": response})
         if "connection_error" in response or "response_error" in response:
@@ -328,6 +376,14 @@ def build_parser() -> argparse.ArgumentParser:
     probe_parser.add_argument("--url")
     probe_parser.add_argument("--username")
     probe_parser.add_argument("--ca-cert")
+    probe_parser.add_argument(
+        "--allow-private-target",
+        action="store_true",
+        help=(
+            "allow HTTPS targets that resolve to private or loopback addresses; "
+            "link-local and metadata targets remain forbidden"
+        ),
+    )
     probe_parser.add_argument("--timeout", type=_positive_timeout, default=10.0)
     probe_parser.set_defaults(handler=_command_probe)
 
