@@ -359,6 +359,11 @@ def _probe_step(
                 payload = _read_response_body(response)
             except WorkflowError as exc:
                 return {"response_error": str(exc), "status": response.status}
+            if 300 <= response.status < 400:
+                return {
+                    "response_error": "probe refuses redirect responses",
+                    "status": response.status,
+                }
             try:
                 parsed = json.loads(payload) if payload else {}
             except json.JSONDecodeError:

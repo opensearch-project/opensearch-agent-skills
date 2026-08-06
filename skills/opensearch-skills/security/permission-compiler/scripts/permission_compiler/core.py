@@ -97,10 +97,10 @@ def validate_workflow(document: dict[str, Any]) -> dict[str, Step]:
 
 def _missing_from_reason_result(reason: str) -> tuple[list[str], bool]:
     marker = "no permissions for ["
-    start = reason.find(marker)
-    if start < 0:
+    reason = reason.strip()
+    if not reason.startswith(marker):
         return [], False
-    start += len(marker)
+    start = len(marker)
     depth = 1
     end = start
     while end < len(reason) and depth:
@@ -165,7 +165,7 @@ def parse_missing_privileges(response: Any) -> tuple[str, ...]:
             if privilege.strip():
                 found.add(privilege.strip())
         reason = value.get("reason")
-        if isinstance(reason, str):
+        if value.get("type") == "security_exception" and isinstance(reason, str):
             found.update(_missing_from_reason(reason))
     return tuple(sorted(found))
 
@@ -176,7 +176,7 @@ def _permission_parse_warnings(response: Any) -> tuple[str, ...]:
         if not isinstance(value, dict):
             continue
         reason = value.get("reason")
-        if isinstance(reason, str):
+        if value.get("type") == "security_exception" and isinstance(reason, str):
             _, malformed = _missing_from_reason_result(reason)
             if malformed:
                 warnings.add("malformed no-permissions reason was not parsed")

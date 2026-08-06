@@ -113,6 +113,7 @@ def test_parse_nested_security_exception_with_bracketed_action():
         "error": {
             "root_cause": [
                 {
+                    "type": "security_exception",
                     "reason": (
                         "no permissions for [indices:data/write/bulk[s]] and User "
                         "[name=a, backend_roles=[], requestedTenant=null]"
@@ -127,6 +128,7 @@ def test_parse_nested_security_exception_with_bracketed_action():
 def test_parse_multiple_actions_with_nested_commas():
     response = {
         "error": {
+            "type": "security_exception",
             "reason": (
                 "no permissions for [indices:data/read/search, "
                 "indices:data/write/bulk[s,t]] and User [name=a]"
@@ -150,14 +152,26 @@ def test_parse_multiple_actions_with_nested_commas():
     ],
 )
 def test_reason_parser_handles_bracket_boundary(reason, expected):
-    assert parse_missing_privileges({"reason": reason}) == expected
+    assert (
+        parse_missing_privileges({"type": "security_exception", "reason": reason})
+        == expected
+    )
+
+
+def test_reason_parser_ignores_reflected_or_untyped_error_text():
+    injected = "request contained no permissions for [cluster:admin/*]"
+    assert parse_missing_privileges({"type": "security_exception", "reason": injected}) == ()
+    assert parse_missing_privileges({"reason": "no permissions for [cluster:admin/*]"}) == ()
 
 
 def test_malformed_reason_is_reported_as_unresolved_evidence():
     evidence = parse_evidence_document(
         {
             "step_id": "search",
-            "response": {"reason": "no permissions for [indices:data/read/search"},
+            "response": {
+                "type": "security_exception",
+                "reason": "no permissions for [indices:data/read/search",
+            },
         },
         "malformed.json",
     )
@@ -186,6 +200,7 @@ def test_parse_audit_record():
 def test_empty_permission_is_not_invented():
     response = {
         "error": {
+            "type": "security_exception",
             "reason": (
                 "no permissions for [] and User "
                 "[name=admin, backend_roles=[admin], requestedTenant=null]"
@@ -690,6 +705,7 @@ def test_probe_refuses_redirects_before_replaying_credentials():
         thread.join(timeout=2)
 
     assert response["status"] == 302
+    assert response["response_error"] == "probe refuses redirect responses"
     assert len(requests) == 1
     assert requests[0]["authorization"].startswith("Basic ")
 
