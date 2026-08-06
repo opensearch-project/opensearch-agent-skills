@@ -124,7 +124,10 @@ def _permission_check_path(path: str) -> str:
         )
     decoded_path = parts.path
     for _ in range(2):
-        decoded_path = unquote(decoded_path)
+        next_decoded_path = unquote(decoded_path)
+        if next_decoded_path.count("/") != decoded_path.count("/"):
+            raise WorkflowError("workflow step path contains an encoded separator")
+        decoded_path = next_decoded_path
     if "\\" in decoded_path or any(
         segment in {".", ".."} for segment in decoded_path.split("/")
     ):
@@ -214,7 +217,10 @@ def _probe_url_parts(
 
 
 def _validate_probe_url(
-    base_url: str, allow_private_target: bool = False
+    base_url: str,
+    allowed_private_addresses: tuple[
+        ipaddress.IPv4Address | ipaddress.IPv6Address, ...
+    ] = (),
 ) -> tuple[ipaddress.IPv4Address | ipaddress.IPv6Address, ...]:
     parts, literal_address = _probe_url_parts(base_url)
     scheme = parts.scheme.lower()
@@ -240,12 +246,12 @@ def _validate_probe_url(
             )
         if (
             (address.is_private or address.is_loopback)
-            and not allow_private_target
+            and address not in allowed_private_addresses
             and not (scheme == "http" and is_literal_loopback)
         ):
             raise WorkflowError(
-                "probe refuses private or loopback HTTPS targets unless "
-                "--allow-private-target is set"
+                "probe refuses private or loopback HTTPS targets without an "
+                "exact --allow-private-address entry"
             )
         if not address.is_global and not (address.is_private or address.is_loopback):
             raise WorkflowError("probe refuses non-global target addresses")
@@ -261,7 +267,10 @@ def _compose_probe_url(base_url: str, path: str) -> str:
     base_path = base_parts.path.rstrip("/")
     decoded_base_path = base_path
     for _ in range(2):
-        decoded_base_path = unquote(decoded_base_path)
+        next_decoded_path = unquote(decoded_base_path)
+        if next_decoded_path.count("/") != decoded_base_path.count("/"):
+            raise WorkflowError("probe base URL path contains an encoded separator")
+        decoded_base_path = next_decoded_path
     if "\\" in decoded_base_path or any(
         segment in {".", ".."} for segment in decoded_base_path.split("/")
     ):
@@ -305,6 +314,28 @@ def _positive_timeout(value: str) -> float:
     return timeout
 
 
+def _private_target_address(
+    value: str,
+) -> ipaddress.IPv4Address | ipaddress.IPv6Address:
+    try:
+        address = ipaddress.ip_address(value)
+    except ValueError as exc:
+        raise argparse.ArgumentTypeError(
+            "allowed private target must be an IP address"
+        ) from exc
+    if isinstance(address, ipaddress.IPv6Address) and address.ipv4_mapped:
+        address = address.ipv4_mapped
+    if not (address.is_private or address.is_loopback):
+        raise argparse.ArgumentTypeError(
+            "--allow-private-address accepts only private or loopback addresses"
+        )
+    if address.is_link_local or address.is_unspecified or address.is_multicast:
+        raise argparse.ArgumentTypeError(
+            "link-local, unspecified, and multicast addresses cannot be allowed"
+        )
+    return address
+
+
 def _validate_credentials(username: str, password: str) -> None:
     if ":" in username:
         raise WorkflowError("OpenSearch username must not contain ':'")
@@ -321,11 +352,13 @@ def _probe_step(
     password: str,
     ca_cert: str | None,
     timeout: float,
-    allow_private_target: bool = False,
+    allowed_private_addresses: tuple[
+        ipaddress.IPv4Address | ipaddress.IPv6Address, ...
+    ] = (),
 ) -> dict[str, Any]:
     # Keep these validated addresses coupled to the connection loop below. The
     # pinned transport must never perform a second hostname lookup.
-    addresses = _validate_probe_url(base_url, allow_private_target)
+    addresses = _validate_probe_url(base_url, allowed_private_addresses)
     url = _compose_probe_url(base_url, step["path"])
     _validate_credentials(username, password)
     body = step.get("body")
@@ -414,7 +447,7 @@ def _command_probe(args: argparse.Namespace) -> int:
             password=password,
             ca_cert=args.ca_cert,
             timeout=args.timeout,
-            allow_private_target=args.allow_private_target,
+            allowed_private_addresses=tuple(args.allow_private_address),
         )
         evidence.append({"step_id": step["id"], "response": response})
         if "connection_error" in response or "response_error" in response:
@@ -472,11 +505,13 @@ def build_parser() -> argparse.ArgumentParser:
     probe_parser.add_argument("--username")
     probe_parser.add_argument("--ca-cert")
     probe_parser.add_argument(
-        "--allow-private-target",
-        action="store_true",
+        "--allow-private-address",
+        action="append",
+        default=[],
+        type=_private_target_address,
         help=(
-            "allow HTTPS targets that resolve to private or loopback addresses; "
-            "link-local and metadata targets remain forbidden"
+            "allow one exact private or loopback HTTPS target address; repeat for "
+            "multi-address clusters; link-local and metadata targets stay forbidden"
         ),
     )
     probe_parser.add_argument("--timeout", type=_positive_timeout, default=10.0)

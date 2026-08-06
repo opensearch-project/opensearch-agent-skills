@@ -476,8 +476,13 @@ def test_composed_probe_url_defends_single_slash_boundary(monkeypatch):
 
 
 def test_composed_probe_url_rejects_encoded_base_path_traversal():
-    with pytest.raises(WorkflowError, match="unsafe segment"):
+    with pytest.raises(WorkflowError, match="encoded separator"):
         _compose_probe_url("https://search.example.com/api%2f..", "/_search")
+
+
+def test_composed_probe_url_rejects_encoded_step_separator():
+    with pytest.raises(WorkflowError, match="encoded separator"):
+        _compose_probe_url("https://search.example.com", "/logs%2f_search")
 
 
 def test_http_status_alone_does_not_infer_permission_outcome():
@@ -591,7 +596,10 @@ def test_probe_url_allows_explicit_private_https_target(monkeypatch):
             )
         ],
     )
-    _validate_probe_url("https://cluster.internal", allow_private_target=True)
+    _validate_probe_url(
+        "https://cluster.internal",
+        (compiler_cli.ipaddress.ip_address("10.0.0.5"),),
+    )
 
 
 def test_probe_url_private_opt_in_never_allows_metadata_resolution(monkeypatch):
@@ -610,7 +618,8 @@ def test_probe_url_private_opt_in_never_allows_metadata_resolution(monkeypatch):
     )
     with pytest.raises(WorkflowError, match="link-local"):
         _validate_probe_url(
-            "https://attacker-controlled.example", allow_private_target=True
+            "https://attacker-controlled.example",
+            (compiler_cli.ipaddress.ip_address("169.254.169.254"),),
         )
 
 
