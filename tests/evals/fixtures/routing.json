@@ -124,5 +124,23 @@
     "prompt": "Bulk index my product catalog JSON into OpenSearch using the _bulk API",
     "expected_skill": "opensearch-launchpad",
     "rationale": "Structured bulk-indexing is NOT managed-ingestion-service — it's opensearch-launchpad"
+  },
+  {
+    "id": "routing-aiven-01",
+    "prompt": "Provision a managed OpenSearch service on Aiven and deploy my search app to it",
+    "expected_skill": "aiven-setup",
+    "rationale": "Explicit Aiven provisioning + deploy intent"
+  },
+  {
+    "id": "routing-aiven-02",
+    "prompt": "I want to spin up an Aiven for OpenSearch cluster in GCP europe-west1",
+    "expected_skill": "aiven-setup",
+    "rationale": "Aiven managed OpenSearch on a non-AWS cloud"
+  },
+  {
+    "id": "routing-aiven-03",
+    "prompt": "Deploy my local search setup to a managed OpenSearch on Aiven",
+    "expected_skill": "aiven-setup",
+    "rationale": "Migrating a local setup to Aiven-hosted OpenSearch"
   }
 ]

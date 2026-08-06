@@ -55,6 +55,11 @@ skills/
         aos/                      # Amazon OpenSearch Service guides
         aoss/                     # Amazon OpenSearch Serverless guides
         reference.md              # Cost, security, troubleshooting
+      aiven-setup/                # Leaf skill: Aiven provisioning & deployment
+        SKILL.md
+        aiven-01-provision.md     # Provision the managed Aiven service
+        aiven-02-deploy-search.md # Deploy the search configuration
+        reference.md              # Plan sizing, TLS/CA, HA, troubleshooting
 tests/                            # pytest test suite (no cluster required)
 ```
 

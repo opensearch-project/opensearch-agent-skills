@@ -127,6 +127,16 @@ See [cli-reference.md](../../cli-reference.md) for the full command reference.
 
 ## Workflow Phases
 
+### Phase 0 — Preflight Check (ALWAYS first)
+
+Before anything else, check cluster availability:
+```bash
+uv run python scripts/opensearch_ops.py preflight-check
+```
+- `"available"` → proceed to Phase 1.
+- `"auth_required"` → ask for credentials, then proceed.
+- `"no_cluster"` → run `bash scripts/start_opensearch.sh`, then proceed.
+
 ### Phase 1 — Collect Sample Data
 
 Ask for the data source. Supported inputs:
@@ -193,11 +203,7 @@ Execute the plan against the chosen target. Both targets end with the Search Bui
 
 #### Target: `local`
 
-1. Start or connect to local cluster:
-   ```bash
-   uv run python scripts/opensearch_ops.py preflight-check
-   ```
-   - `"available"` → use it. `"auth_required"` → ask for credentials. `"no_cluster"` → `bash scripts/start_opensearch.sh`
+1. Start or connect to local cluster (preflight already done in Phase 0).
 2. Create index, load data, configure pipelines using `opensearch_ops.py` commands.
    - **Unstructured data:** follow the local steps in [unstructured_preset.md](unstructured_preset.md#target-local).
 3. Launch the UI:
