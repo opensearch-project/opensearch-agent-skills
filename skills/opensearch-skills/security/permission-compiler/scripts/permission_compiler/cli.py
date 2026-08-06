@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import base64
+import ipaddress
 import json
 import math
 import os
@@ -13,7 +14,7 @@ from pathlib import Path
 from typing import Any
 from urllib.error import HTTPError, URLError
 from urllib.parse import parse_qsl, unquote, urlencode, urlsplit, urlunsplit
-from urllib.request import Request, urlopen
+from urllib.request import HTTPRedirectHandler, HTTPSHandler, Request, build_opener
 
 from .core import (
     WorkflowError,
@@ -24,6 +25,11 @@ from .core import (
 )
 
 _MAX_RESPONSE_BYTES = 1024 * 1024
+
+
+class _NoRedirectHandler(HTTPRedirectHandler):
+    def redirect_request(self, request, file_pointer, code, message, headers, new_url):
+        return None
 
 
 def _load_json(path: Path) -> Any:
@@ -88,7 +94,6 @@ def _validate_probe_url(base_url: str) -> None:
     parts = urlsplit(base_url)
     scheme = parts.scheme.lower()
     host = (parts.hostname or "").lower()
-    loopback_hosts = {"127.0.0.1", "::1"}
     if not parts.netloc or not host:
         raise WorkflowError("probe base URL must include a host")
     if parts.username is not None or parts.password is not None:
@@ -97,7 +102,12 @@ def _validate_probe_url(base_url: str) -> None:
         parts.port
     except ValueError as exc:
         raise WorkflowError("probe base URL contains an invalid port") from exc
-    if scheme != "https" and not (scheme == "http" and host in loopback_hosts):
+    is_literal_loopback = False
+    try:
+        is_literal_loopback = ipaddress.ip_address(host).is_loopback
+    except ValueError:
+        pass
+    if scheme != "https" and not (scheme == "http" and is_literal_loopback):
         raise WorkflowError(
             "probe refuses to send credentials over a non-HTTPS URL; "
             "plaintext HTTP is allowed only for loopback development clusters"
@@ -111,8 +121,19 @@ def _compose_probe_url(base_url: str, path: str) -> str:
     permission_path = _permission_check_path(path)
     if not permission_path.startswith("/") or permission_path.startswith("//"):
         raise WorkflowError("workflow step path must begin with exactly one slash")
-    url = base_url.rstrip("/") + permission_path
     base_parts = urlsplit(base_url)
+    permission_parts = urlsplit(permission_path)
+    base_path = base_parts.path.rstrip("/")
+    combined_path = base_path + permission_parts.path
+    url = urlunsplit(
+        (
+            base_parts.scheme,
+            base_parts.netloc,
+            combined_path,
+            permission_parts.query,
+            "",
+        )
+    )
     url_parts = urlsplit(url)
     base_origin = (
         base_parts.scheme.lower(),
@@ -126,7 +147,6 @@ def _compose_probe_url(base_url: str, path: str) -> str:
     )
     if url_origin != base_origin:
         raise WorkflowError("workflow step path resolves outside the probe origin")
-    base_path = base_parts.path.rstrip("/")
     expected_path_prefix = f"{base_path}/" if base_path else "/"
     if not url_parts.path.startswith(expected_path_prefix):
         raise WorkflowError("workflow step path resolves outside the probe base path")
@@ -143,6 +163,15 @@ def _positive_timeout(value: str) -> float:
     return timeout
 
 
+def _validate_credentials(username: str, password: str) -> None:
+    if ":" in username:
+        raise WorkflowError("OpenSearch username must not contain ':'")
+    if any(ord(character) < 0x20 or ord(character) == 0x7F for character in username):
+        raise WorkflowError("OpenSearch username must not contain control characters")
+    if any(ord(character) < 0x20 or ord(character) == 0x7F for character in password):
+        raise WorkflowError("OpenSearch password must not contain control characters")
+
+
 def _probe_step(
     base_url: str,
     step: dict[str, Any],
@@ -152,6 +181,7 @@ def _probe_step(
     timeout: float,
 ) -> dict[str, Any]:
     url = _compose_probe_url(base_url, step["path"])
+    _validate_credentials(username, password)
     body = step.get("body")
     data = None if body is None else json.dumps(body).encode("utf-8")
     request = Request(url, data=data, method=str(step.get("method", "GET")).upper())
@@ -161,11 +191,10 @@ def _probe_step(
     if data is not None:
         request.add_header("Content-Type", "application/json")
     try:
-        with urlopen(
-            request,
-            context=_ssl_context(ca_cert),
-            timeout=timeout,
-        ) as response:
+        opener = build_opener(
+            _NoRedirectHandler(), HTTPSHandler(context=_ssl_context(ca_cert))
+        )
+        with opener.open(request, timeout=timeout) as response:
             try:
                 payload = _read_response_body(response)
             except WorkflowError as exc:

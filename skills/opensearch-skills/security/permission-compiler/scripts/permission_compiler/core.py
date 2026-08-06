@@ -31,6 +31,7 @@ class Evidence:
     allowed: bool | None
     missing_privileges: tuple[str, ...]
     source: str
+    parse_warnings: tuple[str, ...] = ()
 
 
 def _path_has_unsafe_segments(path: str) -> bool:
@@ -94,11 +95,11 @@ def validate_workflow(document: dict[str, Any]) -> dict[str, Step]:
     return steps
 
 
-def _missing_from_reason(reason: str) -> list[str]:
+def _missing_from_reason_result(reason: str) -> tuple[list[str], bool]:
     marker = "no permissions for ["
     start = reason.find(marker)
     if start < 0:
-        return []
+        return [], False
     start += len(marker)
     depth = 1
     end = start
@@ -109,10 +110,10 @@ def _missing_from_reason(reason: str) -> list[str]:
             depth -= 1
         end += 1
     if depth:
-        return []
+        return [], True
     payload = reason[start : end - 1].strip()
     if not payload:
-        return []
+        return [], False
 
     actions: list[str] = []
     action_start = 0
@@ -130,7 +131,11 @@ def _missing_from_reason(reason: str) -> list[str]:
     final_action = payload[action_start:].strip()
     if final_action:
         actions.append(final_action)
-    return actions
+    return actions, False
+
+
+def _missing_from_reason(reason: str) -> list[str]:
+    return _missing_from_reason_result(reason)[0]
 
 
 def _walk_json(value: Any) -> Iterable[Any]:
@@ -165,6 +170,19 @@ def parse_missing_privileges(response: Any) -> tuple[str, ...]:
     return tuple(sorted(found))
 
 
+def _permission_parse_warnings(response: Any) -> tuple[str, ...]:
+    warnings: set[str] = set()
+    for value in _walk_json(response):
+        if not isinstance(value, dict):
+            continue
+        reason = value.get("reason")
+        if isinstance(reason, str):
+            _, malformed = _missing_from_reason_result(reason)
+            if malformed:
+                warnings.add("malformed no-permissions reason was not parsed")
+    return tuple(sorted(warnings))
+
+
 def _infer_allowed(response: Any) -> bool | None:
     observed: set[bool] = set()
     for value in _walk_json(response):
@@ -196,6 +214,7 @@ def parse_evidence_document(document: Any, source: str = "evidence") -> list[Evi
             raise WorkflowError(f"{source}[{position}].response is required")
         response = record["response"]
         missing_privileges = parse_missing_privileges(response)
+        parse_warnings = _permission_parse_warnings(response)
         allowed = _infer_allowed(response)
         if allowed is None and missing_privileges:
             allowed = False
@@ -205,6 +224,7 @@ def parse_evidence_document(document: Any, source: str = "evidence") -> list[Evi
                 allowed=allowed,
                 missing_privileges=missing_privileges,
                 source=source,
+                parse_warnings=parse_warnings,
             )
         )
     return parsed
@@ -310,6 +330,7 @@ def compile_role(
     unknown_steps: list[str] = []
     unscoped_index_actions: list[dict[str, str]] = []
     provenance: dict[str, dict[str, set[str]]] = {}
+    parse_warnings: list[dict[str, str]] = []
 
     for item in evidence:
         step = steps.get(item.step_id)
@@ -317,6 +338,14 @@ def compile_role(
             unknown_steps.append(item.step_id)
             continue
         observed.add(item.step_id)
+        parse_warnings.extend(
+            {
+                "step_id": item.step_id,
+                "source": item.source,
+                "warning": warning,
+            }
+            for warning in item.parse_warnings
+        )
         if step.expect == "deny" and item.allowed is True:
             negative_violations.append(item.step_id)
         if step.expect == "deny":
@@ -377,6 +406,7 @@ def compile_role(
         "non_deriving_positive_probes": sorted(
             set(non_deriving_positive_probes)
         ),
+        "parse_warnings": parse_warnings,
         "unscoped_index_actions": unscoped_index_actions,
         "wildcards": sorted({value for value in all_values if _contains_wildcard(value)}),
         "permission_evidence": {
@@ -395,6 +425,7 @@ def compile_role(
             or negative_violations
             or unresolved_negative_probes
             or non_deriving_positive_probes
+            or parse_warnings
             or unscoped_index_actions
         ),
     }
@@ -412,11 +443,20 @@ def verify_workflow(
     steps = validate_workflow(workflow)
     observations: dict[str, list[Evidence]] = {step_id: [] for step_id in steps}
     unknown_steps: set[str] = set()
+    parse_warnings: list[dict[str, str]] = []
     for item in evidence:
         if item.step_id not in steps:
             unknown_steps.add(item.step_id)
             continue
         observations[item.step_id].append(item)
+        parse_warnings.extend(
+            {
+                "step_id": item.step_id,
+                "source": item.source,
+                "warning": warning,
+            }
+            for warning in item.parse_warnings
+        )
 
     positive_failures: list[dict[str, Any]] = []
     negative_violations: list[dict[str, Any]] = []
@@ -468,6 +508,7 @@ def verify_workflow(
         or unresolved_steps
         or conflicting_steps
         or unknown_steps
+        or parse_warnings
     )
     return {
         "workflow": workflow["name"],
@@ -478,4 +519,5 @@ def verify_workflow(
         "unresolved_steps": sorted(unresolved_steps),
         "conflicting_steps": sorted(conflicting_steps),
         "unknown_evidence_steps": sorted(unknown_steps),
+        "parse_warnings": parse_warnings,
     }

@@ -28,9 +28,11 @@ from permission_compiler.cli import (  # noqa: E402
     _compose_probe_url,
     _permission_check_path,
     _positive_timeout,
+    _probe_step,
     _read_response_body,
     _ssl_context,
     _validate_probe_url,
+    _validate_credentials,
     main,
 )
 from permission_compiler.core import (
@@ -128,6 +130,28 @@ def test_parse_multiple_actions_with_nested_commas():
 )
 def test_reason_parser_handles_bracket_boundary(reason, expected):
     assert parse_missing_privileges({"reason": reason}) == expected
+
+
+def test_malformed_reason_is_reported_as_unresolved_evidence():
+    evidence = parse_evidence_document(
+        {
+            "step_id": "search",
+            "response": {"reason": "no permissions for [indices:data/read/search"},
+        },
+        "malformed.json",
+    )
+    assert evidence[0].parse_warnings == (
+        "malformed no-permissions reason was not parsed",
+    )
+    _, report = compile_role(workflow(), evidence)
+    assert report["parse_warnings"] == [
+        {
+            "step_id": "search",
+            "source": "malformed.json",
+            "warning": "malformed no-permissions reason was not parsed",
+        }
+    ]
+    assert report["safe_to_review"] is False
 
 
 def test_parse_audit_record():
@@ -427,6 +451,7 @@ def test_ssl_context_always_verifies_hostname():
 def test_probe_url_requires_https_except_for_loopback():
     _validate_probe_url("https://search.example.com/opensearch")
     _validate_probe_url("http://127.0.0.1:9200")
+    _validate_probe_url("http://127.0.0.2:9200")
     with pytest.raises(WorkflowError, match="non-HTTPS"):
         _validate_probe_url("http://search.example.com:9200")
     with pytest.raises(WorkflowError, match="non-HTTPS"):
@@ -443,6 +468,65 @@ def test_probe_url_requires_host_and_rejects_userinfo():
         _validate_probe_url("https:///opensearch")
     with pytest.raises(WorkflowError, match="user information"):
         _validate_probe_url("https://user@example.com")
+
+
+@pytest.mark.parametrize(
+    ("username", "password"),
+    [
+        ("admin:other", "secret"),
+        ("admin\n", "secret"),
+        ("admin", "secret\rvalue"),
+    ],
+)
+def test_credentials_reject_ambiguous_basic_auth_values(username, password):
+    with pytest.raises(WorkflowError):
+        _validate_credentials(username, password)
+
+
+def test_probe_refuses_redirects_before_replaying_credentials():
+    requests = []
+
+    class Handler(BaseHTTPRequestHandler):
+        def do_GET(self):
+            requests.append(
+                {
+                    "path": self.path,
+                    "authorization": self.headers.get("Authorization"),
+                }
+            )
+            if self.path.startswith("/start"):
+                self.send_response(302)
+                self.send_header(
+                    "Location", f"http://127.0.0.1:{self.server.server_port}/target"
+                )
+                self.end_headers()
+                return
+            self.send_response(200)
+            self.end_headers()
+
+        def log_message(self, format, *args):
+            return
+
+    server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    try:
+        response = _probe_step(
+            base_url=f"http://127.0.0.1:{server.server_port}",
+            step={"path": "/start", "method": "GET"},
+            username="test-user",
+            password="test-password",
+            ca_cert=None,
+            timeout=2,
+        )
+    finally:
+        server.shutdown()
+        server.server_close()
+        thread.join(timeout=2)
+
+    assert response["status"] == 302
+    assert len(requests) == 1
+    assert requests[0]["authorization"].startswith("Basic ")
 
 
 @pytest.mark.parametrize("value", ["0", "-1", "nan", "inf", "-inf"])
