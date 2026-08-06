@@ -322,50 +322,71 @@ def compile_role(
     unresolved_negative_probes: list[str] = []
     non_deriving_positive_probes: list[str] = []
     unknown_steps: list[str] = []
+    conflicting_evidence_steps: list[str] = []
     unscoped_index_actions: list[dict[str, str]] = []
     provenance: dict[str, dict[str, set[str]]] = {}
     parse_warnings: list[dict[str, str]] = []
+    evidence_by_step: dict[str, list[Evidence]] = {}
 
     for item in evidence:
         step = steps.get(item.step_id)
         if step is None:
             unknown_steps.append(item.step_id)
             continue
-        observed.add(item.step_id)
-        parse_warnings.extend(
-            {
-                "step_id": item.step_id,
-                "source": item.source,
-                "warning": warning,
-            }
-            for warning in item.parse_warnings
-        )
-        if step.expect == "deny" and item.allowed is True:
-            negative_violations.append(item.step_id)
-        if step.expect == "deny":
-            if item.allowed is None:
-                unresolved_negative_probes.append(item.step_id)
-            # Denied probes are assertions, never permission sources.
-            continue
-        if not item.missing_privileges:
-            non_deriving_positive_probes.append(item.step_id)
-        for action in item.missing_privileges:
-            trace = provenance.setdefault(
-                action, {"steps": set(), "sources": set(), "index_patterns": set()}
+        evidence_by_step.setdefault(item.step_id, []).append(item)
+
+    for step_id, records in evidence_by_step.items():
+        step = steps[step_id]
+        observed.add(step_id)
+        for item in records:
+            parse_warnings.extend(
+                {
+                    "step_id": item.step_id,
+                    "source": item.source,
+                    "warning": warning,
+                }
+                for warning in item.parse_warnings
             )
-            trace["steps"].add(step.step_id)
-            trace["sources"].add(item.source)
-            if _is_index_action(action):
-                if not step.index_patterns:
-                    unscoped_index_actions.append(
-                        {"step_id": step.step_id, "action": action}
-                    )
-                    continue
-                trace["index_patterns"].update(step.index_patterns)
-                key = tuple(sorted(set(step.index_patterns)))
-                index_permissions.setdefault(key, set()).add(action)
-            else:
-                cluster_permissions.add(action)
+        signatures = {
+            (
+                item.allowed,
+                tuple(sorted(item.missing_privileges)),
+                tuple(sorted(item.parse_warnings)),
+            )
+            for item in records
+        }
+        if len(signatures) > 1:
+            conflicting_evidence_steps.append(step_id)
+            # Never union inconsistent observations into a broader candidate.
+            continue
+        for item in records:
+            if step.expect == "deny" and item.allowed is True:
+                negative_violations.append(item.step_id)
+            if step.expect == "deny":
+                if item.allowed is None:
+                    unresolved_negative_probes.append(item.step_id)
+                # Denied probes are assertions, never permission sources.
+                continue
+            if not item.missing_privileges:
+                non_deriving_positive_probes.append(item.step_id)
+            for action in item.missing_privileges:
+                trace = provenance.setdefault(
+                    action,
+                    {"steps": set(), "sources": set(), "index_patterns": set()},
+                )
+                trace["steps"].add(step.step_id)
+                trace["sources"].add(item.source)
+                if _is_index_action(action):
+                    if not step.index_patterns:
+                        unscoped_index_actions.append(
+                            {"step_id": step.step_id, "action": action}
+                        )
+                        continue
+                    trace["index_patterns"].update(step.index_patterns)
+                    key = tuple(sorted(set(step.index_patterns)))
+                    index_permissions.setdefault(key, set()).add(action)
+                else:
+                    cluster_permissions.add(action)
 
     candidate = {
         role_name: {
@@ -395,6 +416,7 @@ def compile_role(
         "observed_steps": sorted(observed),
         "unobserved_steps": sorted(set(steps) - observed),
         "unknown_evidence_steps": sorted(set(unknown_steps)),
+        "conflicting_evidence_steps": sorted(set(conflicting_evidence_steps)),
         "negative_probe_violations": sorted(set(negative_violations)),
         "unresolved_negative_probes": sorted(set(unresolved_negative_probes)),
         "non_deriving_positive_probes": sorted(
@@ -416,6 +438,7 @@ def compile_role(
         ),
         "safe_to_review": not (
             unknown_steps
+            or conflicting_evidence_steps
             or negative_violations
             or unresolved_negative_probes
             or non_deriving_positive_probes

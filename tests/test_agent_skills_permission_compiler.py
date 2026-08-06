@@ -270,6 +270,40 @@ def test_compile_partitions_cluster_and_index_actions():
     }
 
 
+def test_compile_rejects_conflicting_duplicate_evidence_without_unioning():
+    evidence = [
+        Evidence("search", False, ("indices:data/read/search",), "run-1"),
+        Evidence("search", False, ("indices:data/read/msearch",), "run-2"),
+    ]
+
+    candidate, report = compile_role(workflow(), evidence)
+
+    role = candidate["reader-observed"]
+    assert role["cluster_permissions"] == []
+    assert role["index_permissions"] == []
+    assert report["conflicting_evidence_steps"] == ["search"]
+    assert report["safe_to_review"] is False
+
+
+def test_compile_accepts_matching_duplicate_evidence_and_tracks_sources():
+    evidence = [
+        Evidence("search", False, ("indices:data/read/search",), "run-1"),
+        Evidence("search", False, ("indices:data/read/search",), "run-2"),
+    ]
+
+    candidate, report = compile_role(workflow(), evidence)
+
+    role = candidate["reader-observed"]
+    assert role["index_permissions"][0]["allowed_actions"] == [
+        "indices:data/read/search"
+    ]
+    assert report["conflicting_evidence_steps"] == []
+    assert report["permission_evidence"]["indices:data/read/search"]["sources"] == [
+        "run-1",
+        "run-2",
+    ]
+
+
 def test_negative_evidence_never_creates_grant():
     evidence = [
         Evidence("delete", False, ("indices:admin/delete",), "test")

@@ -323,6 +323,8 @@ def _probe_step(
     timeout: float,
     allow_private_target: bool = False,
 ) -> dict[str, Any]:
+    # Keep these validated addresses coupled to the connection loop below. The
+    # pinned transport must never perform a second hostname lookup.
     addresses = _validate_probe_url(base_url, allow_private_target)
     url = _compose_probe_url(base_url, step["path"])
     _validate_credentials(username, password)

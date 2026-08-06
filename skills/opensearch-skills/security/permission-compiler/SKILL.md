@@ -89,9 +89,10 @@ uv run python scripts/permission_compiler.py compile \
   --report build/evidence-report.json
 ```
 
-Stop if the report contains unknown evidence steps, parse warnings, positive
-probes that derived no permissions, index actions without a declared scope, or
-a negative probe that was allowed. Treat wildcards as a mandatory review item.
+Stop if the report contains unknown or conflicting evidence steps, parse
+warnings, positive probes that derived no permissions, index actions without a
+declared scope, or a negative probe that was allowed. Treat wildcards as a
+mandatory review item.
 
 ### 4. Review blast radius
 
