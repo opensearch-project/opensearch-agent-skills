@@ -25,6 +25,8 @@
       "path":           { "type": "keyword" },
       "source_file":    { "type": "keyword" },
       "chunk_id":       { "type": "integer" },
+      "headings":       { "type": "text", "analyzer": "english" },
+      "page_number":    { "type": "integer" },
       "metadata":       { "type": "object", "enabled": false }
     }
   }
@@ -96,3 +98,9 @@ same `allowed_users`). `chunk_id` (0-based) distinguishes chunks within one sour
 
 Default: 512 words per chunk, 64-word overlap. Override with `--chunk-size` and
 `--chunk-overlap`, or the matching `PERMISSION_SEARCH_*` environment variables.
+
+PDF and Office documents are chunked by the shared document pipeline instead, which
+follows document structure rather than a fixed word count, so `--chunk-size` and
+`--chunk-overlap` do not apply to them. Those chunks also carry `headings` (the
+heading trail above the passage) and `page_number`, both absent for plain-text and
+JSONL input.

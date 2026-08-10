@@ -42,6 +42,52 @@ def _runner(monkeypatch, response, dimension=3):
     return runner, client
 
 
+def test_get_model_id_is_looked_up_once_per_runner(monkeypatch):
+    client = MagicMock()
+    client.transport.perform_request.return_value = {
+        "hits": {"hits": [{"_id": "model-1", "_source": {"model_state": "DEPLOYED"}}]}
+    }
+    monkeypatch.setattr(
+        search_runner,
+        "build_app_client",
+        lambda _profile, username, password: client,
+    )
+    runner = search_runner.SearchRunner(
+        {
+            "opensearch": {"index": "permission-aware-search"},
+            "embedding": {"mode": "local", "dimension": 3},
+        },
+        "alice",
+        "password",
+    )
+
+    assert [runner._get_model_id() for _ in range(5)] == ["model-1"] * 5
+    # Repeating the lookup would add a round trip to every query and benchmark
+    # iteration; the model id cannot change during a run.
+    assert client.transport.perform_request.call_count == 1
+
+
+def test_get_model_id_reports_a_model_that_is_not_deployed(monkeypatch):
+    client = MagicMock()
+    client.transport.perform_request.return_value = {"hits": {"hits": []}}
+    monkeypatch.setattr(
+        search_runner,
+        "build_app_client",
+        lambda _profile, username, password: client,
+    )
+    runner = search_runner.SearchRunner(
+        {
+            "opensearch": {"index": "permission-aware-search"},
+            "embedding": {"mode": "local", "dimension": 3},
+        },
+        "alice",
+        "password",
+    )
+
+    with pytest.raises(RuntimeError, match="not deployed"):
+        runner._get_model_id()
+
+
 def test_embed_requires_named_sentence_embedding(monkeypatch):
     response = {"inference_results": [{"output": [
         {"name": "input_ids", "data": [1, 2]},
@@ -227,6 +273,23 @@ def test_search_bm25_shape_for_none(monkeypatch):
     r._search("q", 5)
     body = fake.search.call_args.kwargs["body"]
     assert "multi_match" in body["query"]
+    assert body["query"]["multi_match"]["fields"] == ["title^2", "content"]
+
+
+@pytest.mark.parametrize("mode", ["none", "local"])
+def test_search_matches_exactly_without_fuzziness(monkeypatch, mode):
+    # The shared lexical builder adds fuzziness: AUTO by default. This index has a
+    # fixed mapping and tuned scoring, so the emitted query must not carry it.
+    r, fake = _query_runner(
+        monkeypatch, _profile(embedding={"mode": mode, "dimension": 3}), []
+    )
+    if mode == "local":
+        r._embed = lambda text: [0.1, 0.2, 0.3]
+
+    r._search("q", 5)
+
+    body = fake.search.call_args.kwargs["body"]
+    assert "fuzziness" not in json.dumps(body)
 
 
 def test_find_document_true_false(monkeypatch):
@@ -239,6 +302,25 @@ def test_find_document_true_false(monkeypatch):
     assert r.find_document("d1") is False
 
 
+def _fake_opener(monkeypatch, response=None, side_effect=None):
+    """Replace the hardened opener, capturing the URLs it was asked to validate."""
+    validated = []
+    monkeypatch.setattr(
+        search_runner,
+        "validate_url",
+        lambda url, **kwargs: validated.append((url, kwargs)),
+    )
+    opener = MagicMock()
+    if side_effect is not None:
+        opener.open.side_effect = side_effect
+    else:
+        opener.open.return_value = response
+    monkeypatch.setattr(
+        search_runner, "build_safe_opener", lambda **kwargs: opener
+    )
+    return validated
+
+
 def test_call_llm_openai_compatible_success(monkeypatch):
     r, _ = _query_runner(monkeypatch, _profile(llm={"provider": "openai_compatible"}), [])
     fake_resp = MagicMock()
@@ -246,8 +328,51 @@ def test_call_llm_openai_compatible_success(monkeypatch):
         "choices": [{"message": {"content": "local answer"}}]
     }).encode()
     fake_resp.__enter__.return_value = fake_resp
-    monkeypatch.setattr(search_runner, "urlopen", lambda request, timeout: fake_resp)
+    _fake_opener(monkeypatch, response=fake_resp)
+
     assert r._call_llm("q", "[1] ctx") == "local answer"
+
+
+def test_call_llm_validates_the_endpoint_url_before_sending_the_prompt(monkeypatch):
+    r, _ = _query_runner(
+        monkeypatch,
+        _profile(llm={"provider": "openai_compatible", "base_url": "http://localhost:12434/engines/v1"}),
+        [],
+    )
+    fake_resp = MagicMock()
+    fake_resp.read.return_value = json.dumps(
+        {"choices": [{"message": {"content": "ok"}}]}
+    ).encode()
+    fake_resp.__enter__.return_value = fake_resp
+    validated = _fake_opener(monkeypatch, response=fake_resp)
+
+    r._call_llm("q", "[1] ctx")
+
+    # The prompt carries content the caller is authorized to read, so the
+    # destination is checked first. Loopback is allowed for a local runner.
+    assert validated == [
+        ("http://localhost:12434/engines/v1/chat/completions", {"allow_loopback": True})
+    ]
+
+
+def test_call_llm_refuses_an_endpoint_rejected_by_url_validation(monkeypatch):
+    r, _ = _query_runner(
+        monkeypatch,
+        _profile(llm={"provider": "openai_compatible", "base_url": "http://169.254.169.254"}),
+        [],
+    )
+
+    def reject(url, **kwargs):
+        raise ValueError("URL resolves to a restricted address: 169.254.169.254")
+
+    monkeypatch.setattr(search_runner, "validate_url", reject)
+
+    with pytest.raises(search_runner.LLMProviderError) as exc:
+        r._call_llm("q", "[1] ctx")
+
+    assert exc.value.provider == "openai_compatible"
+    # The rejected address must not leak through the sanitized error.
+    assert "169.254.169.254" not in str(exc.value)
 
 
 def test_call_llm_unconfigured_falls_back_to_excerpt(monkeypatch):
@@ -258,11 +383,7 @@ def test_call_llm_unconfigured_falls_back_to_excerpt(monkeypatch):
 
 def test_call_llm_openai_compatible_error_is_visible(monkeypatch):
     r, _ = _query_runner(monkeypatch, _profile(llm={"provider": "openai_compatible"}), [])
-    monkeypatch.setattr(
-        search_runner,
-        "urlopen",
-        MagicMock(side_effect=RuntimeError("connection refused")),
-    )
+    _fake_opener(monkeypatch, side_effect=RuntimeError("connection refused"))
 
     with pytest.raises(search_runner.LLMProviderError) as exc:
         r._call_llm("q", "[1] top chunk")

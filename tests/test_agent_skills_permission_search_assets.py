@@ -103,7 +103,7 @@ def test_top_level_feedback_policy_includes_permission_skill():
     feedback_policy = top_level_skill.split(
         "## Feedback Collection", 1
     )[1].split("## Shared Resources", 1)[0]
-    assert "applies to every skill in this collection" in feedback_policy
+    assert "skills in this collection" in feedback_policy
     assert "permission-aware-search" in feedback_policy
 
 

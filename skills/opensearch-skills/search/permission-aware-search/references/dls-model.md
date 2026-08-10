@@ -203,56 +203,48 @@ DLS requires the OpenSearch security plugin. The standard Docker image
 (`opensearchproject/opensearch:latest`) ships with it enabled by default.
 
 If the security plugin is disabled (`DISABLE_SECURITY_PLUGIN=true`), DLS cannot be
-configured. In that case, fall back to application-layer filtering using
-`allowed_users` as a `terms` filter in the query - but clearly document that this
-is a development convenience, not a security control.
+configured and this skill cannot proceed. Explain that the plugin must be enabled
+and stop; `check-security` fails for exactly this reason.
 
-## Future Extensions (TODO)
+Do not substitute an application-layer `terms` filter on `allowed_users`. Any
+caller that can reach the cluster can omit that filter, so it enforces nothing
+while looking like access control. Enabling the security plugin is the only
+supported path.
 
-These are candidate enhancements, not implemented features. They are recorded here
-so the design intent and extension seams are not lost. Authentication (how a user
-proves identity) and synchronization (how the ACL index is populated) are
-independent axes; the DLS authorization core is unchanged by either.
+## Authentication Is Independent Of Authorization
 
-### Authentication modes
+How a user proves identity and how the ACL index is populated are separate
+concerns from the DLS authorization core, which is unchanged by either.
 
-The authorization core is already authentication-agnostic: DLS resolves
-`${user.name}` to whatever principal the OpenSearch security plugin produced,
-regardless of how the user authenticated. So OIDC/Keycloak, JWT, SAML, or proxy
-auth can front the cluster today with no change to the DLS role or ACL model - the
-only requirement is to map those identities (or their backend roles) to
-`permission-aware-search-reader`.
+DLS resolves `${user.name}` to whatever principal the security plugin
+authenticated, regardless of the authentication method. OIDC/Keycloak, JWT, SAML,
+and proxy auth therefore work with no change to the DLS role or the ACL model:
+configure the authentication domain on the cluster, then map those identities (or
+their backend roles) to `permission-aware-search-reader`.
 
-- [ ] **OIDC / Keycloak login (cluster config).** Provide a variant that configures
-  the security plugin's `openid_auth_domain` in a `config.yml` (issuer/JWKS URL,
-  client id) and loads it with `securityadmin`, so users log in via an IdP and are
-  mapped to the reader role. This is cluster configuration, not skill Python.
-- [ ] **Token auth in the `query` CLI.** `lib/os_client.py:build_app_client` currently
-  builds the client with HTTP Basic (`http_auth=(username, password)`), and
-  `query --user/--password` passes exactly that. A bearer-token user has no
-  password. To let the skill's own `query` command act as an OIDC/JWT-authenticated
-  user, add an option to pass an `Authorization: Bearer <token>` header (or a
-  client-credentials/token-exchange flow) into `build_app_client`. Note this is only
-  needed for the demo/validation CLI; real applications authenticate their own way
-  and only need the role mapping plus ACL data.
+What matters is that the identity reaching OpenSearch is the end user's own. A
+shared service account resolves `${user.name}` to the service, not the caller, so
+every user would see that account's documents. Passing the username in an
+application header does not help, because DLS reads the authenticated identity
+rather than request headers. Use direct end-user authentication or a trusted
+proxy/JWT domain that establishes the caller as the OpenSearch user.
 
-### ACL synchronization backends
+The `query` CLI authenticates with HTTP Basic, so it drives clusters using
+username and password. Applications are not restricted to that: they authenticate
+their own way and need only the role mapping plus current ACL data.
+
+## Adding An ACL Synchronization Source
 
 `lib/group_resolver.py` defines a `DirectoryBackend` Protocol
-(`get_all_user_principals() -> {user: [principals]}`) and `build_resolver` dispatches
-on a `source` string. Adding a sync source is a self-contained extension:
+(`get_all_user_principals() -> {user: [principals]}`) and `build_resolver`
+dispatches on a `source` string. The static `file` backend ships today; another
+source (a directory service, an HR export, a custom identity store) is a
+self-contained extension:
 
 1. Implement the `DirectoryBackend` Protocol (one method).
 2. Add a `source` branch in `build_resolver`.
-3. Add its flags/env in `permission_search._directory_config` and the `refresh-acl`
-   subparser.
-4. Add an optional dependency group in `pyproject.toml` if it needs a library, and
-   surface it via `_optional_dependency_error`.
+3. Add its flags and environment variables in
+   `permission_search._directory_config` and the `refresh-acl` subparser.
+4. Add an optional dependency group in `pyproject.toml` if it needs a library,
+   and surface the import failure through `_optional_dependency_error`.
 5. Add unit tests mirroring the existing `FileBackend` tests.
-
-Candidate backends (only the static `file` backend ships today):
-
-- [ ] **LDAP / Active Directory** directory lookup.
-- [ ] **SCIM** provisioning endpoint.
-- [ ] **Okta / Microsoft Entra ID** group APIs (e.g. Microsoft Graph).
-- [ ] **SQL or REST directory export** from an HR system or custom identity store.

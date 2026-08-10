@@ -54,9 +54,9 @@ Creates:
 - Empty reader-role mapping, unless an existing mapping is already configured
 - Ingest pipeline (if embedding mode is `local`)
 
-Setup also disables and removes the legacy normalization search pipeline from
-earlier versions. Local semantic mode uses a DLS-compatible Boolean BM25+kNN
-query, not an OpenSearch `hybrid` query.
+Setup configures no search pipeline. Local semantic mode uses a DLS-compatible
+Boolean BM25+kNN query, not an OpenSearch `hybrid` query, so it needs no
+normalization processor.
 
 Setup intentionally creates no shared query user. Use existing production
 identities or the `create-users` demo helper, then map them to the reader role.
@@ -80,8 +80,25 @@ Each JSONL record must have `content` and `allowed_users`. Optional: `title`,
 updates the ACL lookup index. Run `sync-acl` or `refresh-acl` separately using an
 authoritative user-to-principals source.
 
+Each chunk is indexed under a document id derived from its source, so re-ingesting
+the same input overwrites those chunks instead of adding a second copy. Documents
+are searchable when the command returns. If any document is rejected, the command
+reports it under `index_errors` and exits non-zero rather than reporting the whole
+batch as indexed.
+
 Also accepts a directory of `.txt`, `.md`, `.pdf`, `.docx`, `.pptx`, and `.xlsx`
-files with a `--acl-file` mapping file:
+files with a `--acl-file` mapping file. `--acl-file` applies only to a directory:
+a `.jsonl` input carries `allowed_users` on each record, so combining the two is
+rejected rather than silently ignored.
+
+PDF and Office files are converted by the shared document pipeline, which picks a
+conversion profile from the document itself (including OCR for scanned pages),
+converts in page batches so peak memory stays bounded, and reports the heading
+trail and page number of each chunk. Those land in the `headings` and
+`page_number` fields, so an answer can cite where a passage came from. Chunking
+comes from the converter, which follows document structure; `--chunk-size` and
+`--chunk-overlap` apply to `.jsonl` and plain-text input. `--max-pages` caps the
+pages converted per document (default 10).
 
 ```bash
 uv run --group ingestion python scripts/permission_search.py ingest \

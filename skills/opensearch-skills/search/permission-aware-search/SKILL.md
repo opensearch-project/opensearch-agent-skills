@@ -4,12 +4,17 @@ description: >
   Build permission-aware search over any content, where OpenSearch-native
   Document-Level Security (DLS) enforces who can read what at the shard level -
   no application-layer filtering, no per-user roles. One DLS role scales to any
-  number of users via a Terms Lookup Query. RAG (LLM answer generation) is an
+  number of users via a Terms Lookup Query (TLQ), and field-level security (FLS)
+  hides the embedding vector from readers. RAG (LLM answer generation) is an
   optional mode on top. Use this skill when the user mentions permission-aware
-  search, secure search, document-level security, DLS, ACL-aware search,
-  multi-tenant search, role-based content access, enterprise search with
-  permissions, permission-trimmed or permission-aware RAG, or search where
-  users should only see documents they are authorized to read.
+  search, permission-trimmed search, secure search, document-level security,
+  DLS, FLS, field-level security, terms lookup query, ACL-aware search,
+  authorization or access control for search results, multi-tenant search,
+  tenant isolation, role-based content access, enterprise search with
+  permissions, the OpenSearch security plugin, permission-trimmed or
+  permission-aware RAG, making an existing content repository or document
+  management system respect its permissions, or search where users should only
+  see documents they are authorized to read.
 compatibility: >
   Requires uv and an OpenSearch cluster with the security plugin. Local
   OpenSearch requires Docker. Optional local RAG requires Docker Desktop Model
@@ -68,15 +73,19 @@ SaaS catalog filtering), not just RAG.
       "args": ["opensearch-mcp-server-py@latest"],
       "env": {
         "OPENSEARCH_URL": "https://localhost:9200",
-        "OPENSEARCH_USERNAME": "admin",
-        "OPENSEARCH_PASSWORD": "admin",
-        "OPENSEARCH_SSL_VERIFY": "false",
+        "OPENSEARCH_USERNAME": "${OPENSEARCH_USER}",
+        "OPENSEARCH_PASSWORD": "${OPENSEARCH_PASSWORD}",
         "FASTMCP_LOG_LEVEL": "ERROR"
       }
     }
   }
 }
 ```
+
+Take the credentials from the environment rather than writing them into the file;
+an MCP config holding a password must never be committed. Certificates are
+verified for every host except loopback, which serves the self-signed certificate
+of a local cluster.
 
 ## Scripts
 
@@ -93,9 +102,13 @@ export OPENSEARCH_URL=https://localhost:9200
 export OPENSEARCH_USER=admin
 export OPENSEARCH_PASSWORD='myStrongPassword123!'
 export OPENSEARCH_INDEX=permission-aware-search
-export OPENSEARCH_SSL_VERIFY=false
 export PERMISSION_SEARCH_EMBEDDING_MODE=local
 ```
+
+`OPENSEARCH_SSL_VERIFY` is unset above on purpose. By default certificates are
+verified for every host except loopback, so a local Docker cluster works without
+configuration and a remote cluster stays protected. Set it only to override that
+decision for a specific cluster.
 
 Do not pass admin credentials on the command line. `OPENSEARCH_USER` and
 `OPENSEARCH_PASSWORD` are used only for administrative commands; `query` takes

@@ -2,11 +2,16 @@
 
 import json
 import math
-from urllib.request import Request, urlopen
+from urllib.request import Request
 
+from .http_safe import build_safe_opener, validate_url
+from .operations import DEFAULT_TEXT_EMBEDDING_MODEL, find_registered_model
 from .os_client import build_app_client
+from .search import _build_default_lexical_query
 
 _SNIPPET_CHARS = 200
+# Searchable text fields of the content mapping; title outranks body text.
+_TEXT_FIELDS = ["title^2", "content"]
 
 
 class LLMProviderError(RuntimeError):
@@ -33,6 +38,7 @@ class SearchRunner:
         self.index = config["opensearch"]["index"]
         self.embedding_mode = config.get("embedding", {}).get("mode", "none")
         self.dimension = config.get("embedding", {}).get("dimension", 384)
+        self._model_id: str | None = None
 
     def query(self, question: str, top_k: int = 5, rag: bool = False) -> dict:
         """Run a permission-enforced search.
@@ -80,6 +86,11 @@ class SearchRunner:
         return response["hits"]["total"]["value"] > 0
 
     def _search(self, question: str, top_k: int) -> list[dict]:
+        # Exact matching: this index has a fixed mapping, so the shared builder's
+        # default fuzziness is switched off to keep lexical scoring predictable.
+        lexical = _build_default_lexical_query(
+            query=question, fields=_TEXT_FIELDS, fuzziness=None
+        )
         if self.embedding_mode == "local":
             embedding = self._embed(question)
             # TLQ DLS runs at filter level and wraps the request query. OpenSearch's
@@ -90,7 +101,7 @@ class SearchRunner:
                 "query": {
                     "bool": {
                         "should": [
-                            {"multi_match": {"query": question, "fields": ["title^2", "content"]}},
+                            lexical,
                             {"knn": {"content_vector": {"vector": embedding, "k": top_k}}},
                         ],
                         "minimum_should_match": 1,
@@ -98,10 +109,7 @@ class SearchRunner:
                 },
             }
         else:
-            body = {
-                "size": top_k,
-                "query": {"multi_match": {"query": question, "fields": ["title^2", "content"]}},
-            }
+            body = {"size": top_k, "query": lexical}
         response = self.client.search(index=self.index, body=body)
         return response["hits"]["hits"]
 
@@ -151,25 +159,18 @@ class SearchRunner:
         return embedding
 
     def _get_model_id(self) -> str:
+        # Cached: the model id cannot change during a run, and a lookup per
+        # query would double the request count of benchmark and RAG loops.
+        if self._model_id:
+            return self._model_id
         model_name = self.config.get("embedding", {}).get(
-            "model", "huggingface/sentence-transformers/all-MiniLM-L6-v2"
+            "model", DEFAULT_TEXT_EMBEDDING_MODEL
         )
-        response = self.client.transport.perform_request(
-            "GET", "/_plugins/_ml/models/_search",
-            body={
-                "query": {
-                    "bool": {
-                        "must": [{"match": {"name": model_name}}],
-                        "must_not": [{"exists": {"field": "chunk_number"}}],
-                    }
-                },
-                "size": 1,
-            },
-        )
-        hits = response.get("hits", {}).get("hits", [])
-        if not hits:
+        model = find_registered_model(self.client, model_name)
+        if model is None:
             raise RuntimeError(f"Model '{model_name}' not deployed. Run setup first.")
-        return hits[0]["_id"]
+        self._model_id = model["_id"]
+        return self._model_id
 
     def _call_llm(self, question: str, context: str) -> str:
         prompt = (
@@ -203,8 +204,13 @@ class SearchRunner:
         """
         try:
             base_url = llm_cfg.get("base_url", "http://localhost:12434/engines/v1")
+            url = f"{base_url.rstrip('/')}/chat/completions"
+            # A local model runner is the common case, so loopback is permitted.
+            # Every other address range is still rejected, and the prompt may
+            # contain content the caller is authorized to read.
+            validate_url(url, allow_loopback=True)
             request = Request(
-                f"{base_url.rstrip('/')}/chat/completions",
+                url,
                 data=json.dumps({
                     "model": llm_cfg.get("model", "ai/smollm2"),
                     "messages": [{"role": "user", "content": prompt}],
@@ -214,7 +220,8 @@ class SearchRunner:
                 headers={"Content-Type": "application/json"},
                 method="POST",
             )
-            with urlopen(request, timeout=llm_cfg.get("timeout", 120)) as response:
+            opener = build_safe_opener(allow_loopback=True)
+            with opener.open(request, timeout=llm_cfg.get("timeout", 120)) as response:
                 payload = json.loads(response.read())
         except Exception as exc:
             raise LLMProviderError(

@@ -190,21 +190,112 @@ def test_content_mapping_none_omits_vector(monkeypatch):
     assert "content_vector" not in props
 
 
-def test_setup_disables_and_removes_legacy_normalization_pipeline(monkeypatch):
-    fake = MagicMock()
-    monkeypatch.setattr(index_writer, "build_admin_client", lambda profile: fake)
-    writer = index_writer.IndexWriter(_profile())
+def test_setup_ingest_pipeline_embeds_content_and_attaches_the_pipeline(monkeypatch):
+    writer, client = _writer(monkeypatch)
+    monkeypatch.setattr(writer, "_get_or_deploy_model", lambda: "model-1")
 
-    writer._disable_legacy_search_pipeline()
+    writer._setup_ingest_pipeline()
 
-    fake.indices.put_settings.assert_called_once_with(
+    method, path = client.transport.perform_request.call_args.args
+    body = client.transport.perform_request.call_args.kwargs["body"]
+    assert (method, path) == ("PUT", "/_ingest/pipeline/permission-aware-search-ingest")
+    assert body["processors"] == [{
+        "text_embedding": {
+            "model_id": "model-1",
+            "field_map": {"content": "content_vector"},
+        }
+    }]
+    # Attaching as the index default is what makes embeddings happen server-side
+    # on every write, including writes this CLI does not perform.
+    client.indices.put_settings.assert_called_once_with(
         index="permission-aware-search",
-        body={"index": {"search.default_pipeline": "_none"}},
+        body={"index": {"default_pipeline": "permission-aware-search-ingest"}},
     )
-    fake.transport.perform_request.assert_called_once_with(
-        "DELETE",
-        "/_search/pipeline/permission-aware-search-search",
+
+
+def test_setup_ingest_pipeline_propagates_failures(monkeypatch):
+    writer, client = _writer(monkeypatch)
+    monkeypatch.setattr(writer, "_get_or_deploy_model", lambda: "model-1")
+    client.transport.perform_request.side_effect = index_writer.TransportError(
+        400, "invalid_processor"
     )
+
+    # setup must not report success when the embedding pipeline was not created.
+    with pytest.raises(index_writer.TransportError):
+        writer._setup_ingest_pipeline()
+
+
+def test_bulk_index_refreshes_so_documents_are_searchable(monkeypatch):
+    writer, client = _writer(monkeypatch)
+    monkeypatch.setattr(index_writer.helpers, "bulk", lambda *a, **k: (2, []))
+
+    result = writer.bulk_index([{"content": "a"}, {"content": "b"}])
+
+    assert result == {"indexed": 2, "errors": []}
+    # Without a refresh, a query or eval-dls run straight after ingest can
+    # legitimately return zero hits.
+    client.indices.refresh.assert_called_once_with(index="permission-aware-search")
+
+
+def test_bulk_index_reports_per_document_failures(monkeypatch):
+    writer, client = _writer(monkeypatch)
+    failures = [{"index": {"_id": "doc-2", "error": "mapper_parsing_exception"}}]
+    monkeypatch.setattr(index_writer.helpers, "bulk", lambda *a, **k: (1, failures))
+
+    result = writer.bulk_index([{"content": "a"}, {"content": "b"}])
+
+    assert result["indexed"] == 1
+    assert result["errors"] == ["index: mapper_parsing_exception"]
+
+
+def test_bulk_index_passes_explicit_ids_so_reingest_overwrites(monkeypatch):
+    writer, _client = _writer(monkeypatch)
+    captured = {}
+
+    def fake_bulk(client, actions, **kwargs):
+        captured["actions"] = list(actions)
+        return len(captured["actions"]), []
+
+    monkeypatch.setattr(index_writer.helpers, "bulk", fake_bulk)
+
+    writer.bulk_index([{"_id": "src.txt-0", "content": "a"}, {"content": "b"}])
+
+    assert captured["actions"][0]["_id"] == "src.txt-0"
+    # _id must not be duplicated into the document body.
+    assert "_id" not in captured["actions"][0]["_source"]
+    assert "_id" not in captured["actions"][1]
+
+
+def test_bulk_index_skips_the_request_when_there_is_nothing_to_index(monkeypatch):
+    writer, client = _writer(monkeypatch)
+
+    def fail(*_args, **_kwargs):
+        raise AssertionError("bulk must not be called for an empty batch")
+
+    monkeypatch.setattr(index_writer.helpers, "bulk", fail)
+
+    assert writer.bulk_index([]) == {"indexed": 0, "errors": []}
+    client.indices.refresh.assert_not_called()
+
+
+def test_allow_ml_on_data_node_reports_a_forbidden_cluster_update(monkeypatch):
+    writer, client = _writer(monkeypatch)
+    client.cluster.put_settings.side_effect = index_writer.AuthorizationException(
+        403, "no permissions for [cluster:admin/settings/update]"
+    )
+
+    # A 403 must not be mistaken for "this cluster has dedicated ML nodes".
+    with pytest.raises(RuntimeError, match="only_run_on_ml_node"):
+        writer._allow_ml_on_data_node()
+
+
+def test_allow_ml_on_data_node_tolerates_other_transport_errors(monkeypatch):
+    writer, client = _writer(monkeypatch)
+    client.cluster.put_settings.side_effect = index_writer.TransportError(
+        400, "illegal_argument_exception"
+    )
+
+    writer._allow_ml_on_data_node()
 
 
 def test_setup_creates_acl_alias_with_versioned_backing(monkeypatch):

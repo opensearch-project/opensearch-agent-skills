@@ -46,6 +46,31 @@ def test_chunk_at_exact_size_single_chunk():
     assert chunk_text(text, chunk_size=10) == [text]
 
 
+@pytest.mark.parametrize("chunk_overlap", [64, 100])
+def test_chunk_rejects_an_overlap_that_would_never_advance(chunk_overlap):
+    text = " ".join(str(i) for i in range(200))
+
+    # A step of zero words or fewer loops forever instead of raising.
+    with pytest.raises(ValueError, match="must be smaller than"):
+        chunk_text(text, chunk_size=64, chunk_overlap=chunk_overlap)
+
+
+def test_chunk_allows_a_large_overlap_when_no_split_is_needed():
+    # The overlap only matters once the text is long enough to be split.
+    assert chunk_text("one two three", chunk_size=10, chunk_overlap=10) == [
+        "one two three"
+    ]
+
+
+@pytest.mark.parametrize(
+    ("chunk_size", "chunk_overlap"),
+    [(0, 0), (-1, 0), (10, -1)],
+)
+def test_chunk_rejects_nonsensical_sizes(chunk_size, chunk_overlap):
+    with pytest.raises(ValueError):
+        chunk_text("one two three", chunk_size=chunk_size, chunk_overlap=chunk_overlap)
+
+
 def test_chunk_splits_with_overlap():
     text = " ".join(str(i) for i in range(25))
     chunks = chunk_text(text, chunk_size=10, chunk_overlap=2)

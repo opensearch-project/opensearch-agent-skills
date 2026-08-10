@@ -57,7 +57,11 @@ def test_runtime_config_accepts_command_overrides():
         embedding_dimension=256,
     ))
 
-    assert config["chunking"] == {"chunk_size": 128, "chunk_overlap": 32}
+    assert config["chunking"] == {
+        "chunk_size": 128,
+        "chunk_overlap": 32,
+        "max_pages": 10,
+    }
     assert config["embedding"]["mode"] == "none"
     assert config["embedding"]["dimension"] == 256
 
@@ -202,43 +206,76 @@ def test_extract_text_distinguishes_unsupported_files(tmp_path):
     text_file.write_text("plain text")
 
     assert permission_search._extract_text(str(text_file)) == "plain text"
+    # None means "not plain text"; rich formats go through _extract_chunks.
     assert permission_search._extract_text(str(tmp_path / "document.csv")) is None
+    assert permission_search._extract_text(str(tmp_path / "report.pdf")) is None
 
 
-def test_extract_text_explains_optional_docling_dependency(
+def test_extract_chunks_distinguishes_unsupported_files(tmp_path):
+    assert permission_search._extract_chunks(str(tmp_path / "data.csv"), 10) is None
+    assert permission_search._extract_chunks(str(tmp_path / "notes.txt"), 10) is None
+
+
+def _install_fake_ingest(monkeypatch, process_document):
+    """Install a stand-in lib.ingest whose process_document is controlled."""
+    module = types.ModuleType("lib.ingest")
+    module.process_document = process_document
+    monkeypatch.setitem(sys.modules, "lib.ingest", module)
+
+
+def test_extract_chunks_delegates_to_the_shared_ingest_pipeline(
     monkeypatch, tmp_path
 ):
     pdf = tmp_path / "report.pdf"
     pdf.write_bytes(b"not a pdf")
-    monkeypatch.setitem(sys.modules, "docling", None)
-    monkeypatch.delitem(sys.modules, "docling.document_converter", raising=False)
+    calls = []
+
+    def fake_process_document(path, max_pages=10, **kwargs):
+        calls.append((path, max_pages))
+        return [{"text": "page one", "headings": ["Intro"], "page_number": 1}]
+
+    _install_fake_ingest(monkeypatch, fake_process_document)
+
+    chunks = permission_search._extract_chunks(str(pdf), 25)
+
+    # The page cap must reach the shared pipeline: it bounds peak memory.
+    assert calls == [(str(pdf), 25)]
+    assert chunks[0]["headings"] == ["Intro"]
+    assert chunks[0]["page_number"] == 1
+
+
+def test_extract_chunks_explains_optional_docling_dependency(
+    monkeypatch, tmp_path
+):
+    pdf = tmp_path / "report.pdf"
+    pdf.write_bytes(b"not a pdf")
+
+    def missing_dependency(path, max_pages=10, **kwargs):
+        raise ImportError("No module named 'docling'")
+
+    _install_fake_ingest(monkeypatch, missing_dependency)
 
     with pytest.raises(permission_search.OptionalDependencyError) as exc:
-        permission_search._extract_text(str(pdf))
+        permission_search._extract_chunks(str(pdf), 10)
 
     assert "--group ingestion" in str(exc.value)
 
 
-def test_extract_text_sanitizes_converter_failures(monkeypatch, tmp_path):
+def test_extract_chunks_sanitizes_converter_failures(monkeypatch, tmp_path):
     pdf = tmp_path / "report.pdf"
     pdf.write_bytes(b"not a pdf")
-    converter_module = types.ModuleType("docling.document_converter")
 
-    class FailingConverter:
-        def convert(self, _path):
-            raise ValueError("sensitive converter details")
+    def failing(path, max_pages=10, **kwargs):
+        raise ValueError("sensitive converter details")
 
-    converter_module.DocumentConverter = FailingConverter
-    docling_module = types.ModuleType("docling")
-    docling_module.__path__ = []
-    monkeypatch.setitem(sys.modules, "docling", docling_module)
-    monkeypatch.setitem(sys.modules, "docling.document_converter", converter_module)
+    _install_fake_ingest(monkeypatch, failing)
 
     with pytest.raises(permission_search.ExtractionError) as exc:
-        permission_search._extract_text(str(pdf))
+        permission_search._extract_chunks(str(pdf), 10)
 
     assert exc.value.filename == "report.pdf"
     assert exc.value.error_type == "ValueError"
+    # Converter messages can embed file paths and document content.
     assert "sensitive converter details" not in str(exc.value)
 
 
@@ -253,7 +290,7 @@ def test_ingest_reports_supported_file_conversion_failures(
     writer = MagicMock()
     monkeypatch.setattr(
         permission_search,
-        "_extract_text",
+        "_extract_chunks",
         MagicMock(side_effect=permission_search.ExtractionError(
             "report.pdf", "ValueError"
         )),
@@ -282,3 +319,72 @@ def test_ingest_reports_supported_file_conversion_failures(
             "error_type": "ValueError",
         }],
     }
+
+
+def test_ingest_indexes_converter_chunks_with_structure(monkeypatch, tmp_path, capsys):
+    documents = tmp_path / "documents"
+    documents.mkdir()
+    (documents / "report.pdf").write_bytes(b"not a pdf")
+    acl_path = tmp_path / "acl.json"
+    acl_path.write_text(json.dumps({"report.pdf": ["alice", "GROUP_Finance"]}))
+    indexed = []
+    writer = MagicMock()
+    writer.bulk_index.side_effect = lambda docs: (
+        indexed.extend(docs) or {"indexed": len(docs), "errors": []}
+    )
+    monkeypatch.setattr(
+        permission_search,
+        "_extract_chunks",
+        lambda path, max_pages: [
+            {"text": "budget overview", "headings": ["Q3"], "page_number": 1},
+            {"text": "detail table", "headings": ["Q3", "Detail"], "page_number": 2},
+            {"text": "   "},  # whitespace-only chunks are dropped
+        ],
+    )
+
+    permission_search.cmd_ingest(
+        SimpleNamespace(
+            command="ingest",
+            input=str(documents),
+            acl_file=str(acl_path),
+            batch_size=50,
+        ),
+        writer_factory=lambda _profile: writer,
+        chunk_text_fn=lambda text, chunk_size, chunk_overlap: [text],
+    )
+
+    result = json.loads(capsys.readouterr().out)
+    assert result == {"indexed": 2, "skipped": 0}
+    # The converter's own chunking is preserved rather than re-split, and its
+    # structure is carried through so an answer can cite a page.
+    assert [d["content"] for d in indexed] == ["budget overview", "detail table"]
+    assert indexed[1]["headings"] == ["Q3", "Detail"]
+    assert indexed[1]["page_number"] == 2
+    assert indexed[0]["allowed_users"] == ["alice", "GROUP_Finance"]
+    # Stable ids keep a re-run idempotent.
+    assert [d["_id"] for d in indexed] == ["report.pdf#0", "report.pdf#1"]
+
+
+def test_ingest_skips_a_document_that_converts_to_nothing(monkeypatch, tmp_path, capsys):
+    documents = tmp_path / "documents"
+    documents.mkdir()
+    (documents / "scan.pdf").write_bytes(b"not a pdf")
+    acl_path = tmp_path / "acl.json"
+    acl_path.write_text(json.dumps({"scan.pdf": ["alice"]}))
+    writer = MagicMock()
+    monkeypatch.setattr(permission_search, "_extract_chunks", lambda path, max_pages: [])
+
+    permission_search.cmd_ingest(
+        SimpleNamespace(
+            command="ingest",
+            input=str(documents),
+            acl_file=str(acl_path),
+            batch_size=50,
+        ),
+        writer_factory=lambda _profile: writer,
+        chunk_text_fn=lambda text, chunk_size, chunk_overlap: [text],
+    )
+
+    result = json.loads(capsys.readouterr().out)
+    assert result == {"indexed": 0, "skipped": 1}
+    writer.bulk_index.assert_not_called()

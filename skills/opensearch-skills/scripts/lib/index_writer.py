@@ -4,9 +4,15 @@ import time
 import uuid
 
 from opensearchpy import helpers
-from opensearchpy.exceptions import NotFoundError
+from opensearchpy.exceptions import AuthorizationException, TransportError
 from .dls_manager import DLSManager
-from .operations import PRETRAINED_MODELS
+from .operations import (
+    DEFAULT_TEXT_EMBEDDING_MODEL,
+    PRETRAINED_MODELS,
+    attach_default_pipeline,
+    find_registered_model,
+    put_ingest_pipeline,
+)
 from .os_client import build_admin_client
 
 
@@ -44,8 +50,6 @@ class IndexWriter:
                 f"Expected one ACL lookup target, found {len(acl_targets)}"
             )
 
-        self._disable_legacy_search_pipeline()
-
         if self.embedding_mode == "local":
             self._allow_ml_on_data_node()
             self._setup_ingest_pipeline()
@@ -59,7 +63,15 @@ class IndexWriter:
             self.client.cluster.put_settings(
                 body={"persistent": {"plugins.ml_commons.only_run_on_ml_node": False}}
             )
-        except Exception:
+        except AuthorizationException as exc:
+            # A managed cluster may forbid cluster settings updates. Surface it,
+            # because otherwise the cause resurfaces as an opaque deploy failure.
+            raise RuntimeError(
+                "Not permitted to set plugins.ml_commons.only_run_on_ml_node. "
+                "Use --embedding-mode none, or have an administrator allow ML "
+                "tasks on data nodes."
+            ) from exc
+        except TransportError:
             # Non-fatal: a properly provisioned cluster with ML nodes doesn't need this.
             pass
 
@@ -71,6 +83,11 @@ class IndexWriter:
             "path":           {"type": "keyword"},
             "source_file":    {"type": "keyword"},
             "chunk_id":       {"type": "integer"},
+            # Structure reported by the document converter, when available: the
+            # heading trail is searchable, and the page number lets an answer
+            # cite where a chunk came from.
+            "headings":       {"type": "text", "analyzer": "english"},
+            "page_number":    {"type": "integer"},
             "metadata":       {"type": "object", "enabled": False},
         }
         settings: dict = {"index": {}}
@@ -96,28 +113,14 @@ class IndexWriter:
         if self._model_id:
             return self._model_id
         model_name = self.config.get("embedding", {}).get(
-            "model", "huggingface/sentence-transformers/all-MiniLM-L6-v2"
+            "model", DEFAULT_TEXT_EMBEDDING_MODEL
         )
-        response = self.client.transport.perform_request(
-            "GET", "/_plugins/_ml/models/_search",
-            # Exclude chunk sub-documents (they have chunk_number and no model_state);
-            # only the root model doc carries model_state.
-            body={
-                "query": {
-                    "bool": {
-                        "must": [{"match": {"name": model_name}}],
-                        "must_not": [{"exists": {"field": "chunk_number"}}],
-                    }
-                },
-                "size": 1,
-            },
-        )
-        hits = response.get("hits", {}).get("hits", [])
-        if hits:
+        model = find_registered_model(self.client, model_name)
+        if model is not None:
             # Model already registered - reuse it. Deploy/wait only if not DEPLOYED.
             # (Re-registering an existing model returns a task with no model_id.)
-            model_id = hits[0]["_id"]
-            if hits[0]["_source"].get("model_state") != "DEPLOYED":
+            model_id = model["_id"]
+            if model["_source"].get("model_state") != "DEPLOYED":
                 self._deploy_and_wait(model_id)
             self._model_id = model_id
             return model_id
@@ -158,6 +161,12 @@ class IndexWriter:
         )
 
     def _wait_task(self, task_id: str) -> dict:
+        # Not delegated to operations._wait_for_ml_task on purpose. That helper
+        # treats only COMPLETED and FAILED as terminal, so CANCELLED,
+        # COMPLETED_WITH_ERROR, EXPIRED, UNREACHABLE, and a missing state field
+        # all keep polling until it gives up and reports a timeout with the error
+        # detail discarded. Waiting ~300s to misreport a permanently failed task
+        # is worse than duplicating a poll loop.
         return self._wait_for_state(
             path=f"/_plugins/_ml/tasks/{task_id}",
             state_field="state",
@@ -197,9 +206,10 @@ class IndexWriter:
     def _setup_ingest_pipeline(self):
         model_id = self._get_or_deploy_model()
         pipeline_id = f"{self.index}-ingest"
-        self.client.transport.perform_request(
-            "PUT", f"/_ingest/pipeline/{pipeline_id}",
-            body={
+        put_ingest_pipeline(
+            self.client,
+            pipeline_id,
+            {
                 "description": "permission-aware-search text embedding",
                 "processors": [{
                     "text_embedding": {
@@ -209,28 +219,36 @@ class IndexWriter:
                 }],
             },
         )
-        self.client.indices.put_settings(
-            index=self.index,
-            body={"index": {"default_pipeline": pipeline_id}},
-        )
+        attach_default_pipeline(self.client, self.index, pipeline_id)
 
-    def _disable_legacy_search_pipeline(self):
-        """Remove normalization that never applied to the DLS-compatible query."""
-        pipeline_id = f"{self.index}-search"
-        self.client.indices.put_settings(
-            index=self.index,
-            body={"index": {"search.default_pipeline": "_none"}},
-        )
-        try:
-            self.client.transport.perform_request(
-                "DELETE",
-                f"/_search/pipeline/{pipeline_id}",
-            )
-        except NotFoundError:
-            pass
+    def bulk_index(self, docs: list[dict]) -> dict:
+        """Index documents and report per-document failures.
 
-    def bulk_index(self, docs: list[dict]):
-        helpers.bulk(self.client, [{"_index": self.index, "_source": d} for d in docs])
+        A document may carry an `_id`, which makes re-ingesting the same source
+        overwrite its chunks instead of duplicating them.
+        """
+        actions = []
+        for document in docs:
+            source = {key: value for key, value in document.items() if key != "_id"}
+            action = {"_index": self.index, "_source": source}
+            if document.get("_id"):
+                action["_id"] = document["_id"]
+            actions.append(action)
+
+        if not actions:
+            return {"indexed": 0, "errors": []}
+
+        indexed, raw_errors = helpers.bulk(
+            self.client, actions, raise_on_error=False, stats_only=False
+        )
+        errors = [
+            f"{name}: {detail.get('error', detail)}"
+            for failure in raw_errors
+            for name, detail in failure.items()
+        ]
+        if indexed:
+            self.client.indices.refresh(index=self.index)
+        return {"indexed": indexed, "errors": errors}
 
     def replace_acl_documents(self, docs: list[dict]) -> str:
         """Build a complete ACL snapshot and switch DLS to it as one role update."""

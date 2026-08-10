@@ -30,7 +30,7 @@ class FileBackend:
         self.path = cfg["path"]
 
     def get_all_user_principals(self) -> dict[str, list[str]]:
-        with open(self.path) as f:
+        with open(self.path, encoding="utf-8") as f:
             data = json.load(f)
 
         if not isinstance(data, dict):

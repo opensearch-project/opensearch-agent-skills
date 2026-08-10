@@ -24,11 +24,17 @@ Commands:
 
 import argparse
 import json
+import math
 import os
+import re
 import sys
 import time
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+
+# Document id used by eval-dls to test whether writes are denied.
+_WRITE_PROBE_ID = "__permission_check"
+
 
 class ConfigurationError(ValueError):
     """A user-correctable CLI or environment configuration error."""
@@ -135,7 +141,7 @@ def cmd_check_security(args):
 
 def cmd_check_llm(args):
     """Check reachability of the optional RAG LLM endpoint (openai_compatible/DMR)."""
-    from urllib.request import urlopen
+    from lib.http_safe import build_safe_opener, validate_url
 
     config = _runtime_config(args)
     llm_cfg = config.get("llm", {})
@@ -145,12 +151,19 @@ def cmd_check_llm(args):
         return
     base_url = llm_cfg.get("base_url", "http://localhost:12434/engines/v1")
     try:
-        with urlopen(f"{base_url.rstrip('/')}/models", timeout=10) as response:
+        url = f"{base_url.rstrip('/')}/models"
+        # A local model runner is the common case, so loopback is permitted;
+        # every other address range is still rejected.
+        validate_url(url, allow_loopback=True)
+        opener = build_safe_opener(allow_loopback=True)
+        with opener.open(url, timeout=10) as response:
             payload = json.loads(response.read())
         models = [m.get("id") for m in payload.get("data", [])]
         print(json.dumps({"reachable": True, "base_url": base_url, "models": models}))
     except Exception as e:
-        print(json.dumps({"reachable": False, "base_url": base_url, "error": str(e)}))
+        # Report the failure type only: a base URL can carry an embedded
+        # credential, and str(e) often repeats the whole URL.
+        print(json.dumps({"reachable": False, "error_type": type(e).__name__}))
         sys.exit(1)
 
 
@@ -183,7 +196,7 @@ def cmd_create_users(args):
     usernames = [u.strip() for u in args.users.split(",") if u.strip()]
     created = []
     for username in usernames:
-        password = args.password or _derive_test_password(username)
+        password = args.password or _default_demo_password()
         mgr.create_test_user(username, password)
         mgr.map_test_user_to_role(username)
         created.append(username)
@@ -203,49 +216,108 @@ def cmd_ingest(args, writer_factory=None, chunk_text_fn=None):
     cfg = config.get("chunking", {})
     chunk_size = cfg.get("chunk_size", 512)
     chunk_overlap = cfg.get("chunk_overlap", 64)
+    max_pages = cfg.get("max_pages", 10)
 
     indexed = skipped = 0
     extraction_errors = []
+    index_errors: list[str] = []
     batch: list[dict] = []
     batch_size = args.batch_size
 
     def flush():
+        nonlocal indexed
         if batch:
-            writer.bulk_index(batch)
+            result = writer.bulk_index(batch)
+            if isinstance(result, dict):
+                indexed += result.get("indexed", len(batch))
+                index_errors.extend(result.get("errors", []))
+            else:
+                indexed += len(batch)
             batch.clear()
 
-    def process_record(rec: dict):
-        nonlocal indexed, skipped
+    def add_chunk(chunk_id: int, content: str, rec: dict, record_key: str | None,
+                  extra: dict | None = None):
+        doc = {
+            "title": rec.get("title", ""),
+            "content": content,
+            "allowed_users": rec["allowed_users"],
+            "path": rec.get("path", ""),
+            "source_file": rec.get("source_file", ""),
+            "chunk_id": chunk_id,
+            "metadata": rec.get("metadata", {}),
+        }
+        if extra:
+            doc.update(extra)
+        # A stable id keeps re-ingesting the same source idempotent instead
+        # of appending a second copy of every chunk.
+        if record_key:
+            doc["_id"] = f"{record_key}#{chunk_id}"
+        batch.append(doc)
+        if len(batch) >= batch_size:
+            flush()
+
+    def process_record(rec: dict, record_key: str | None = None):
+        nonlocal skipped
         content = rec.get("content", "").strip()
         allowed = rec.get("allowed_users", [])
         if not content or not allowed:
             skipped += 1
             return
-        chunks = chunk_text_fn(content, chunk_size, chunk_overlap)
-        for chunk_id, chunk in enumerate(chunks):
-            doc = {
-                "title": rec.get("title", ""),
-                "content": chunk,
-                "allowed_users": allowed,
-                "path": rec.get("path", ""),
-                "source_file": rec.get("source_file", ""),
-                "chunk_id": chunk_id,
-                "metadata": rec.get("metadata", {}),
-            }
-            batch.append(doc)
-            indexed += 1
-            if len(batch) >= batch_size:
-                flush()
+        for chunk_id, chunk in enumerate(
+            chunk_text_fn(content, chunk_size, chunk_overlap)
+        ):
+            add_chunk(chunk_id, chunk, rec, record_key)
+
+    def process_chunks(chunks: list[dict], rec: dict, record_key: str | None = None):
+        """Index chunks a converter already split, preserving its structure."""
+        nonlocal skipped
+        if not rec.get("allowed_users"):
+            skipped += 1
+            return
+        added = 0
+        for chunk in chunks:
+            text = (chunk.get("text") or "").strip()
+            if not text:
+                continue
+            extra = {}
+            if chunk.get("headings"):
+                extra["headings"] = chunk["headings"]
+            if chunk.get("page_number") is not None:
+                extra["page_number"] = chunk["page_number"]
+            add_chunk(added, text, rec, record_key, extra)
+            added += 1
+        if not added:
+            skipped += 1
     if args.input:
         input_path = args.input
         if os.path.isfile(input_path) and input_path.endswith(".jsonl"):
-            with open(input_path) as f:
-                for line in f:
+            if args.acl_file:
+                raise ConfigurationError(
+                    "--acl-file applies to a directory of documents. A .jsonl "
+                    "input carries allowed_users on each record."
+                )
+            with open(input_path, encoding="utf-8") as f:
+                for line_number, line in enumerate(f):
                     line = line.strip()
                     if line:
-                        process_record(json.loads(line))
+                        try:
+                            record = json.loads(line)
+                        except json.JSONDecodeError as exc:
+                            raise ConfigurationError(
+                                f"{input_path} line {line_number + 1} is not valid "
+                                f"JSON: {exc.msg}"
+                            ) from exc
+                        key = record.get("path") or record.get("source_file")
+                        process_record(
+                            record,
+                            f"{key or os.path.basename(input_path)}-{line_number}",
+                        )
         elif os.path.isdir(input_path):
-            acl_file = json.load(open(args.acl_file)) if args.acl_file else {}
+            if args.acl_file:
+                with open(args.acl_file, encoding="utf-8") as f:
+                    acl_file = json.load(f)
+            else:
+                acl_file = {}
             for fname in sorted(os.listdir(input_path)):
                 fpath = os.path.join(input_path, fname)
                 if not os.path.isfile(fpath):
@@ -254,8 +326,14 @@ def cmd_ingest(args, writer_factory=None, chunk_text_fn=None):
                 if not allowed:
                     skipped += 1
                     continue
+                record = {"allowed_users": allowed, "source_file": fname,
+                          "path": fpath}
                 try:
                     text = _extract_text(fpath)
+                    if text is None:
+                        chunks = _extract_chunks(fpath, max_pages)
+                    else:
+                        chunks = None
                 except ExtractionError as exc:
                     skipped += 1
                     extraction_errors.append({
@@ -264,14 +342,13 @@ def cmd_ingest(args, writer_factory=None, chunk_text_fn=None):
                         "error_type": exc.error_type,
                     })
                     continue
-                if text is None:
+                if chunks is not None:
+                    process_chunks(chunks, record, fname)
+                elif text:
+                    process_record({**record, "content": text}, fname)
+                else:
+                    # Unsupported type, or a conversion that produced nothing.
                     skipped += 1
-                    continue
-                if not text:
-                    skipped += 1
-                    continue
-                process_record({"content": text, "allowed_users": allowed,
-                                "source_file": fname, "path": fpath})
         else:
             print(json.dumps({"error": f"Unsupported input: {input_path}"}))
             sys.exit(1)
@@ -280,8 +357,10 @@ def cmd_ingest(args, writer_factory=None, chunk_text_fn=None):
     result = {"indexed": indexed, "skipped": skipped}
     if extraction_errors:
         result["errors"] = extraction_errors
+    if index_errors:
+        result["index_errors"] = index_errors
     print(json.dumps(result))
-    if extraction_errors:
+    if extraction_errors or index_errors:
         sys.exit(1)
 
 
@@ -293,7 +372,7 @@ def cmd_sync_acl(args, writer_factory=None):
     config = _runtime_config(args)
     writer = writer_factory(config)
 
-    with open(args.acl_file) as f:
+    with open(args.acl_file, encoding="utf-8") as f:
         mapping = json.load(f)
     if not isinstance(mapping, dict):
         raise ValueError("ACL file must contain a JSON object mapping users to principals")
@@ -396,18 +475,52 @@ def _hit_label(src: dict) -> str:
             or src.get("path") or f"chunk {src.get('chunk_id', 0)}")
 
 
+def _probe_write_blocked(client, index: str) -> tuple[bool, str]:
+    """Check that the caller cannot write to the content index.
+
+    Uses the security plugin's `perform_permission_check` parameter, which
+    evaluates the request without executing it. A cluster that does not support
+    the parameter would execute the write instead, so the response is validated
+    before its verdict is trusted rather than being reported as "not blocked".
+    """
+    try:
+        response = client.transport.perform_request(
+            "PUT",
+            f"/{index}/_doc/{_WRITE_PROBE_ID}",
+            params={"perform_permission_check": "true"},
+            body={"probe": True},
+        )
+    except Exception as exc:  # noqa: BLE001 - any denial proves the write failed
+        status = getattr(exc, "status_code", None)
+        if status in (401, 403):
+            return True, "denied"
+        raise
+
+    if isinstance(response, dict) and "accessAllowed" in response:
+        return response["accessAllowed"] is False, "permission-check"
+
+    # The parameter was ignored and the write executed, so the probe cannot
+    # report on enforcement. Remove the document it created before failing.
+    _delete_write_probe(client, index)
+    return False, "unsupported"
+
+
+def _delete_write_probe(client, index: str) -> None:
+    try:
+        client.transport.perform_request(
+            "DELETE", f"/{index}/_doc/{_WRITE_PROBE_ID}"
+        )
+    except Exception:  # noqa: BLE001 - cleanup is best effort
+        pass
+
+
 def _audit_eval_user(config, username, password, client_factory):
     client = client_factory(config, username, password)
     authinfo = client.transport.perform_request(
         "GET", "/_plugins/_security/authinfo"
     )
     index = config["opensearch"]["index"]
-    permission_check = client.transport.perform_request(
-        "PUT",
-        f"/{index}/_doc/__permission_check",
-        params={"perform_permission_check": "true"},
-        body={"probe": True},
-    )
+    write_blocked, probe_method = _probe_write_blocked(client, index)
     roles = sorted(authinfo.get("roles", []))
     expected_role = f"{index}-reader"
     return {
@@ -415,7 +528,8 @@ def _audit_eval_user(config, username, password, client_factory):
         "authenticated_user": authinfo.get("user_name"),
         "roles": roles,
         "expected_role_assigned": expected_role in roles,
-        "write_blocked": permission_check.get("accessAllowed") is False,
+        "write_blocked": write_blocked,
+        "write_probe": probe_method,
     }
 
 
@@ -429,18 +543,37 @@ def cmd_eval_dls(args, runner_factory=None, client_factory=None):
 
     config = _runtime_config(args)
     shared_password = getattr(args, "password", None)
+    # No password fallback: this command certifies that DLS is enforced, so it
+    # must fail loudly rather than certify an identity the caller did not name.
     allowed_password = (
         getattr(args, "allowed_password", None)
         or os.getenv("PERMISSION_SEARCH_ALLOWED_PASSWORD")
         or shared_password
-        or _derive_test_password(args.allowed_user)
     )
     forbidden_password = (
         getattr(args, "forbidden_password", None)
         or os.getenv("PERMISSION_SEARCH_FORBIDDEN_PASSWORD")
         or shared_password
-        or _derive_test_password(args.forbidden_user)
     )
+    for user, password, flag, environment in (
+        (
+            args.allowed_user,
+            allowed_password,
+            "--allowed-password",
+            "PERMISSION_SEARCH_ALLOWED_PASSWORD",
+        ),
+        (
+            args.forbidden_user,
+            forbidden_password,
+            "--forbidden-password",
+            "PERMISSION_SEARCH_FORBIDDEN_PASSWORD",
+        ),
+    ):
+        if not password:
+            raise ConfigurationError(
+                f"No password for '{user}'. Provide {flag}, set {environment}, "
+                "or pass --password to use one password for both users."
+            )
 
     allowed_runner = runner_factory(
         config, username=args.allowed_user, password=allowed_password
@@ -467,12 +600,18 @@ def cmd_eval_dls(args, runner_factory=None, client_factory=None):
         for check in user_checks
     )
     passed = bool(allowed_hit and not forbidden_hit and user_checks_pass)
-    print(json.dumps({
+    result = {
         "allowed_user_sees_document": allowed_hit,
         "forbidden_user_sees_document": forbidden_hit,
         "effective_user_checks": user_checks,
         "pass": passed,
-    }, indent=2))
+    }
+    if any(check["write_probe"] == "unsupported" for check in user_checks):
+        result["warning"] = (
+            "This cluster ignored the perform_permission_check parameter, so "
+            "write enforcement could not be verified."
+        )
+    print(json.dumps(result, indent=2))
     if not passed:
         sys.exit(1)
 
@@ -501,15 +640,73 @@ def cmd_benchmark(args):
         latencies.append((time.monotonic() - t0) * 1000)
 
     latencies.sort()
-    p50 = latencies[int(len(latencies) * 0.50)]
-    p99 = latencies[max(0, int(len(latencies) * 0.99) - 1)]
     print(json.dumps({
-        "p50_ms": round(p50), "p99_ms": round(p99),
-        "min_ms": round(min(latencies)), "max_ms": round(max(latencies)),
+        "queries": len(latencies),
+        "p50_ms": round(_percentile(latencies, 50)),
+        "p99_ms": round(_percentile(latencies, 99)),
+        "min_ms": round(latencies[0]),
+        "max_ms": round(latencies[-1]),
     }, indent=2))
 
 
+def _percentile(sorted_values: list[float], percentile: float) -> float:
+    """Nearest-rank percentile of an already sorted, non-empty list."""
+    if not sorted_values:
+        raise ValueError("Cannot take a percentile of no samples")
+    rank = math.ceil(percentile / 100 * len(sorted_values))
+    return sorted_values[min(max(rank, 1), len(sorted_values)) - 1]
+
+
 # -- helpers ------------------------------------------------------------------
+
+# The index name is interpolated into security and document API paths, so it is
+# restricted to characters that cannot change the shape of a request path.
+_INDEX_NAME_PATTERN = re.compile(r"^[a-z0-9][a-z0-9._-]*$")
+_INDEX_NAME_MAX_BYTES = 255
+
+
+def _validated_index_name(index: str) -> str:
+    if len(index.encode("utf-8")) > _INDEX_NAME_MAX_BYTES:
+        raise ConfigurationError(
+            f"Index name must be at most {_INDEX_NAME_MAX_BYTES} bytes."
+        )
+    if index in (".", "..") or not _INDEX_NAME_PATTERN.match(index):
+        raise ConfigurationError(
+            f"Invalid index name {index!r}. Use lowercase letters, digits, and "
+            "'.', '_' or '-', starting with a letter or digit."
+        )
+    return index
+
+
+def _admin_credentials() -> tuple[str, str]:
+    """Resolve the administrative credentials for this cluster.
+
+    Shares `OPENSEARCH_AUTH_MODE` with `opensearch_ops.py`, so `none` (a cluster
+    without the security plugin) and `custom` behave identically across both
+    CLIs. Unlike the shared helper, plain `OPENSEARCH_USER` and
+    `OPENSEARCH_PASSWORD` are honoured without also setting the mode, which is
+    the interface this skill and its demos document.
+    """
+    from lib.client import (
+        OPENSEARCH_DEFAULT_PASSWORD,
+        OPENSEARCH_DEFAULT_USER,
+        resolve_http_auth,
+    )
+
+    mode = os.getenv("OPENSEARCH_AUTH_MODE", "default").strip().lower()
+    if mode != "default":
+        try:
+            resolved = resolve_http_auth()
+        except RuntimeError as exc:
+            raise ConfigurationError(str(exc)) from exc
+        # `none` means no credentials at all.
+        return resolved if resolved else ("", "")
+
+    return (
+        os.getenv("OPENSEARCH_USER", OPENSEARCH_DEFAULT_USER),
+        os.getenv("OPENSEARCH_PASSWORD", OPENSEARCH_DEFAULT_PASSWORD),
+    )
+
 
 def _runtime_config(args) -> dict:
     host = os.getenv("OPENSEARCH_HOST", "localhost")
@@ -523,6 +720,7 @@ def _runtime_config(args) -> dict:
     )
     if not str(url).strip() or not str(index).strip():
         raise ConfigurationError("OpenSearch URL and index must not be empty.")
+    index = _validated_index_name(str(index).strip())
 
     embedding_mode = _setting(
         args, "embedding_mode", "PERMISSION_SEARCH_EMBEDDING_MODE", "local"
@@ -538,6 +736,9 @@ def _runtime_config(args) -> dict:
     )
     if chunk_overlap >= chunk_size:
         raise ConfigurationError("Chunk overlap must be smaller than chunk size.")
+    max_pages = _int_setting(
+        args, "max_pages", "PERMISSION_SEARCH_MAX_PAGES", 10, minimum=1
+    )
 
     llm_provider = _setting(
         args, "llm_provider", "PERMISSION_SEARCH_LLM_PROVIDER", "openai_compatible"
@@ -547,15 +748,16 @@ def _runtime_config(args) -> dict:
     ):
         raise ConfigurationError(f"Unsupported LLM provider: {llm_provider!r}.")
 
+    admin_username, admin_password = _admin_credentials()
+
     config = {
         "opensearch": {
             "url": str(url),
-            "admin_username": os.getenv("OPENSEARCH_USER", "admin"),
-            "admin_password": os.getenv(
-                "OPENSEARCH_PASSWORD", "myStrongPassword123!"
-            ),
+            "admin_username": admin_username,
+            "admin_password": admin_password,
+            # None means "decide by host": verify everything except loopback.
             "ssl_verify": _bool_setting(
-                args, "ssl_verify", "OPENSEARCH_SSL_VERIFY", False
+                args, "ssl_verify", "OPENSEARCH_SSL_VERIFY", None
             ),
             "index": str(index),
         },
@@ -578,6 +780,7 @@ def _runtime_config(args) -> dict:
         "chunking": {
             "chunk_size": chunk_size,
             "chunk_overlap": chunk_overlap,
+            "max_pages": max_pages,
         },
         "llm": {
             "provider": llm_provider,
@@ -640,7 +843,9 @@ def _int_setting(
     return parsed
 
 
-def _bool_setting(args, argument: str, environment: str, default: bool) -> bool:
+def _bool_setting(
+    args, argument: str, environment: str, default: bool | None
+) -> bool | None:
     value = getattr(args, argument, None)
     if value is not None:
         return value
@@ -657,9 +862,10 @@ def _bool_setting(args, argument: str, environment: str, default: bool) -> bool:
     )
 
 
-def _derive_test_password(username: str) -> str:
-    # Convention password for demo/eval-dls users. Must NOT contain the username -
-    # the security plugin rejects passwords that are "similar to user name".
+def _default_demo_password() -> str:
+    # Shared password for demo users created by create-users. The same value is
+    # used for every user: it must NOT contain the username, because the
+    # security plugin rejects passwords that are "similar to user name".
     return "Demo-Passw0rd-1!"
 
 
@@ -684,23 +890,46 @@ def _directory_config(args) -> dict:
 
 
 def _extract_text(path: str) -> str | None:
+    """Read a plain-text file. Returns None for anything else.
+
+    Rich formats go through `_extract_chunks`, which keeps Docling's own
+    chunking rather than re-splitting a flattened document.
+    """
     ext = os.path.splitext(path)[1].lower()
     if ext in (".txt", ".md"):
         with open(path, encoding="utf-8", errors="replace") as f:
             return f.read()
-    if ext in (".pdf", ".docx", ".pptx", ".xlsx"):
-        try:
-            from docling.document_converter import DocumentConverter
-        except ImportError as exc:
-            raise _optional_dependency_error(
-                "docling", "PDF and Office document ingestion"
-            ) from exc
-        try:
-            result = DocumentConverter().convert(path)
-            return result.document.export_to_markdown()
-        except Exception as exc:
-            raise ExtractionError(os.path.basename(path), type(exc).__name__) from exc
     return None
+
+
+def _extract_chunks(path: str, max_pages: int) -> list[dict] | None:
+    """Convert a rich document into chunks. Returns None if unsupported.
+
+    Delegates to the shared `lib.ingest` pipeline, which selects a conversion
+    profile from the document itself, converts in page batches to bound peak
+    memory, checks available memory first, applies the OCR configuration that
+    scanned PDFs need, and reports headings and page numbers per chunk.
+    """
+    ext = os.path.splitext(path)[1].lower()
+    if ext not in (".pdf", ".docx", ".pptx", ".xlsx"):
+        return None
+    try:
+        from lib.ingest import process_document
+    except ImportError as exc:
+        raise _optional_dependency_error(
+            "docling", "PDF and Office document ingestion"
+        ) from exc
+    try:
+        return process_document(path, max_pages=max_pages)
+    except ImportError as exc:
+        # Docling is installed but one of its optional backends is not.
+        raise _optional_dependency_error(
+            "docling", "PDF and Office document ingestion"
+        ) from exc
+    except Exception as exc:
+        # Report the exception type only: converter messages can embed file
+        # paths and document content.
+        raise ExtractionError(os.path.basename(path), type(exc).__name__) from exc
 
 
 def _add_opensearch_arguments(parser):
@@ -716,7 +945,10 @@ def _add_opensearch_arguments(parser):
         "--ssl-verify",
         action=argparse.BooleanOptionalAction,
         default=None,
-        help="Override OPENSEARCH_SSL_VERIFY",
+        help=(
+            "Override OPENSEARCH_SSL_VERIFY. Unset verifies certificates for "
+            "every host except loopback, which serves a self-signed certificate"
+        ),
     )
 
 
@@ -783,7 +1015,8 @@ def _build_parser():
     p.add_argument("--users", required=True,
                    help="Comma-separated usernames, e.g. alice,bob,carol")
     p.add_argument("--password",
-                   help="Password for all users (default: Test-<User>-1! convention)")
+                   help="Password shared by all created users "
+                        "(default: a fixed demo password)")
 
     p = sub.add_parser("ingest")
     _add_opensearch_arguments(p)
@@ -791,6 +1024,9 @@ def _build_parser():
     p.add_argument("--input", required=True)
     p.add_argument("--acl-file")
     p.add_argument("--batch-size", type=_positive_int, default=50)
+    p.add_argument("--max-pages", type=_positive_int,
+                   help="Pages to convert per PDF or Office document "
+                        "(default: 10). Applies to a directory input")
     p.add_argument("--chunk-size", type=_positive_int)
     p.add_argument("--chunk-overlap", type=_non_negative_int)
 
@@ -826,7 +1062,9 @@ def _build_parser():
     p.add_argument("--allowed-user", required=True)
     p.add_argument("--forbidden-user", required=True)
     p.add_argument("--document-id", required=True)
-    p.add_argument("--password", help="Password for test users (optional, uses convention if omitted)")
+    p.add_argument("--password",
+                   help="One password for both test users; required unless "
+                        "each user's password is supplied separately")
     p.add_argument("--allowed-password",
                    help="Password for --allowed-user; prefer "
                         "PERMISSION_SEARCH_ALLOWED_PASSWORD")

@@ -395,6 +395,408 @@ def test_eval_dls_fails_for_unsafe_effective_permissions(
     assert json.loads(capsys.readouterr().out)["pass"] is False
 
 
+def test_admin_credentials_default_to_the_shared_constants(monkeypatch):
+    for name in ("OPENSEARCH_AUTH_MODE", "OPENSEARCH_USER", "OPENSEARCH_PASSWORD"):
+        monkeypatch.delenv(name, raising=False)
+
+    assert permission_search._admin_credentials() == (
+        "admin",
+        "myStrongPassword123!",
+    )
+
+
+def test_admin_credentials_honour_plain_environment_without_auth_mode(monkeypatch):
+    # The demos and this skill's docs set only these two variables.
+    monkeypatch.delenv("OPENSEARCH_AUTH_MODE", raising=False)
+    monkeypatch.setenv("OPENSEARCH_USER", "admin")
+    monkeypatch.setenv("OPENSEARCH_PASSWORD", "DemoTls13!Pass")
+
+    assert permission_search._admin_credentials() == ("admin", "DemoTls13!Pass")
+
+
+def test_admin_credentials_support_a_cluster_without_the_security_plugin(monkeypatch):
+    monkeypatch.setenv("OPENSEARCH_AUTH_MODE", "none")
+
+    assert permission_search._admin_credentials() == ("", "")
+
+
+def test_admin_credentials_support_custom_auth_mode(monkeypatch):
+    monkeypatch.setenv("OPENSEARCH_AUTH_MODE", "custom")
+    monkeypatch.setenv("OPENSEARCH_USER", "operator")
+    monkeypatch.setenv("OPENSEARCH_PASSWORD", "s3cret")
+
+    assert permission_search._admin_credentials() == ("operator", "s3cret")
+
+
+def test_admin_credentials_reject_incomplete_custom_auth_mode(monkeypatch):
+    monkeypatch.setenv("OPENSEARCH_AUTH_MODE", "custom")
+    monkeypatch.delenv("OPENSEARCH_USER", raising=False)
+    monkeypatch.delenv("OPENSEARCH_PASSWORD", raising=False)
+
+    with pytest.raises(permission_search.ConfigurationError, match="custom requires"):
+        permission_search._admin_credentials()
+
+
+def _ingest_args(input_path, **overrides):
+    values = {
+        "command": "ingest",
+        "input": str(input_path),
+        "acl_file": None,
+        "batch_size": 50,
+    }
+    values.update(overrides)
+    return SimpleNamespace(**values)
+
+
+class _RecordingWriter:
+    def __init__(self, result=None):
+        self.documents = []
+        self._result = result
+
+    def bulk_index(self, documents):
+        self.documents.extend(documents)
+        if self._result is not None:
+            return self._result
+        return {"indexed": len(documents), "errors": []}
+
+
+def test_ingest_assigns_stable_ids_so_reingesting_does_not_duplicate(tmp_path):
+    input_path = tmp_path / "documents.jsonl"
+    input_path.write_text(
+        json.dumps({"content": "one two", "allowed_users": ["alice"], "path": "a.txt"})
+        + "\n"
+    )
+    first, second = _RecordingWriter(), _RecordingWriter()
+
+    for writer in (first, second):
+        permission_search.cmd_ingest(
+            _ingest_args(input_path),
+            writer_factory=lambda profile, w=writer: w,
+            chunk_text_fn=lambda text, chunk_size, chunk_overlap: ["one", "two"],
+        )
+
+    ids = [document["_id"] for document in first.documents]
+    assert len(ids) == len(set(ids)), "chunks of one record need distinct ids"
+    # Re-running must target the same ids so the chunks are overwritten.
+    assert ids == [document["_id"] for document in second.documents]
+
+
+def test_ingest_reports_bulk_failures_instead_of_claiming_success(tmp_path, capsys):
+    input_path = tmp_path / "documents.jsonl"
+    input_path.write_text(
+        json.dumps({"content": "text", "allowed_users": ["alice"]}) + "\n"
+    )
+    writer = _RecordingWriter(
+        result={"indexed": 0, "errors": ["index: mapper_parsing_exception"]}
+    )
+
+    with pytest.raises(SystemExit) as exc:
+        permission_search.cmd_ingest(
+            _ingest_args(input_path),
+            writer_factory=lambda profile: writer,
+            chunk_text_fn=lambda text, chunk_size, chunk_overlap: [text],
+        )
+
+    assert exc.value.code == 1
+    result = json.loads(capsys.readouterr().out)
+    assert result["indexed"] == 0
+    assert result["index_errors"] == ["index: mapper_parsing_exception"]
+
+
+def test_ingest_names_the_line_of_malformed_jsonl(tmp_path):
+    input_path = tmp_path / "documents.jsonl"
+    input_path.write_text(
+        json.dumps({"content": "text", "allowed_users": ["alice"]}) + "\n"
+        + "{not json\n"
+    )
+    writer = _RecordingWriter()
+
+    # A bare JSONDecodeError would not say which line to fix, and the records
+    # read before it must not be reported as a successful ingest.
+    with pytest.raises(permission_search.ConfigurationError, match="line 2"):
+        permission_search.cmd_ingest(
+            _ingest_args(input_path),
+            writer_factory=lambda profile: writer,
+            chunk_text_fn=lambda text, chunk_size, chunk_overlap: [text],
+        )
+
+
+def test_ingest_reads_non_ascii_principals_as_utf8(tmp_path):
+    input_path = tmp_path / "documents.jsonl"
+    input_path.write_text(
+        json.dumps(
+            {"content": "text", "allowed_users": ["GROUP_Añadir", "üser"]},
+            ensure_ascii=False,
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    writer = _RecordingWriter()
+
+    permission_search.cmd_ingest(
+        _ingest_args(input_path),
+        writer_factory=lambda profile: writer,
+        chunk_text_fn=lambda text, chunk_size, chunk_overlap: [text],
+    )
+
+    # Reading with the platform default encoding would mangle these principals
+    # and silently authorize the wrong users.
+    assert writer.documents[0]["allowed_users"] == ["GROUP_Añadir", "üser"]
+
+
+def test_ingest_rejects_an_acl_file_that_would_be_ignored(tmp_path):
+    input_path = tmp_path / "documents.jsonl"
+    input_path.write_text(
+        json.dumps({"content": "text", "allowed_users": ["alice"]}) + "\n"
+    )
+    acl_path = tmp_path / "acl.json"
+    acl_path.write_text(json.dumps({"documents.jsonl": ["bob"]}))
+
+    # Silently ignoring --acl-file here would look like the ACLs were applied.
+    with pytest.raises(permission_search.ConfigurationError, match="--acl-file"):
+        permission_search.cmd_ingest(
+            _ingest_args(input_path, acl_file=str(acl_path)),
+            writer_factory=lambda profile: _RecordingWriter(),
+            chunk_text_fn=lambda text, chunk_size, chunk_overlap: [text],
+        )
+
+
+@pytest.mark.parametrize(
+    "index",
+    [
+        "../_cluster/settings",
+        "permission-aware-search/_doc",
+        "index with spaces",
+        "UPPERCASE",
+        "_leading-underscore",
+        "-leading-hyphen",
+        "..",
+        "a" * 256,
+    ],
+)
+def test_runtime_config_rejects_index_names_that_reshape_request_paths(
+    monkeypatch, index
+):
+    # The index name is interpolated into security and document API paths.
+    monkeypatch.setenv("OPENSEARCH_INDEX", index)
+
+    with pytest.raises(permission_search.ConfigurationError):
+        permission_search._runtime_config(SimpleNamespace(command="setup"))
+
+
+@pytest.mark.parametrize(
+    "index",
+    ["permission-aware-search", "docs", "my.index_1", "a", "a" * 255],
+)
+def test_runtime_config_accepts_conventional_index_names(monkeypatch, index):
+    monkeypatch.setenv("OPENSEARCH_INDEX", index)
+
+    config = permission_search._runtime_config(SimpleNamespace(command="setup"))
+
+    assert config["opensearch"]["index"] == index
+
+
+@pytest.mark.parametrize(
+    ("values", "percentile", "expected"),
+    [
+        ([5.0], 50, 5.0),
+        ([5.0], 99, 5.0),
+        ([1.0, 2.0], 50, 1.0),
+        ([1.0, 2.0], 99, 2.0),
+        ([1.0, 2.0, 3.0, 4.0], 50, 2.0),
+        (list(range(1, 101)), 50, 50.0),
+        (list(range(1, 101)), 99, 99.0),
+    ],
+)
+def test_percentile_uses_one_consistent_nearest_rank_convention(
+    values, percentile, expected
+):
+    assert permission_search._percentile([float(v) for v in values], percentile) == (
+        expected
+    )
+
+
+def test_percentile_never_reports_the_maximum_as_the_median():
+    # The previous index arithmetic returned the max as p50 for two samples.
+    assert permission_search._percentile([10.0, 1000.0], 50) == 10.0
+
+
+def _eval_dls_args(**overrides):
+    values = {
+        "command": "eval-dls",
+        "allowed_user": "alice",
+        "forbidden_user": "bob",
+        "document_id": "doc-1",
+        "password": None,
+        "allowed_password": None,
+        "forbidden_password": None,
+    }
+    values.update(overrides)
+    return SimpleNamespace(**values)
+
+
+class _EvalRunner:
+    def __init__(self, config, username, password):
+        self.username = username
+
+    def find_document(self, document_id):
+        return self.username == "alice"
+
+
+def _eval_client_factory(write_response, requests=None):
+    """Build a client factory whose write probe returns write_response."""
+
+    class Transport:
+        def __init__(self, username):
+            self.username = username
+
+        def perform_request(self, method, path, **kwargs):
+            if requests is not None:
+                requests.append((method, path))
+            if path == "/_plugins/_security/authinfo":
+                return {
+                    "user_name": self.username,
+                    "roles": ["permission-aware-search-reader"],
+                }
+            if method == "DELETE":
+                return {"result": "deleted"}
+            return write_response
+
+    class Client:
+        def __init__(self, username):
+            self.transport = Transport(username)
+
+    return lambda config, username, password: Client(username)
+
+
+@pytest.mark.parametrize(
+    ("args_kwargs", "missing_user"),
+    [
+        ({}, "alice"),
+        ({"allowed_password": "alice-secret"}, "bob"),
+        ({"forbidden_password": "bob-secret"}, "alice"),
+    ],
+)
+def test_eval_dls_refuses_to_certify_without_explicit_passwords(
+    args_kwargs, missing_user
+):
+    with pytest.raises(permission_search.ConfigurationError) as exc:
+        permission_search.cmd_eval_dls(
+            _eval_dls_args(**args_kwargs),
+            runner_factory=_EvalRunner,
+            client_factory=_eval_client_factory({"accessAllowed": False}),
+        )
+
+    assert missing_user in str(exc.value)
+
+
+def test_eval_dls_accepts_one_shared_password_for_both_users():
+    passwords = {}
+
+    class Runner(_EvalRunner):
+        def __init__(self, config, username, password):
+            super().__init__(config, username, password)
+            passwords[username] = password
+
+    permission_search.cmd_eval_dls(
+        _eval_dls_args(password="shared-secret"),
+        runner_factory=Runner,
+        client_factory=_eval_client_factory({"accessAllowed": False}),
+    )
+
+    assert passwords == {"alice": "shared-secret", "bob": "shared-secret"}
+
+
+def test_eval_dls_fails_when_the_cluster_ignores_the_permission_check(capsys):
+    requests = []
+
+    with pytest.raises(SystemExit) as exc:
+        permission_search.cmd_eval_dls(
+            _eval_dls_args(password="shared-secret"),
+            runner_factory=_EvalRunner,
+            # A cluster that ignores perform_permission_check executes the write
+            # and reports success instead of returning an accessAllowed verdict.
+            client_factory=_eval_client_factory(
+                {"result": "created", "_id": "__permission_check"}, requests
+            ),
+        )
+
+    assert exc.value.code == 1
+    result = json.loads(capsys.readouterr().out)
+    assert result["pass"] is False
+    assert all(
+        check["write_blocked"] is False
+        and check["write_probe"] == "unsupported"
+        for check in result["effective_user_checks"]
+    )
+    assert "perform_permission_check" in result["warning"]
+    # The document the probe created must be cleaned up, not left behind.
+    assert (
+        "DELETE",
+        "/permission-aware-search/_doc/__permission_check",
+    ) in requests
+
+
+def test_eval_dls_treats_a_denied_write_probe_as_enforcement(capsys):
+    class Transport:
+        def __init__(self, username):
+            self.username = username
+
+        def perform_request(self, method, path, **kwargs):
+            if path == "/_plugins/_security/authinfo":
+                return {
+                    "user_name": self.username,
+                    "roles": ["permission-aware-search-reader"],
+                }
+            error = Exception("no permissions for [indices:data/write/index]")
+            error.status_code = 403
+            raise error
+
+    class Client:
+        def __init__(self, username):
+            self.transport = Transport(username)
+
+    permission_search.cmd_eval_dls(
+        _eval_dls_args(password="shared-secret"),
+        runner_factory=_EvalRunner,
+        client_factory=lambda config, username, password: Client(username),
+    )
+
+    result = json.loads(capsys.readouterr().out)
+    assert result["pass"] is True
+    assert all(
+        check["write_blocked"] is True and check["write_probe"] == "denied"
+        for check in result["effective_user_checks"]
+    )
+
+
+def test_eval_dls_propagates_unexpected_write_probe_errors():
+    class Transport:
+        def __init__(self, username):
+            self.username = username
+
+        def perform_request(self, method, path, **kwargs):
+            if path == "/_plugins/_security/authinfo":
+                return {
+                    "user_name": self.username,
+                    "roles": ["permission-aware-search-reader"],
+                }
+            error = Exception("cluster_block_exception")
+            error.status_code = 503
+            raise error
+
+    class Client:
+        def __init__(self, username):
+            self.transport = Transport(username)
+
+    with pytest.raises(Exception, match="cluster_block_exception"):
+        permission_search.cmd_eval_dls(
+            _eval_dls_args(password="shared-secret"),
+            runner_factory=_EvalRunner,
+            client_factory=lambda config, username, password: Client(username),
+        )
+
+
 def _refresh_args(**overrides):
     values = {
         "command": "refresh-acl",
