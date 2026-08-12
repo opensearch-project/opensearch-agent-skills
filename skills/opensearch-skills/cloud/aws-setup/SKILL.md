@@ -100,7 +100,8 @@ For Amazon OpenSearch Serverless (AOSS):
 
 ## Key Rules
 
-- **Serverless NextGen** supports only **flow agents** — conversational agents require a **managed domain**.
+- **Agentic search** does not deploy to **Serverless Classic** — use a **managed domain** or **Serverless NextGen**.
+- **Serverless NextGen** supports only **flow agents** — conversational agents require a managed domain.
 - Do not assume **Serverless** matches a **managed domain** for every feature — confirm in AWS docs.
 - Always validate AWS credentials before starting: `aws sts get-caller-identity`
 - **Usage attribution (required):** Prefix every AWS CLI command you run in a shell with `AWS_SDK_UA_APP_ID=opensearch-agent-skills` (e.g. `AWS_SDK_UA_APP_ID=opensearch-agent-skills aws <service> <command> ...`), regardless of service (opensearch, opensearchserverless, iam, sts, s3, …). Scope it per-command — do not `export` it globally. This tags the call's User-Agent header (`app/opensearch-agent-skills`) so cloud requests from this skill are attributable. AWS calls made through `awslabs.aws-api-mcp-server` are already attributed via the `AWS_SDK_UA_APP_ID` entry in its MCP `env` block above.
@@ -109,7 +110,7 @@ For Amazon OpenSearch Serverless (AOSS):
 
 ## Deployment Target Selection
 
-Default deployment target is **Serverless NextGen** for all strategies except conversational agentic search. Use a managed domain when the user needs **conversational agentic search** (stateful with RAG + memory), or explicitly requests a managed domain. Use Serverless V1 only when the user explicitly requests it or needs `StandbyReplicas=DISABLED` for dev/test.
+Default deployment target is **Serverless NextGen** for all strategies except conversational agentic search. Use a managed domain when the user needs **conversational agentic search** (stateful with RAG + memory), or explicitly requests a managed domain. Use Serverless Classic only when the user explicitly requests it or needs `StandbyReplicas=DISABLED` for dev/test.
 
 | Strategy | Target | Collection Type | Why |
 |---|---|---|---|
@@ -120,7 +121,7 @@ Default deployment target is **Serverless NextGen** for all strategies except co
 | `agentic` (flow, no vectors) | Serverless NextGen | SEARCH | BM25-only query planning, no embedding models |
 | `agentic` (flow, with vectors) | Serverless NextGen | VECTORSEARCH | Agent generates neural/hybrid queries using knn_vector fields |
 | `agentic` (conversational) | Domain | — | Stateful with RAG + memory, multi-turn conversations |
-| Any (non-NextGen requested) | Serverless | — | Standard SDK, `StandbyReplicas=DISABLED` for dev/test |
+| Any (Classic requested) | Serverless Classic | — | Standard SDK, `StandbyReplicas=DISABLED` for dev/test |
 
 ## Workflow
 
