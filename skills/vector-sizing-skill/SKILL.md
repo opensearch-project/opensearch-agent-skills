@@ -30,8 +30,29 @@ AWS, Azure, and GCP — both managed services and self-managed deployments.
 6. ALWAYS factor in JVM heap (31 GB fixed) and OS overhead when computing usable memory
 7. ALWAYS mention quantization as an option when memory exceeds 500 GB per replica set
 8. ALWAYS ask which cloud provider(s) the user wants — default to showing all
-9. Use the pricing reference for cost estimates — flag that prices vary by region
+9. ALWAYS refresh pricing before quoting costs (see "Pricing" below) — the bundled snapshot drifts and can misrepresent a provider; never present stale prices as current
 10. When comparing clouds, note that managed services include operational overhead savings
+
+## Pricing (IMPORTANT — keep it current)
+
+Cloud pricing changes frequently, so the skill does NOT hardcode prices in code. It
+loads a dated snapshot from `references/pricing.json` (see its `last_updated` field)
+and always prints that date plus a disclaimer in the output.
+
+Because you (the agent) have web access, prefer to look up **current** on-demand prices
+rather than trust the snapshot:
+
+1. Read `references/pricing.json` to see the instances, regions, and source URLs.
+2. Fetch current on-demand hourly prices from each provider's pricing page
+   (URLs are in the file's `sources` block: AWS OpenSearch/EC2, Azure VMs, GCP VMs).
+3. Write an updated file with the same schema (bump `last_updated`) and pass it in:
+   ```bash
+   python3 scripts/vector_sizing.py <command> ... --prices-file /path/to/updated_prices.json
+   ```
+4. If you cannot fetch live prices, fall back to the bundled snapshot but TELL the user
+   the prices are as of `last_updated` and may be outdated.
+
+Instance specs (vCPU / RAM) change rarely; only `price_per_hour_usd` needs refreshing.
 
 ## Workflow
 
@@ -124,3 +145,4 @@ After presenting the initial recommendation, offer:
 - For quantization trade-offs → load `references/quantization.md`
 - For instance type specs → load `references/instance-catalog.md`
 - For index mapping generation → load `references/knn-mappings.md`
+- For current pricing + provider source URLs → load/refresh `references/pricing.json`

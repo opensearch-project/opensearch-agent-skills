@@ -13,6 +13,7 @@ Supports: AWS OpenSearch Service, AWS EC2 (self-managed), Azure VMs, GCP VMs.
 import argparse
 import json
 import math
+import os
 import sys
 
 # --- Constants ---
@@ -22,6 +23,7 @@ JVM_HEAP_GB = 31  # Fixed JVM heap for OpenSearch
 OS_OVERHEAD_GB = 2  # OS and other overhead
 USABLE_MEMORY_RATIO = 0.70  # 70% of remaining RAM usable for vectors
 MAX_UTILIZATION = 0.75  # Never exceed 75% memory per node
+MIN_USABLE_GB = 15  # Min effective usable memory (post-utilization) to consider a node viable
 DOCS_PER_SHARD = 30_000_000  # Target docs per shard
 MAX_SHARD_SIZE_GB = 50  # Max recommended shard size
 
@@ -41,100 +43,117 @@ ENGINE_OVERHEAD = {
 }
 
 # ============================================================================
-# MULTI-CLOUD INSTANCE CATALOGS
-# Format: (instance_type, vcpu, ram_gb, price_per_hour_usd)
-# Prices are approximate on-demand rates (us-east-1 / eastus / us-central1)
+# MULTI-CLOUD INSTANCE CATALOGS  (loaded from references/pricing.json)
+# Format per entry: (instance_type, vcpu, ram_gb, price_per_hour_usd)
+#
+# Pricing DRIFTS. The numbers below are a dated snapshot loaded from
+# references/pricing.json (see its "last_updated" field). Because this skill
+# runs inside a web-capable coding agent, the recommended workflow is for the
+# agent to look up CURRENT on-demand prices from each provider's pricing page
+# and pass a refreshed file via `--prices-file`, rather than trusting the
+# bundled snapshot. Instance specs (vCPU / RAM) change rarely; prices change
+# often. An embedded minimal fallback keeps the tool runnable if the JSON is
+# missing, but the JSON is the source of truth.
 # ============================================================================
 
-INSTANCE_CATALOGS = {
-    # AWS OpenSearch Service managed instances
-    "aws-opensearch": [
-        ("r7g.large.search", 2, 16, 0.251),
-        ("r7g.xlarge.search", 4, 32, 0.502),
-        ("r7g.2xlarge.search", 8, 64, 1.004),
-        ("r7g.4xlarge.search", 16, 128, 2.008),
-        ("r7g.8xlarge.search", 32, 256, 4.016),
-        ("r7g.12xlarge.search", 48, 384, 6.024),
-        ("r7g.16xlarge.search", 64, 512, 8.032),
-        ("r8g.large.search", 2, 16, 0.266),
-        ("r8g.xlarge.search", 4, 32, 0.532),
-        ("r8g.2xlarge.search", 8, 64, 1.064),
-        ("r8g.4xlarge.search", 16, 128, 2.128),
-        ("r8g.8xlarge.search", 32, 256, 4.256),
-        ("r8g.12xlarge.search", 48, 384, 6.384),
-        ("r8g.16xlarge.search", 64, 512, 8.512),
-        ("r8g.24xlarge.search", 96, 768, 12.768),
-        ("or1.2xlarge.search", 8, 64, 1.165),
-        ("or1.4xlarge.search", 16, 128, 2.330),
-        ("or1.8xlarge.search", 32, 256, 4.660),
-        ("or1.12xlarge.search", 48, 384, 6.990),
-        ("or1.16xlarge.search", 64, 512, 9.320),
-    ],
-    # AWS EC2 instances (self-managed OpenSearch)
-    "aws-ec2": [
-        ("r7g.2xlarge", 8, 64, 0.714),
-        ("r7g.4xlarge", 16, 128, 1.428),
-        ("r7g.8xlarge", 32, 256, 2.856),
-        ("r7g.12xlarge", 48, 384, 4.284),
-        ("r7g.16xlarge", 64, 512, 5.712),
-        ("r8g.2xlarge", 8, 64, 0.756),
-        ("r8g.4xlarge", 16, 128, 1.512),
-        ("r8g.8xlarge", 32, 256, 3.024),
-        ("r8g.12xlarge", 48, 384, 4.536),
-        ("r8g.16xlarge", 64, 512, 6.048),
-        ("r8g.24xlarge", 96, 768, 9.072),
-        ("r7i.2xlarge", 8, 64, 0.756),
-        ("r7i.4xlarge", 16, 128, 1.512),
-        ("r7i.8xlarge", 32, 256, 3.024),
-        ("r7i.12xlarge", 48, 384, 4.536),
-        ("r7i.16xlarge", 64, 512, 6.048),
-        ("r7i.24xlarge", 96, 768, 9.072),
-        ("x2idn.16xlarge", 64, 1024, 8.004),
-        ("x2idn.24xlarge", 96, 1536, 12.006),
-    ],
-    # Azure VMs (self-managed OpenSearch)
-    "azure": [
-        ("Standard_E8s_v5", 8, 64, 0.604),
-        ("Standard_E16s_v5", 16, 128, 1.208),
-        ("Standard_E32s_v5", 32, 256, 2.416),
-        ("Standard_E48s_v5", 48, 384, 3.624),
-        ("Standard_E64s_v5", 64, 512, 4.832),
-        ("Standard_E96s_v5", 96, 672, 7.248),
-        ("Standard_E8as_v5", 8, 64, 0.544),
-        ("Standard_E16as_v5", 16, 128, 1.088),
-        ("Standard_E32as_v5", 32, 256, 2.176),
-        ("Standard_E48as_v5", 48, 384, 3.264),
-        ("Standard_E64as_v5", 64, 512, 4.352),
-        ("Standard_E96as_v5", 96, 672, 6.528),
-        ("Standard_M128s_v2", 128, 2048, 26.688),
-        ("Standard_E104ids_v5", 104, 672, 9.566),
-    ],
-    # GCP VMs (self-managed OpenSearch)
-    "gcp": [
-        ("n2-highmem-8", 8, 64, 0.568),
-        ("n2-highmem-16", 16, 128, 1.136),
-        ("n2-highmem-32", 32, 256, 2.272),
-        ("n2-highmem-48", 48, 384, 3.408),
-        ("n2-highmem-64", 64, 512, 4.544),
-        ("n2-highmem-80", 80, 640, 5.680),
-        ("n2-highmem-96", 96, 768, 6.816),
-        ("n2d-highmem-8", 8, 64, 0.496),
-        ("n2d-highmem-16", 16, 128, 0.992),
-        ("n2d-highmem-32", 32, 256, 1.984),
-        ("n2d-highmem-48", 48, 384, 2.976),
-        ("n2d-highmem-64", 64, 512, 3.968),
-        ("n2d-highmem-96", 96, 768, 5.952),
-        ("m2-megamem-416", 416, 5888, 51.53),
-        ("m2-ultramem-208", 208, 5888, 42.186),
-    ],
+_DEFAULT_PRICING_PATH = os.path.join(
+    os.path.dirname(os.path.abspath(__file__)), "..", "references", "pricing.json"
+)
+
+# Minimal embedded fallback (used only if references/pricing.json is absent).
+_EMBEDDED_FALLBACK = {
+    "last_updated": "embedded-fallback",
+    "catalogs": {
+        "aws-opensearch": [
+            {"instance_type": "r7g.4xlarge.search", "vcpu": 16, "ram_gb": 128, "price_per_hour_usd": 2.008},
+            {"instance_type": "r7g.8xlarge.search", "vcpu": 32, "ram_gb": 256, "price_per_hour_usd": 4.016},
+            {"instance_type": "r7g.12xlarge.search", "vcpu": 48, "ram_gb": 384, "price_per_hour_usd": 6.024},
+            {"instance_type": "r7g.16xlarge.search", "vcpu": 64, "ram_gb": 512, "price_per_hour_usd": 8.032},
+        ],
+        "aws-ec2": [
+            {"instance_type": "r7g.8xlarge", "vcpu": 32, "ram_gb": 256, "price_per_hour_usd": 2.856},
+            {"instance_type": "r7g.16xlarge", "vcpu": 64, "ram_gb": 512, "price_per_hour_usd": 5.712},
+            {"instance_type": "x2idn.16xlarge", "vcpu": 64, "ram_gb": 1024, "price_per_hour_usd": 8.004},
+            {"instance_type": "x2idn.24xlarge", "vcpu": 96, "ram_gb": 1536, "price_per_hour_usd": 12.006},
+        ],
+        "azure": [
+            {"instance_type": "Standard_E32s_v5", "vcpu": 32, "ram_gb": 256, "price_per_hour_usd": 2.416},
+            {"instance_type": "Standard_E48s_v5", "vcpu": 48, "ram_gb": 384, "price_per_hour_usd": 3.624},
+            {"instance_type": "Standard_E64s_v5", "vcpu": 64, "ram_gb": 512, "price_per_hour_usd": 4.832},
+            {"instance_type": "Standard_E96s_v5", "vcpu": 96, "ram_gb": 672, "price_per_hour_usd": 7.248},
+        ],
+        "gcp": [
+            {"instance_type": "n2-highmem-32", "vcpu": 32, "ram_gb": 256, "price_per_hour_usd": 2.272},
+            {"instance_type": "n2-highmem-64", "vcpu": 64, "ram_gb": 512, "price_per_hour_usd": 4.544},
+            {"instance_type": "n2-highmem-80", "vcpu": 80, "ram_gb": 640, "price_per_hour_usd": 5.680},
+            {"instance_type": "n2-highmem-96", "vcpu": 96, "ram_gb": 768, "price_per_hour_usd": 6.816},
+        ],
+    },
 }
 
-# All clouds combined for "all" option
-INSTANCE_CATALOGS["all"] = []
-for cloud, instances in INSTANCE_CATALOGS.items():
-    if cloud != "all":
-        for itype, vcpu, ram, price in instances:
-            INSTANCE_CATALOGS["all"].append((f"{itype}", vcpu, ram, price))
+# Populated by load_pricing(): {"last_updated": str, "sources": {...}, ...}
+PRICING_META = {}
+
+
+def load_pricing(prices_file: str = None) -> dict:
+    """Load the instance catalog + pricing into INSTANCE_CATALOGS.
+
+    Resolution order:
+      1. explicit ``prices_file`` (from --prices-file), else
+      2. bundled references/pricing.json, else
+      3. minimal embedded fallback.
+
+    Returns a dict of {cloud: [(instance_type, vcpu, ram_gb, price), ...]}
+    and records provenance metadata in the module-level PRICING_META.
+    """
+    path = prices_file or _DEFAULT_PRICING_PATH
+    data = None
+    source = None
+    if os.path.isfile(path):
+        try:
+            with open(path, "r", encoding="utf-8") as fh:
+                data = json.load(fh)
+            source = os.path.abspath(path)
+        except (json.JSONDecodeError, OSError) as exc:
+            print(f"  Warning: could not read pricing file {path}: {exc}", file=sys.stderr)
+    if data is None:
+        if prices_file:
+            # User explicitly asked for a file that we couldn't use — be loud.
+            raise SystemExit(f"Error: pricing file not found or unreadable: {prices_file}")
+        data = _EMBEDDED_FALLBACK
+        source = "embedded-fallback"
+
+    catalogs = {}
+    for cloud, entries in data.get("catalogs", {}).items():
+        catalogs[cloud] = [
+            (
+                e["instance_type"],
+                e["vcpu"],
+                e["ram_gb"],
+                e["price_per_hour_usd"],
+            )
+            for e in entries
+        ]
+
+    # Combined "all" view (snapshot the keys first; do not mutate while iterating).
+    combined = []
+    for cloud in list(catalogs.keys()):
+        combined.extend(catalogs[cloud])
+    catalogs["all"] = combined
+
+    PRICING_META.clear()
+    PRICING_META.update({
+        "last_updated": data.get("last_updated", "unknown"),
+        "currency": data.get("currency", "USD"),
+        "regions": data.get("regions", {}),
+        "sources": data.get("sources", {}),
+        "loaded_from": source,
+    })
+    return catalogs
+
+
+# Load the bundled snapshot at import time so functions/tests have a catalog.
+INSTANCE_CATALOGS = load_pricing()
 
 # Cloud-specific storage info
 STORAGE_INFO = {
@@ -224,7 +243,7 @@ def recommend_instances(
     viable = [
         (itype, vcpu, ram, price)
         for itype, vcpu, ram, price in catalog
-        if usable_memory_gb(ram) >= 20
+        if usable_memory_gb(ram) * MAX_UTILIZATION >= MIN_USABLE_GB
     ]
 
     viable.sort(key=lambda x: x[2], reverse=True)
@@ -233,6 +252,8 @@ def recommend_instances(
     for itype, vcpu, ram, price in viable:
         usable = usable_memory_gb(ram)
         effective_usable = usable * MAX_UTILIZATION
+        if effective_usable <= 0:
+            continue
         nodes_needed = math.ceil(total_with_replicas / effective_usable)
 
         if multi_az > 0 and nodes_needed % multi_az != 0:
@@ -254,14 +275,6 @@ def recommend_instances(
             continue
         seen_sizes.add(size_key)
 
-        tier = "performance"
-        if nodes_needed > 12:
-            tier = "economy"
-        elif nodes_needed <= 6:
-            tier = "performance"
-        else:
-            tier = "balanced"
-
         recommendations.append({
             "instance_type": itype,
             "cloud": cloud,
@@ -271,11 +284,27 @@ def recommend_instances(
             "nodes": nodes_needed,
             "total_vcpu": nodes_needed * vcpu,
             "monthly_compute_usd": round(monthly_cost),
-            "tier": tier,
         })
 
+    # Keep the 5 cheapest options, then tier THOSE by instance size (RAM):
+    # smallest = "economy", largest = "performance", rest "balanced". Tiering
+    # the shown set (not the full catalog) keeps labels meaningful after
+    # truncation, and reflects the real cost/ops trade-off better than
+    # labeling by raw node count.
     recommendations.sort(key=lambda x: x["monthly_compute_usd"])
-    return recommendations[:5]
+    top = recommendations[:5]
+    by_ram = sorted(top, key=lambda x: x["ram_gb"])
+    for i, rec in enumerate(by_ram):
+        if len(by_ram) == 1:
+            rec["tier"] = "balanced"
+        elif i == 0:
+            rec["tier"] = "economy"
+        elif i == len(by_ram) - 1:
+            rec["tier"] = "performance"
+        else:
+            rec["tier"] = "balanced"
+
+    return top
 
 
 def calculate_shards(num_vectors: int, storage_per_replica_gb: float) -> dict:
@@ -299,6 +328,15 @@ def format_bytes(gb: float) -> str:
     if gb >= 1024:
         return f"{gb / 1024:.2f} TB"
     return f"{gb:.1f} GB"
+
+
+def print_pricing_disclaimer():
+    """Print where pricing came from and remind the user it drifts."""
+    updated = PRICING_META.get("last_updated", "unknown")
+    print(f"  Pricing snapshot: {updated} (on-demand, USD). Prices change frequently.")
+    print("  These figures are estimates — verify current rates on each provider's")
+    print("  pricing page, or pass refreshed numbers via --prices-file.")
+    print()
 
 
 def run_calculate(args):
@@ -353,7 +391,7 @@ def run_calculate(args):
             "vector_memory_per_replica_set_gb": round(vector_memory_gb, 2),
             "total_with_replicas": format_bytes(vector_memory_gb * (1 + args.replicas)),
             "total_with_replicas_gb": round(vector_memory_gb * (1 + args.replicas), 2),
-            "formula": f"1.1 x ({BYTES_PER_ELEMENT[args.quantization]} x {args.dimensions} + 8 x {HNSW_M_DEFAULT}) x {args.vectors:,}",
+            "formula": f"1.1 x ({BYTES_PER_ELEMENT.get(args.quantization.lower(), 4)} x {args.dimensions} + 8 x {HNSW_M_DEFAULT}) x {args.vectors:,}",
         },
         "storage": {
             "primary": format_bytes(storage_primary_gb),
@@ -498,6 +536,9 @@ def print_human_readable(result: dict, clouds: list):
         print(f"  Note: {qs.get('note', '')}")
         print()
 
+    print("-" * 78)
+    print()
+    print_pricing_disclaimer()
     print("=" * 78)
 
 
@@ -557,15 +598,14 @@ def run_instance_info(args):
         print(f"  {'-'*24} {'-'*6} {'-'*10} {'-'*10} {'-'*9} {'-'*10}")
         for itype, vcpu, ram, price in catalog:
             usable = usable_memory_gb(ram) * MAX_UTILIZATION
-            if usable < 15:
+            if usable < MIN_USABLE_GB:
                 continue
             monthly = price * 730
             print(f"  {itype:<24} {vcpu:<6} {ram} GB{'':<4} {usable:.0f} GB{'':<5} ${price:<8.3f} ${monthly:,.0f}")
         print()
 
     print("  * Usable = (RAM - 31 GB JVM - 2 GB OS) x 70% x 75% max utilization")
-    print("  Prices are approximate on-demand. Verify current pricing for your region.")
-    print()
+    print_pricing_disclaimer()
 
 
 def run_cross_cloud(args):
@@ -601,11 +641,14 @@ def run_cross_cloud(args):
     print("  Note: Managed service (AWS OpenSearch) includes patching, backups, monitoring.")
     print("  Self-managed is cheaper but requires operational overhead.")
     print()
+    print_pricing_disclaimer()
 
 
 def parse_cloud_arg(value: str) -> list:
     """Parse comma-separated cloud argument into a list."""
-    clouds = [c.strip() for c in value.split(",")]
+    clouds = [c.strip() for c in value.split(",") if c.strip()]
+    if not clouds:
+        raise argparse.ArgumentTypeError("No cloud specified.")
     valid = set(INSTANCE_CATALOGS.keys())
     for c in clouds:
         if c not in valid:
@@ -689,7 +732,18 @@ Available clouds: aws-opensearch, aws-ec2, azure, gcp
     inst_parser.add_argument("--cloud", type=parse_cloud_arg, default=["aws-ec2"],
                              help="Cloud(s): aws-opensearch, aws-ec2, azure, gcp")
 
+    # --prices-file is valid on every subcommand: load fresh/current pricing
+    for sub in (calc_parser, comp_parser, cross_parser, inst_parser):
+        sub.add_argument("--prices-file", default=None,
+                         help="Path to a JSON pricing file (same schema as references/pricing.json). "
+                              "Use this to supply current, agent-fetched prices instead of the bundled snapshot.")
+
     args = parser.parse_args()
+
+    # Reload the catalog from a user-supplied pricing file if given.
+    if getattr(args, "prices_file", None):
+        global INSTANCE_CATALOGS
+        INSTANCE_CATALOGS = load_pricing(args.prices_file)
 
     if args.command == "calculate":
         run_calculate(args)

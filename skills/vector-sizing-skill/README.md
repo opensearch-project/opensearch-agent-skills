@@ -160,9 +160,10 @@ vector-sizing-skill/
 │   ├── engines.md              # FAISS vs nmslib vs Lucene comparison
 │   ├── quantization.md         # Quantization trade-offs and decision tree
 │   ├── instance-catalog.md     # Instance specs and pricing
+│   ├── pricing.json            # Dated pricing snapshot + provider source URLs
 │   └── knn-mappings.md         # Index mapping templates
 ├── tests/
-│   └── test_vector_sizing.py   # 32 tests covering all clouds
+│   └── test_vector_sizing.py   # 37 tests covering all clouds
 ├── LICENSE                     # Apache 2.0
 └── README.md
 ```
@@ -187,6 +188,10 @@ The calculator uses zero external dependencies — pure Python with transparent 
 - **Conservative defaults**: 75% max memory utilization, 20% storage headroom
 - **JSON output**: Agents can parse results programmatically for downstream tasks
 - **Cross-cloud insights**: Highlights managed vs self-managed trade-offs
+- **Pricing that stays current**: prices are not hardcoded in code — they load from a
+  dated `references/pricing.json` (with provider source URLs), the output always shows
+  the snapshot date, and the agent can fetch live prices from the web and pass them via
+  `--prices-file`. This keeps the tool dependency-free while avoiding stale cost figures.
 
 ## Compatibility
 

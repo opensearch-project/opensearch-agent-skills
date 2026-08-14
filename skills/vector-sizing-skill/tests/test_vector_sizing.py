@@ -5,12 +5,16 @@ import os
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "scripts"))
 
+import json
+
 from vector_sizing import (
     calculate_vector_memory_gb,
     calculate_storage_gb,
     usable_memory_gb,
     recommend_instances,
     calculate_shards,
+    load_pricing,
+    PRICING_META,
     BYTES_PER_ELEMENT,
     ENGINE_OVERHEAD,
     HNSW_M_DEFAULT,
@@ -246,3 +250,57 @@ class TestMultiCloudRecommendations:
             cheapest_managed = recs_managed[0]["monthly_compute_usd"]
             cheapest_ec2 = recs_ec2[0]["monthly_compute_usd"]
             assert cheapest_ec2 < cheapest_managed
+
+
+class TestPricingLoader:
+    """Pricing is loaded from an external, dated file and can be overridden."""
+
+    def test_bundled_pricing_has_provenance(self):
+        """The bundled pricing.json loads with a real last_updated date."""
+        catalogs = load_pricing()
+        assert PRICING_META.get("last_updated") not in (None, "unknown", "embedded-fallback")
+        assert PRICING_META.get("sources"), "sources should list provider pricing URLs"
+        for cloud in ["aws-opensearch", "aws-ec2", "azure", "gcp"]:
+            assert len(catalogs[cloud]) > 0
+
+    def test_all_view_is_union_of_clouds(self):
+        catalogs = load_pricing()
+        expected = sum(len(catalogs[c]) for c in catalogs if c != "all")
+        assert len(catalogs["all"]) == expected
+
+    def test_prices_file_override(self, tmp_path):
+        """A user-supplied prices file replaces the catalog and metadata."""
+        custom = {
+            "last_updated": "2099-01-01-TEST",
+            "currency": "USD",
+            "catalogs": {
+                "aws-ec2": [
+                    {"instance_type": "test.box", "vcpu": 64, "ram_gb": 512, "price_per_hour_usd": 1.0}
+                ]
+            },
+        }
+        p = tmp_path / "prices.json"
+        p.write_text(json.dumps(custom))
+        catalogs = load_pricing(str(p))
+        assert catalogs["aws-ec2"] == [("test.box", 64, 512, 1.0)]
+        assert PRICING_META["last_updated"] == "2099-01-01-TEST"
+
+    def test_missing_explicit_file_raises(self):
+        """An explicitly requested but missing prices file fails loudly."""
+        import pytest
+        with pytest.raises(SystemExit):
+            load_pricing("/no/such/pricing/file.json")
+
+
+class TestTierLabels:
+    """Tier labels reflect instance size, not raw node count."""
+
+    def test_largest_is_performance_smallest_is_economy(self):
+        recs = recommend_instances(2000, 1, 2, 0, "aws-ec2")
+        tiers = {r["tier"] for r in recs}
+        # With several viable sizes we expect a spread of tiers, not all identical.
+        assert tiers.issubset({"economy", "balanced", "performance"})
+        if len(recs) >= 3:
+            by_ram = sorted(recs, key=lambda r: r["ram_gb"])
+            assert by_ram[0]["tier"] == "economy"
+            assert by_ram[-1]["tier"] == "performance"
