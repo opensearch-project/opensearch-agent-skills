@@ -16,7 +16,7 @@ This is currently a manual spreadsheet exercise that takes hours, is error-prone
 
 ## Demo Video
 
-▶ Demo video link coming soon.
+▶ [Watch the demo on YouTube](https://youtu.be/NtvjgsRtJMU)
 
 ## Demo
 
