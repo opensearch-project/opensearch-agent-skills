@@ -135,6 +135,7 @@ Follow the guides linked in the table above, in order:
 |---|---|
 | Serverless collection | [aoss/aoss-nextgen-provisioning/SKILL.md](aoss/aoss-nextgen-provisioning/SKILL.md) |
 | Managed domain | [aos/domain-01-provision.md](aos/domain-01-provision.md) |
+| Managed domain (observability optimised) | [aos-observability-setup/SKILL.md](aos-observability-setup/SKILL.md) |
 
 ### Step 2 — Deploy Search Configuration
 

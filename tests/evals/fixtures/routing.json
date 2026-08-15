@@ -124,5 +124,17 @@
     "prompt": "Deploy my local search setup to a managed OpenSearch on Aiven",
     "expected_skill": "aiven-setup",
     "rationale": "Migrating a local setup to Aiven-hosted OpenSearch"
+  },
+  {
+    "id": "routing-aws-observability-01",
+    "prompt": "Set up an Amazon OpenSearch Service domain optimised for observability and log analytics",
+    "expected_skill": "aws-setup",
+    "rationale": "Observability-optimised managed domain is provisioned via aws-setup (aos-observability-setup)"
+  },
+  {
+    "id": "routing-aws-observability-02",
+    "prompt": "Create an OpenSearch domain with engine mode OPTIMIZED and use case OBSERVABILITY",
+    "expected_skill": "aws-setup",
+    "rationale": "Explicit engine_mode/use_case request routes to the AWS managed-domain setup"
   }
 ]
