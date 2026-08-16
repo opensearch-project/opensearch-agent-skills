@@ -124,5 +124,59 @@
     "prompt": "Deploy my local search setup to a managed OpenSearch on Aiven",
     "expected_skill": "aiven-setup",
     "rationale": "Migrating a local setup to Aiven-hosted OpenSearch"
+  },
+  {
+    "id": "routing-ubi-01",
+    "prompt": "I want to track user behavior in my search app",
+    "expected_skill": "ubi",
+    "rationale": "Tracking user behavior in an existing search app is the ubi session"
+  },
+  {
+    "id": "routing-ubi-02",
+    "prompt": "Add click tracking to our product search so we can see which results people actually use",
+    "expected_skill": "ubi",
+    "rationale": "Click tracking on search results is UBI instrumentation, not app building"
+  },
+  {
+    "id": "routing-ubi-03",
+    "prompt": "set up UBI",
+    "expected_skill": "ubi",
+    "rationale": "The canonical trigger phrase, by plugin name"
+  },
+  {
+    "id": "routing-ubi-04",
+    "prompt": "Our search runs on an Amazon OpenSearch Service domain — can we start capturing click-through data?",
+    "expected_skill": "ubi",
+    "rationale": "Behavior capture on AOS routes to ubi's managed path, not aws-setup — deliberately contested by the AOS keyword"
+  },
+  {
+    "id": "routing-ubi-05",
+    "prompt": "We set up click tracking a while back and agreed some targets — how are those metrics doing now?",
+    "expected_skill": "ubi",
+    "rationale": "The metrics review is a ubi return visit: it reads the plan the setup session wrote and runs each metric's query — contested against launchpad, which owns search-quality evaluation"
+  },
+  {
+    "id": "routing-ubi-06",
+    "prompt": "We just shipped a wishlist button on our product search — we need it tracked like the rest",
+    "expected_skill": "ubi",
+    "rationale": "Extending behavior capture to a new feature is a ubi return visit — new mapping rows through the same approval, not a new setup"
+  },
+  {
+    "id": "routing-ubi-07",
+    "prompt": "We're already capturing clicks and impressions from our product search — now the team wants a dashboard showing those numbers",
+    "expected_skill": "ubi",
+    "rationale": "Dashboarding the behavioral metrics is a ubi return visit — it generates saved objects from the plan file the setup session wrote; contested against log-analytics, which owns dashboards over log data rather than UBI stores"
+  },
+  {
+    "id": "routing-ubi-negative-02",
+    "prompt": "Build me a dashboard showing error rates and latency from our application logs",
+    "expected_skill": "log-analytics",
+    "rationale": "The fence on the dashboard keyword: ubi dashboards only the behavioral metrics in its own plan file, so a log dashboard stays with log-analytics"
+  },
+  {
+    "id": "routing-ubi-negative-01",
+    "prompt": "I want to evaluate the search quality of my application",
+    "expected_skill": "opensearch-launchpad",
+    "rationale": "Search quality evaluation is launchpad's territory; ubi claims behavior capture, not evaluation — deliberately contested now that both skills live in the search category"
   }
 ]

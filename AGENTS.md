@@ -38,6 +38,9 @@ skills/
       opensearch-launchpad/       # Leaf skill: search app builder
         SKILL.md
         *.md                      # Reference files (models, strategies, evaluation)
+      ubi/                        # Leaf skill: behavioral capture (UBI)
+        SKILL.md
+        references/               # Schema, cluster setup, dashboards, judgments
     observability/                # Category: Observability
       SKILL.md                    # Category router
       log-analytics/              # Leaf skill: log querying & analysis

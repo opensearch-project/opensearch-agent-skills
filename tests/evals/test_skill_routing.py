@@ -21,6 +21,7 @@ pytest.importorskip("pytest_evals", reason="evals group not installed — run wi
 from pytest_evals import eval_bag  # noqa: F401 — fixture injected by plugin
 
 from tests.evals.conftest import call_skill, load_skill_md
+from tests.evals.routing_match import routed_skill
 
 _FIXTURES = Path(__file__).parent / "fixtures" / "routing.json"
 _CASES = json.loads(_FIXTURES.read_text())
@@ -47,16 +48,19 @@ def test_skill_routing(case, eval_bag, bedrock_client):  # noqa: F811
         f"{case['prompt']}\n\n"
         "Which skill should handle this request? "
         "Reply with the skill name (e.g. opensearch-launchpad, log-analytics, "
-        "trace-analytics, aws-setup, aiven-setup, managed-ingestion-service, document-processing) and a brief explanation."
+        "trace-analytics, aws-setup, aiven-setup, managed-ingestion-service, document-processing, "
+        "ubi) and a brief explanation."
     )
     response = call_skill(router_skill, wrapped_prompt, bedrock_client)
 
-    routed_correctly = case["expected_skill"] in response.lower().replace("-", "-")
+    actual_skill = routed_skill(response)
+    routed_correctly = actual_skill == case["expected_skill"]
 
     # Store everything in eval_bag for the analysis phase.
     eval_bag.case_id = case["id"]
     eval_bag.prompt = case["prompt"]
     eval_bag.expected_skill = case["expected_skill"]
+    eval_bag.actual_skill = actual_skill
     eval_bag.response = response
     eval_bag.routed_correctly = routed_correctly
     eval_bag.rationale = case["rationale"]
@@ -86,7 +90,8 @@ def test_routing_accuracy(eval_results):
     print(f"{'─' * 60}")
     for r in ran:
         status = "✓" if r.result.routed_correctly else "✗"
-        print(f"  {status} [{r.result.case_id}] expected={r.result.expected_skill}")
+        actual = getattr(r.result, "actual_skill", None)
+        print(f"  {status} [{r.result.case_id}] expected={r.result.expected_skill} routed={actual}")
         if not r.result.routed_correctly:
             snippet = r.result.response[:200].replace("\n", " ")
             print(f"      response: {snippet}...")

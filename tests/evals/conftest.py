@@ -91,12 +91,37 @@ def load_skill_with_references(skill_name: str, references: list[str] | None = N
         return skill_md
     parts = [skill_md]
     for ref in references:
-        for search_dir in [skill_dir, skill_dir.parent, skill_dir.parent.parent]:
-            ref_path = search_dir / ref
-            if ref_path.exists():
-                parts.append(f"\n\n---\n## Reference: {ref}\n\n{ref_path.read_text(encoding='utf-8')}")
-                break
+        ref_path = _resolve_reference(skill_dir, ref)
+        parts.append(f"\n\n---\n## Reference: {ref}\n\n{ref_path.read_text(encoding='utf-8')}")
     return "\n".join(parts)
+
+
+def _resolve_reference(skill_dir: Path, ref: str) -> Path:
+    """Locate a case's reference file, or raise saying which one is missing.
+
+    Tried in order: the skill's own directory and its two parents, then the
+    whole skill tree by filename — a reference may live under a different
+    category than the skill that cites it. Never resolving is an error: a
+    reference that loads nothing leaves the case measuring the skill without
+    the guide it names, and says so nowhere.
+    """
+    for search_dir in [skill_dir, skill_dir.parent, skill_dir.parent.parent]:
+        candidate = search_dir / ref
+        if candidate.exists():
+            return candidate
+    matches = sorted(_SKILLS_ROOT.rglob(ref))
+    if len(matches) == 1:
+        return matches[0]
+    if not matches:
+        raise FileNotFoundError(
+            f"Reference '{ref}' cited by a case for skill '{skill_dir.name}' "
+            f"was not found under {_SKILLS_ROOT}"
+        )
+    raise FileNotFoundError(
+        f"Reference '{ref}' cited by a case for skill '{skill_dir.name}' is "
+        f"ambiguous — {len(matches)} files share that name: "
+        + ", ".join(str(m.relative_to(_SKILLS_ROOT)) for m in matches)
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -243,11 +268,24 @@ def _call_skill_agentic(skill_md: str, prompt: str, client, model_id: str, skill
     conversation_parts = [f"[User]: {prompt}"]
 
     for turn in range(_MAX_AGENT_TURNS):
+        # Prompt caching: the system prompt (SKILL.md + any preloaded references)
+        # is resent every turn, so cache it, plus a moving breakpoint on the last
+        # message so each turn reads the prior turns from cache. Strip stale
+        # markers first — the API allows at most 4 breakpoints per request.
+        for m in messages:
+            if isinstance(m["content"], list):
+                for block in m["content"]:
+                    if isinstance(block, dict):
+                        block.pop("cache_control", None)
+        last_content = messages[-1]["content"]
+        if isinstance(last_content, list) and last_content and isinstance(last_content[-1], dict):
+            last_content[-1]["cache_control"] = {"type": "ephemeral"}
+
         # Call the model with tools
         body = json.dumps({
             "anthropic_version": "bedrock-2023-05-31",
             "max_tokens": 4096,
-            "system": skill_md,
+            "system": [{"type": "text", "text": skill_md, "cache_control": {"type": "ephemeral"}}],
             "tools": _TOOLS,
             "messages": messages,
         })
