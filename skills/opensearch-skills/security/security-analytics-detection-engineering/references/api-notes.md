@@ -125,3 +125,45 @@ pre-validate raw Sigma YAML. Passing a nonexistent rule id yields an HTTP 500
 Consequence for this skill: pre-creation validation is local static analysis
 (`validate-rule`), and OpenSearch acceptance is only proven by an actual
 `POST /rules?category=...` (evidence state API_ACCEPTED).
+
+## Permissions and preflight
+
+The rest of these notes were observed on a security-disabled 2.19.1
+distribution, so the enforcement described here is derived from the OpenSearch
+Security plugin source and docs, not exercised live on that cluster.
+
+Workflow privileges, by role:
+
+- Security Analytics write access for custom rules and detectors, plus findings
+  read. The built-in reserved role `security_analytics_full_access` grants this
+  (it is defined in the security plugin's `config/roles.yml` as full Security
+  Analytics access); a least-privilege role must cover the rule, detector,
+  mapping, and findings actions this skill calls.
+- Read, search, and write on the target index: mapping inspection, and the
+  fixture indexing that `verify` performs.
+- Index create/delete only when the workflow creates its own `sa-de-test*`
+  index via `create-index`/`cleanup`.
+
+`preflight` is read-only. It confirms the rules, detectors, and findings APIs
+answer and fails closed on 401/403, naming the denied family. It does not prove
+the caller may create a rule or detector: read and write are authorized
+separately, and a denied create surfaces at runtime as a 403 that the CLI
+reports as a structured failure without recording anything to the manifest.
+
+### perform_permission_check is not available on 2.19.1
+
+OpenSearch Security has a `perform_permission_check=true` request parameter that
+runs a request through privilege evaluation and returns
+`{"accessAllowed": ..., "missingPrivileges": [...]}` without executing it, which
+would let `preflight` prove write access without creating anything. It is not in
+the 2.19 line. On the security plugin's `2.19` branch the
+`perform_permission_check` constant and its handling are absent from both
+`ConfigConstants.java` and `SecurityRestFilter.java`; the constant is likewise
+absent from `ConfigConstants.java` on the `3.0` branch (which defines the
+parameter name the filter references). Both appear only on the development line,
+where the check lives in the REST/transport privilege filter and is covered by a
+plugin-endpoint dry-run integration test. Checked 2026-08-17.
+
+Consequence for this skill on its 2.19.1 target: there is no non-mutating
+write-permission probe. `preflight` proves read reachability; the authority on
+create permission is the create call itself, which fails closed on a 403.

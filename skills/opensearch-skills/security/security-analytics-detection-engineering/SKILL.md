@@ -9,7 +9,7 @@ description: >
   Activate even if the user says SIEM rule, detection rule, threat detection,
   Sysmon rule, detection engineering, findings, or detector without
   mentioning OpenSearch.
-compatibility: Requires a reachable OpenSearch 2.x cluster with the Security Analytics plugin, plus uv. Rule validation additionally needs PyYAML (repository dev dependency group).
+compatibility: Requires a reachable OpenSearch 2.x cluster with the Security Analytics plugin, plus uv. The rule-validation CLI declares its runtime dependency (PyYAML) inline via PEP 723, so uv provisions it on run; no separate install step.
 metadata:
   author: StressTestor
   version: "1.1"
@@ -72,6 +72,31 @@ produced no finding.
   - `OPENSEARCH_USERNAME` / `OPENSEARCH_PASSWORD` (optional basic auth)
   - `OPENSEARCH_SSL_VERIFY=false` only for self-signed dev clusters
 
+### Required cluster permissions
+
+When the OpenSearch Security plugin is enabled, the configured user needs enough
+privilege for the whole `preflight -> create-rule -> create-detector -> verify
+-> cleanup` path. In role terms:
+
+- **Security Analytics write access**, to create and delete custom rules and
+  detectors and to read findings. The simplest grant is the built-in reserved
+  role `security_analytics_full_access`; a least-privilege role is fine as long
+  as it covers the Security Analytics rule, detector, mapping, and findings
+  actions the workflow calls.
+- **Target-index access**: read the index mapping, search it, and write the
+  verification fixtures into it. `inspect` reads the mapping; `verify` indexes
+  the positive and negative fixtures.
+- **Index create and delete**, only when the workflow provisions its own
+  `sa-de-test*` index through `create-index`/`cleanup`. Not needed when you
+  point the skill at an index that already exists.
+
+`preflight` exercises read access only. Read succeeding does not prove write
+access (a user who can search rules may still be forbidden from creating them),
+and on 2.19.1 there is no non-mutating way to prove creation permission ahead of
+time. See [references/api-notes.md](references/api-notes.md#permissions-and-preflight).
+A create denied by privileges returns a structured 403 and records nothing to
+the run manifest.
+
 ## Workflow
 
 All commands live in one deterministic CLI. Run from the skill root:
@@ -93,7 +118,10 @@ uv run python scripts/security_analytics.py preflight
 Reports the OpenSearch version and whether the Security Analytics rules,
 detectors, and findings APIs respond. A 404 with "No detectors found" from the
 findings API is normal on an empty cluster — the CLI treats it as available.
-If the plugin is missing or the user lacks permissions, stop and report.
+If the plugin is missing, or a read probe returns 401/403, the CLI fails closed
+and names the denied API family. Preflight proves read reachability only; it
+cannot confirm the caller may create rules or detectors (see Prerequisites,
+Required cluster permissions).
 
 ### Step 2 — Inspect the target index (read-only)
 
