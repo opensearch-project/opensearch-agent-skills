@@ -2,7 +2,7 @@
   "name": "opensearch-agent-skills",
   "displayName": "OpenSearch Agent Skills",
   "version": "0.4.0",
-  "description": "OpenSearch skills to help set up and deploy OpenSearch for a variety of use cases: build search applications with semantic, hybrid, neural sparse, and agentic search strategies; analyze observability data with log analytics (PPL and Query DSL) and distributed traces (OpenTelemetry); deploy to Amazon OpenSearch Service or OpenSearch Serverless with Bedrock integration for embeddings and RAG, or to Aiven for OpenSearch (managed, multi-cloud). Just ask your AI assistant to set up a search app, query logs, investigate traces, or deploy to AWS or Aiven.",
+  "description": "OpenSearch skills to help set up and deploy OpenSearch for a variety of use cases: build search applications with semantic, hybrid, neural sparse, and agentic search strategies; capture user behavior from an existing search application with User Behavior Insights (click tracking, impressions, and events that join back to the queries that produced them); analyze observability data with log analytics (PPL and Query DSL) and distributed traces (OpenTelemetry); deploy to Amazon OpenSearch Service or OpenSearch Serverless with Bedrock integration for embeddings and RAG, or to Aiven for OpenSearch (managed, multi-cloud). Just ask your AI assistant to set up a search app, capture search behavior, query logs, investigate traces, or deploy to AWS or Aiven.",
   "author": {
     "name": "opensearch-project"
   },

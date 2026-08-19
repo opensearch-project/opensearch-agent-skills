@@ -11,6 +11,7 @@ Skills are organized in a tree — install the whole collection or pick individu
 | Category | Skill | Description |
 |----------|-------|-------------|
 | **Search** | [opensearch-launchpad](skills/opensearch-skills/search/opensearch-launchpad/) | Build search apps from scratch — BM25, semantic, hybrid, agentic search |
+| **Search** | [ubi](skills/opensearch-skills/search/ubi/) | Instrument an existing search app with UBI — clicks, impressions, joinable events |
 | **Observability** | [log-analytics](skills/opensearch-skills/observability/log-analytics/) | Query and analyze logs with PPL — error patterns, anomaly detection |
 | **Observability** | [trace-analytics](skills/opensearch-skills/observability/trace-analytics/) | Investigate distributed traces — slow spans, service maps, agent invocations |
 | **Cloud** | [aws-setup](skills/opensearch-skills/cloud/aws-setup/) | Deploy to Amazon OpenSearch Service or Serverless |
@@ -31,6 +32,7 @@ npx skills add opensearch-project/opensearch-agent-skills
 
 # Install a specific skill
 npx skills add opensearch-project/opensearch-agent-skills@opensearch-launchpad --full-depth
+npx skills add opensearch-project/opensearch-agent-skills@ubi --full-depth
 npx skills add opensearch-project/opensearch-agent-skills@log-analytics --full-depth
 npx skills add opensearch-project/opensearch-agent-skills@trace-analytics --full-depth
 npx skills add opensearch-project/opensearch-agent-skills@aws-setup --full-depth
@@ -96,6 +98,9 @@ skills/
       opensearch-launchpad/           # Search app builder
         SKILL.md
         *.md                          # Model guides, evaluation, strategies
+      ubi/                            # Behavioral capture (User Behavior Insights)
+        SKILL.md
+        references/                   # Schema, cluster setup, dashboards, judgments
     observability/                    # Category: Observability
       SKILL.md
       log-analytics/                  # Log querying & analysis

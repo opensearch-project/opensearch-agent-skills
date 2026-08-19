@@ -5,8 +5,10 @@ description: >
   Use this skill when the user mentions OpenSearch, search app, index setup,
   search architecture, semantic search, vector search, hybrid search, BM25,
   dense vector, sparse vector, agentic search, RAG, embeddings, KNN, PDF
-  ingestion, document processing, or any related search topic. Also use for
-  log analytics and observability — when the user wants to set up log
+  ingestion, document processing, or any related search topic. Also use to
+  capture user behavior from a search application — click tracking,
+  clickstream, impressions, or search analytics with User Behavior Insights
+  (UBI). Also use for log analytics and observability — when the user wants to set up log
   ingestion, query logs with PPL, analyze error patterns, set up index
   lifecycle policies, investigate traces, or check stack health. Activate
   even if the user says log analysis, Fluent Bit, Fluentd, Logstash, syslog,
@@ -24,6 +26,7 @@ This is the top-level skill for OpenSearch. It contains four category skills tha
 | Category | Skill | Install individually |
 |---|---|---|
 | [search](search/SKILL.md) | [opensearch-launchpad](search/opensearch-launchpad/SKILL.md) | `npx skills add opensearch-project/opensearch-agent-skills@opensearch-launchpad --full-depth` |
+| [search](search/SKILL.md) | [ubi](search/ubi/SKILL.md) | `npx skills add opensearch-project/opensearch-agent-skills@ubi --full-depth` |
 | [observability](observability/SKILL.md) | [log-analytics](observability/log-analytics/SKILL.md) | `npx skills add opensearch-project/opensearch-agent-skills@log-analytics --full-depth` |
 | [observability](observability/SKILL.md) | [trace-analytics](observability/trace-analytics/SKILL.md) | `npx skills add opensearch-project/opensearch-agent-skills@trace-analytics --full-depth` |
 | [cloud](cloud/SKILL.md) | [aws-setup](cloud/aws-setup/SKILL.md) | `npx skills add opensearch-project/opensearch-agent-skills@aws-setup --full-depth` |
@@ -37,8 +40,9 @@ Route to the right skill based on user intent:
 
 | User Intent | Skill |
 |---|---|
-| Build a search app, set up an index, choose a search strategy | [opensearch-launchpad](search/opensearch-launchpad/SKILL.md) |
-| Analyze logs, query with PPL, discover error patterns | [log-analytics](observability/log-analytics/SKILL.md) |
+| Build a search app, set up an index, choose a search strategy, evaluate or tune search quality | [opensearch-launchpad](search/opensearch-launchpad/SKILL.md) |
+| Capture user behavior from an existing search app — click tracking, impressions, UBI instrumentation, verified joinable events — or verify/debug an existing UBI setup whose events don't join, review the captured metrics against their agreed targets, extend capture to a newly shipped feature, or build the Dashboards panels for those behavioral metrics (dashboards over log data stay with log-analytics); self-managed or Amazon OpenSearch Service | [ubi](search/ubi/SKILL.md) |
+| Analyze logs, query with PPL, discover error patterns, check error rates for a service | [log-analytics](observability/log-analytics/SKILL.md) |
 | Investigate traces, debug spans, analyze service maps | [trace-analytics](observability/trace-analytics/SKILL.md) |
 | Deploy to AWS, provision a domain or collection | [aws-setup](cloud/aws-setup/SKILL.md) |
 | Deploy to Aiven, provision a managed OpenSearch service | [aiven-setup](cloud/aiven-setup/SKILL.md) |
@@ -50,7 +54,7 @@ If the user's intent spans multiple skills (e.g., "build a search app and deploy
 
 ## Feedback Collection (Required Behavior)
 
-**This applies to ALL skills in this collection** — opensearch-launchpad, log-analytics, trace-analytics, aws-setup, aiven-setup, document-processing, and managed-ingestion-service. Regardless of which skill is active, you MUST follow these rules.
+**This applies to ALL skills in this collection** — opensearch-launchpad, ubi, log-analytics, trace-analytics, aws-setup, aiven-setup, document-processing, and managed-ingestion-service. Regardless of which skill is active, you MUST follow these rules.
 
 You MUST proactively collect feedback during every interaction. This is not optional — treat it as a core part of the workflow, not an afterthought.
 

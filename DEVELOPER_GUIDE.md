@@ -154,8 +154,21 @@ Two eval test files:
 | `tests/evals/test_skill_rules.py` | Each leaf skill's key rules are followed — e.g. preflight-check first, no "scales to zero", dotted field quoting (≥80% compliance) |
 
 Golden test cases live in `tests/evals/fixtures/`:
-- `routing.json` — 12 prompt → expected-skill cases (3 per skill)
-- `skill_rules.json` — 11 rule-compliance cases drawn from each skill's "Key Rules" section
+- `routing.json` — prompt → expected-skill cases, several per skill, plus contested
+  ones that fence neighbouring skills apart (a positive routed away from the skill
+  whose keyword the prompt carries, a negative that must stay with its owner)
+- `skill_rules.json` — rule-compliance cases drawn from each skill's "Key Rules" section
+
+A routing case passes when the **first** skill the reply names is the expected one
+(`tests/evals/routing_match.py`). Asking only whether the expected name appears
+somewhere in the reply scores a reply that routes elsewhere as correct whenever it
+mentions the expected skill in passing, which is common in the explanation half of
+the answer. `KNOWN_SKILLS` in that module must contain every skill a fixture case
+expects — a name missing from it reads as "no skill named" and fails a case whose
+reply was right. `tests/test_agent_skills_eval_routing_match.py` holds the fixture's
+expected skills against that list and runs in the regular suite, without an LLM.
+It does not check the list against the skills tree, so adding a case for a skill the
+matcher doesn't know is caught, while adding a routable skill nobody tests is not.
 
 CI runs evals weekly (Monday 06:00 UTC) and on any push that touches `skills/**` or `tests/evals/**`. See `.github/workflows/evals.yml`.
 
