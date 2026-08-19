@@ -1,0 +1,7 @@
+{
+  "EventID": 1,
+  "CommandLine": "C:\\Windows\\System32\\notepad.exe C:\\Users\\analyst\\notes.txt",
+  "Image": "C:\\Windows\\System32\\notepad.exe",
+  "@timestamp": "2026-08-03T20:18:29Z",
+  "test_case_id": "negative-control-001"
+}

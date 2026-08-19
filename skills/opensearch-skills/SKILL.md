@@ -30,6 +30,7 @@ This is the top-level skill for OpenSearch. It contains four category skills tha
 | [cloud](cloud/SKILL.md) | [aiven-setup](cloud/aiven-setup/SKILL.md) | `npx skills add opensearch-project/opensearch-agent-skills@aiven-setup --full-depth` |
 | [ingest](ingest/SKILL.md) | [document-processing](ingest/document-processing/SKILL.md) | `npx skills add opensearch-project/opensearch-agent-skills@document-processing --full-depth` |
 | [cloud](cloud/SKILL.md) | [managed-ingestion-service](cloud/managed-ingestion-service/SKILL.md) | `npx skills add opensearch-project/opensearch-agent-skills@managed-ingestion-service --full-depth` |
+| [security](security/SKILL.md) | [security-analytics-detection-engineering](security/security-analytics-detection-engineering/SKILL.md) | `npx skills add opensearch-project/opensearch-agent-skills@security-analytics-detection-engineering --full-depth` |
 
 ## Routing
 
@@ -44,6 +45,7 @@ Route to the right skill based on user intent:
 | Deploy to Aiven, provision a managed OpenSearch service | [aiven-setup](cloud/aiven-setup/SKILL.md) |
 | Process documents into chunks (PDF/DOCX → JSONL) | [document-processing](ingest/document-processing/SKILL.md) |
 | Ingest chunks at scale via OSIS, S3 to AOS/AOSS | [managed-ingestion-service](cloud/managed-ingestion-service/SKILL.md) |
+| Create or test Sigma rules, detectors, verify Security Analytics findings | [security-analytics-detection-engineering](security/security-analytics-detection-engineering/SKILL.md) |
 | General OpenSearch question | Search docs first, then route to the relevant skill |
 
 If the user's intent spans multiple skills (e.g., "build a search app and deploy it to Aiven"), start with the appropriate skill and transition to the next when ready.

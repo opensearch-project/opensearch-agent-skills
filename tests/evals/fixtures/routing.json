@@ -124,5 +124,23 @@
     "prompt": "Deploy my local search setup to a managed OpenSearch on Aiven",
     "expected_skill": "aiven-setup",
     "rationale": "Migrating a local setup to Aiven-hosted OpenSearch"
+  },
+  {
+    "id": "routing-security-01",
+    "prompt": "Write a Sigma rule to detect encoded PowerShell and prove it actually fires",
+    "expected_skill": "security-analytics-detection-engineering",
+    "rationale": "Sigma rule creation + verification is the detection-engineering skill"
+  },
+  {
+    "id": "routing-security-02",
+    "prompt": "My Security Analytics detector isn't generating any findings, help me debug it",
+    "expected_skill": "security-analytics-detection-engineering",
+    "rationale": "Detector/findings debugging is a Security Analytics workflow"
+  },
+  {
+    "id": "routing-security-03",
+    "prompt": "Set up SIEM threat detection for Sysmon process creation events in OpenSearch",
+    "expected_skill": "security-analytics-detection-engineering",
+    "rationale": "SIEM + Sysmon detection maps to Security Analytics detection engineering"
   }
 ]
