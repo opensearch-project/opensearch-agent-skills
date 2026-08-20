@@ -233,6 +233,18 @@ def test_build_default_lexical_query():
     assert q["multi_match"]["fuzziness"] == "AUTO"
 
 
+def test_build_default_lexical_query_fuzziness_can_be_disabled():
+    q = _build_default_lexical_query("hello world", ["title", "body"], fuzziness=None)
+
+    assert "fuzziness" not in q["multi_match"]
+
+
+def test_build_default_lexical_query_accepts_a_custom_fuzziness():
+    q = _build_default_lexical_query("hello world", ["title"], fuzziness="1")
+
+    assert q["multi_match"]["fuzziness"] == "1"
+
+
 def test_build_default_lexical_query_wildcard_no_fuzziness():
     q = _build_default_lexical_query("test", ["*"])
 

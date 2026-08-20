@@ -411,10 +411,17 @@ def _build_structured_filter(clauses: list[dict]) -> dict:
 # ---------------------------------------------------------------------------
 # Query builders
 # ---------------------------------------------------------------------------
-def _build_default_lexical_query(query: str, fields: list[str]) -> dict:
+def _build_default_lexical_query(
+    query: str, fields: list[str], fuzziness: str | None = "AUTO"
+) -> dict:
+    """Build a `multi_match` query.
+
+    ``fuzziness`` defaults to ``"AUTO"`` for named fields; pass ``None`` to match
+    exactly, which callers whose relevance is tuned for a fixed mapping rely on.
+    """
     body: dict[str, object] = {"query": query, "fields": fields or ["*"]}
-    if any(field != "*" for field in fields):
-        body["fuzziness"] = "AUTO"
+    if fuzziness and any(field != "*" for field in fields):
+        body["fuzziness"] = fuzziness
     return {"multi_match": body}
 
 

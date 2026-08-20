@@ -24,6 +24,7 @@ This is the top-level skill for OpenSearch. It contains four category skills tha
 | Category | Skill | Install individually |
 |---|---|---|
 | [search](search/SKILL.md) | [opensearch-launchpad](search/opensearch-launchpad/SKILL.md) | `npx skills add opensearch-project/opensearch-agent-skills@opensearch-launchpad --full-depth` |
+| [search](search/SKILL.md) | [permission-aware-search](search/permission-aware-search/SKILL.md) | `npx skills add opensearch-project/opensearch-agent-skills@permission-aware-search --full-depth` |
 | [observability](observability/SKILL.md) | [log-analytics](observability/log-analytics/SKILL.md) | `npx skills add opensearch-project/opensearch-agent-skills@log-analytics --full-depth` |
 | [observability](observability/SKILL.md) | [trace-analytics](observability/trace-analytics/SKILL.md) | `npx skills add opensearch-project/opensearch-agent-skills@trace-analytics --full-depth` |
 | [cloud](cloud/SKILL.md) | [aws-setup](cloud/aws-setup/SKILL.md) | `npx skills add opensearch-project/opensearch-agent-skills@aws-setup --full-depth` |
@@ -38,6 +39,7 @@ Route to the right skill based on user intent:
 | User Intent | Skill |
 |---|---|
 | Build a search app, set up an index, choose a search strategy | [opensearch-launchpad](search/opensearch-launchpad/SKILL.md) |
+| Permission-aware / multi-tenant search or RAG where users only see documents they may read (DLS) | [permission-aware-search](search/permission-aware-search/SKILL.md) |
 | Analyze logs, query with PPL, discover error patterns | [log-analytics](observability/log-analytics/SKILL.md) |
 | Investigate traces, debug spans, analyze service maps | [trace-analytics](observability/trace-analytics/SKILL.md) |
 | Deploy to AWS, provision a domain or collection | [aws-setup](cloud/aws-setup/SKILL.md) |
@@ -50,7 +52,7 @@ If the user's intent spans multiple skills (e.g., "build a search app and deploy
 
 ## Feedback Collection (Required Behavior)
 
-**This applies to ALL skills in this collection** — opensearch-launchpad, log-analytics, trace-analytics, aws-setup, aiven-setup, document-processing, and managed-ingestion-service. Regardless of which skill is active, you MUST follow these rules.
+**This applies to ALL skills in this collection** — opensearch-launchpad, permission-aware-search, log-analytics, trace-analytics, aws-setup, aiven-setup, document-processing, and managed-ingestion-service. Regardless of which skill is active, you MUST follow these rules.
 
 You MUST proactively collect feedback during every interaction. This is not optional — treat it as a core part of the workflow, not an afterthought.
 
