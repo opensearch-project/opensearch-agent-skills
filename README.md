@@ -16,6 +16,7 @@ Skills are organized in a tree — install the whole collection or pick individu
 | **Observability** | [unclosed](skills/opensearch-skills/observability/unclosed/) | Audit whether a reported incident is real before investigating — reports the derivation tree, never asserts a cause |
 | **Cloud** | [aws-setup](skills/opensearch-skills/cloud/aws-setup/) | Deploy to Amazon OpenSearch Service or Serverless |
 | **Cloud** | [managed-ingestion-service](skills/opensearch-skills/cloud/managed-ingestion-service/) | Ingest chunks at scale via OSIS pipelines with ASE |
+| **Cloud** | [aiven-setup](skills/opensearch-skills/cloud/aiven-setup/) | Deploy to Aiven for OpenSearch (managed, multi-cloud) |
 
 > More skills coming soon — contributions welcome! See [DEVELOPER_GUIDE.md](DEVELOPER_GUIDE.md).
 
@@ -36,6 +37,7 @@ npx skills add opensearch-project/opensearch-agent-skills@trace-analytics --full
 npx skills add opensearch-project/opensearch-agent-skills@unclosed --full-depth
 npx skills add opensearch-project/opensearch-agent-skills@aws-setup --full-depth
 npx skills add opensearch-project/opensearch-agent-skills@managed-ingestion-service --full-depth
+npx skills add opensearch-project/opensearch-agent-skills@aiven-setup --full-depth
 ```
 
 ### Install options
@@ -125,6 +127,11 @@ skills/
       managed-ingestion-service/      # Cloud-scale ingestion via OSIS
         SKILL.md
         iam-setup.md
+      aiven-setup/                    # Aiven provisioning & deployment
+        SKILL.md
+        aiven-01-provision.md         # Provision the managed service
+        aiven-02-deploy-search.md     # Deploy the search configuration
+        reference.md
 tests/                                # pytest test suite
 ```
 

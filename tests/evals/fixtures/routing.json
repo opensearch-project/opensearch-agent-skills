@@ -130,5 +130,23 @@
     "prompt": "Write a PPL query that counts 5xx responses per service over the last 24 hours.",
     "expected_skill": "log-analytics",
     "rationale": "Pure log query -- guards the unclosed boundary from capturing log-analytics traffic"
+  },
+  {
+    "id": "routing-aiven-01",
+    "prompt": "Provision a managed OpenSearch service on Aiven and deploy my search app to it",
+    "expected_skill": "aiven-setup",
+    "rationale": "Explicit Aiven provisioning + deploy intent"
+  },
+  {
+    "id": "routing-aiven-02",
+    "prompt": "I want to spin up an Aiven for OpenSearch cluster in GCP europe-west1",
+    "expected_skill": "aiven-setup",
+    "rationale": "Aiven managed OpenSearch on a non-AWS cloud"
+  },
+  {
+    "id": "routing-aiven-03",
+    "prompt": "Deploy my local search setup to a managed OpenSearch on Aiven",
+    "expected_skill": "aiven-setup",
+    "rationale": "Migrating a local setup to Aiven-hosted OpenSearch"
   }
 ]
