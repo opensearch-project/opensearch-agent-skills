@@ -1,0 +1,48 @@
+{
+  "name": "search-readonly",
+  "role_name": "search-readonly-observed",
+  "steps": [
+    {
+      "id": "search-logs",
+      "method": "POST",
+      "path": "/logs-*/_search",
+      "body": {
+        "size": 10,
+        "query": {
+          "match_all": {}
+        }
+      },
+      "index_patterns": [
+        "logs-*"
+      ],
+      "expect": "allow"
+    },
+    {
+      "id": "read-index-settings",
+      "method": "GET",
+      "path": "/logs-*/_settings",
+      "index_patterns": [
+        "logs-*"
+      ],
+      "expect": "allow"
+    },
+    {
+      "id": "must-not-delete-index",
+      "method": "DELETE",
+      "path": "/logs-2026.07.29",
+      "index_patterns": [
+        "logs-*"
+      ],
+      "expect": "deny"
+    },
+    {
+      "id": "must-not-read-security-index",
+      "method": "GET",
+      "path": "/.opendistro_security/_search",
+      "index_patterns": [
+        ".opendistro_security"
+      ],
+      "expect": "deny"
+    }
+  ]
+}

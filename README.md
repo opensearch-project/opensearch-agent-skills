@@ -15,6 +15,7 @@ Skills are organized in a tree — install the whole collection or pick individu
 | **Observability** | [trace-analytics](skills/opensearch-skills/observability/trace-analytics/) | Investigate distributed traces — slow spans, service maps, agent invocations |
 | **Cloud** | [aws-setup](skills/opensearch-skills/cloud/aws-setup/) | Deploy to Amazon OpenSearch Service or Serverless |
 | **Cloud** | [managed-ingestion-service](skills/opensearch-skills/cloud/managed-ingestion-service/) | Ingest chunks at scale via OSIS pipelines with ASE |
+| **Security** | [permission-compiler](skills/opensearch-skills/security/permission-compiler/) | Compile observed OpenSearch permissions into a reviewable least-privilege role candidate |
 | **Cloud** | [aiven-setup](skills/opensearch-skills/cloud/aiven-setup/) | Deploy to Aiven for OpenSearch (managed, multi-cloud) |
 
 > More skills coming soon — contributions welcome! See [DEVELOPER_GUIDE.md](DEVELOPER_GUIDE.md).
@@ -35,6 +36,7 @@ npx skills add opensearch-project/opensearch-agent-skills@log-analytics --full-d
 npx skills add opensearch-project/opensearch-agent-skills@trace-analytics --full-depth
 npx skills add opensearch-project/opensearch-agent-skills@aws-setup --full-depth
 npx skills add opensearch-project/opensearch-agent-skills@managed-ingestion-service --full-depth
+npx skills add opensearch-project/opensearch-agent-skills@permission-compiler --full-depth
 npx skills add opensearch-project/opensearch-agent-skills@aiven-setup --full-depth
 ```
 
@@ -120,6 +122,13 @@ skills/
         reference.md
       managed-ingestion-service/      # Cloud-scale ingestion via OSIS
         SKILL.md
+    security/                         # Category: Access control
+      SKILL.md
+      permission-compiler/            # Evidence-backed role compiler
+        SKILL.md
+        workflow-schema.md
+        assets/
+        scripts/
         iam-setup.md
       aiven-setup/                    # Aiven provisioning & deployment
         SKILL.md

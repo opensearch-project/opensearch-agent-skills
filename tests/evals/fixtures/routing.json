@@ -102,6 +102,24 @@
     "rationale": "Document processing (Docling) routes to the ingest/document-processing skill"
   },
   {
+    "id": "routing-security-01",
+    "prompt": "My OpenSearch workflow gets a 403. Compile the smallest role that allows its API calls.",
+    "expected_skill": "permission-compiler",
+    "rationale": "A 403 plus least-privilege role compilation is the permission-compiler workflow"
+  },
+  {
+    "id": "routing-security-02",
+    "prompt": "Replace my all_access OpenSearch role with minimum permissions based on these audit events.",
+    "expected_skill": "permission-compiler",
+    "rationale": "Evidence-based reduction of an over-privileged role routes to permission-compiler"
+  },
+  {
+    "id": "routing-security-03",
+    "prompt": "OpenSearch says MISSING_PRIVILEGES for my automation. Help me generate and verify a candidate role without applying it.",
+    "expected_skill": "permission-compiler",
+    "rationale": "MISSING_PRIVILEGES and a review-only candidate role are explicit permission-compiler triggers"
+  },
+  {
     "id": "routing-negative-01",
     "prompt": "Bulk index my product catalog JSON into OpenSearch using the _bulk API",
     "expected_skill": "opensearch-launchpad",
