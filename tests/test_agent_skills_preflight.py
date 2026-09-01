@@ -362,3 +362,46 @@ def test_autodetect_sets_env_for_none_mode(monkeypatch):
     assert result["auth_mode"] == "none"
     assert os.environ.get("OPENSEARCH_AUTH_MODE") == "none"
     assert os.environ.get("OPENSEARCH_USER") is None
+
+
+def test_remote_custom_credentials_never_try_plaintext_http(monkeypatch):
+    attempts = []
+
+    def _build(use_ssl: bool, http_auth=None):
+        attempts.append((use_ssl, http_auth))
+        return _UnreachableClient()
+
+    from lib import client as client_module
+    monkeypatch.setattr(client_module, "OPENSEARCH_HOST", "search.example.com")
+    monkeypatch.setattr(client_module, "build_client", _build)
+
+    result = preflight_check_cluster(
+        auth_mode="custom",
+        username="service-user",
+        password="secret",
+    )
+
+    assert attempts == [(True, ("service-user", "secret"))]
+    assert result["auth_modes_tried"] == ["custom_ssl"]
+    assert "Plaintext HTTP was not attempted" in result["message"]
+
+
+def test_remote_autodetect_omits_plaintext_default_credentials(monkeypatch):
+    attempts = []
+
+    def _build(use_ssl: bool, http_auth=None):
+        attempts.append((use_ssl, http_auth))
+        return _UnreachableClient()
+
+    from lib import client as client_module
+    monkeypatch.setattr(client_module, "OPENSEARCH_HOST", "search.example.com")
+    monkeypatch.setattr(client_module, "build_client", _build)
+
+    result = preflight_check_cluster()
+
+    assert (False, ("admin", "myStrongPassword123!")) not in attempts
+    assert result["auth_modes_tried"] == [
+        "none_http",
+        "none_ssl",
+        "default_ssl",
+    ]

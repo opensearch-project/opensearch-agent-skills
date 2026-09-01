@@ -45,10 +45,15 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 
 def cmd_status(args):
-    from lib.client import create_client, can_connect, build_client, resolve_http_auth
+    from lib.client import (
+        build_client,
+        can_connect,
+        connection_ssl_modes,
+        resolve_http_auth,
+    )
     try:
         http_auth = resolve_http_auth()
-        for use_ssl in (True, False):
+        for use_ssl in connection_ssl_modes(http_auth):
             client = build_client(use_ssl=use_ssl, http_auth=http_auth)
             ok, _ = can_connect(client)
             if ok:

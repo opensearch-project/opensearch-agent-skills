@@ -1,0 +1,53 @@
+{
+  "settings": {
+    "index": {
+      "knn": true
+    }
+  },
+  "mappings": {
+    "properties": {
+      "title": {
+        "type": "text",
+        "fields": {
+          "keyword": {
+            "type": "keyword"
+          }
+        }
+      },
+      "description": {
+        "type": "text"
+      },
+      "stemmed_text": {
+        "type": "text",
+        "analyzer": "english",
+        "search_analyzer": "standard"
+      },
+      "brand": {
+        "type": "text"
+      },
+      "category": {
+        "type": "keyword"
+      },
+      "price": {
+        "type": "float"
+      },
+      "popularity": {
+        "type": "float",
+        "index": false
+      },
+      "embedding": {
+        "type": "knn_vector",
+        "dimension": 3,
+        "method": {
+          "name": "hnsw",
+          "space_type": "l2",
+          "engine": "lucene",
+          "parameters": {
+            "ef_construction": 100,
+            "m": 16
+          }
+        }
+      }
+    }
+  }
+}

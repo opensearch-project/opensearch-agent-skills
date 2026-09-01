@@ -1,0 +1,30 @@
+name: relevance-x-ray-demo
+
+services:
+  opensearch:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+    image: relevance-x-ray-demo:3.8.0
+    environment:
+      discovery.type: single-node
+      DISABLE_SECURITY_PLUGIN: "true"
+      DISABLE_INSTALL_DEMO_CONFIG: "true"
+      OPENSEARCH_JAVA_OPTS: "-Xms768m -Xmx768m"
+    ports:
+      - "127.0.0.1:${OPENSEARCH_PORT:-19200}:9200"
+    ulimits:
+      memlock:
+        soft: -1
+        hard: -1
+      nofile:
+        soft: 65536
+        hard: 65536
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - "curl --fail --silent http://127.0.0.1:9200/relevance-x-ray-demo/_doc/1 >/dev/null"
+      interval: 5s
+      timeout: 3s
+      retries: 30
+      start_period: 30s

@@ -156,7 +156,18 @@ def test_multimodal_profile_describes_pictures():
 
 def test_ingest_local_records_profile_in_result(workdir):
     pdf = _make_pdf(workdir)
-    with patch.object(ingest, "process_document", return_value=SAMPLE_CHUNKS) as mock_pd:
+    with (
+        patch.object(
+            ingest,
+            "check_memory_available",
+            return_value={"sufficient": True},
+        ),
+        patch.object(
+            ingest,
+            "process_document",
+            return_value=SAMPLE_CHUNKS,
+        ) as mock_pd,
+    ):
         result = ingest_local(str(pdf), profile="tables")
     assert result["profile"] == "tables"
     # process_document must be invoked with the selected profile
@@ -272,6 +283,22 @@ def test_write_then_read_status_roundtrip(workdir):
     assert status["stage"] == "processing"
 
 
+def test_write_status_replaces_existing_file_on_windows(workdir, monkeypatch):
+    write_status({"active": True, "stage": "processing"})
+    original_rename = Path.rename
+
+    def windows_rename(source, target):
+        if Path(target).exists():
+            raise FileExistsError(target)
+        return original_rename(source, target)
+
+    monkeypatch.setattr(Path, "rename", windows_rename)
+
+    write_status({"active": False, "stage": "complete"})
+
+    assert read_status() == {"active": False, "stage": "complete"}
+
+
 # ---------------------------------------------------------------------------
 # ingest_local  (named index, auto-derived when absent)
 # ---------------------------------------------------------------------------
@@ -290,7 +317,14 @@ def test_ingest_local_missing_source_returns_error(workdir):
 
 def test_ingest_local_without_index_derives_name(workdir):
     pdf = _make_pdf(workdir)
-    with patch.object(ingest, "process_document", return_value=SAMPLE_CHUNKS):
+    with (
+        patch.object(
+            ingest,
+            "check_memory_available",
+            return_value={"sufficient": True},
+        ),
+        patch.object(ingest, "process_document", return_value=SAMPLE_CHUNKS),
+    ):
         result = ingest_local(str(pdf))  # no index -> derived from filename "doc.pdf"
 
     assert result["status"] == "chunks_ready"
@@ -309,7 +343,14 @@ def test_ingest_local_without_index_derives_name(workdir):
 
 def test_ingest_local_with_index_writes_to_index_dir(workdir):
     pdf = _make_pdf(workdir)
-    with patch.object(ingest, "process_document", return_value=SAMPLE_CHUNKS):
+    with (
+        patch.object(
+            ingest,
+            "check_memory_available",
+            return_value={"sufficient": True},
+        ),
+        patch.object(ingest, "process_document", return_value=SAMPLE_CHUNKS),
+    ):
         result = ingest_local(str(pdf), index_name="attention-paper")
 
     assert result["index"] == "attention-paper"
@@ -321,7 +362,18 @@ def test_ingest_local_with_index_writes_to_index_dir(workdir):
 
 def test_ingest_local_processing_error_is_reported(workdir):
     pdf = _make_pdf(workdir)
-    with patch.object(ingest, "process_document", side_effect=RuntimeError("boom")):
+    with (
+        patch.object(
+            ingest,
+            "check_memory_available",
+            return_value={"sufficient": True},
+        ),
+        patch.object(
+            ingest,
+            "process_document",
+            side_effect=RuntimeError("boom"),
+        ),
+    ):
         result = ingest_local(str(pdf))
     assert "error" in result
     assert "boom" in result["error"]
@@ -543,6 +595,24 @@ def test_is_ingestion_running_current_process(workdir):
     pid_path.parent.mkdir(parents=True, exist_ok=True)
     pid_path.write_text(str(os.getpid()))
     assert is_ingestion_running() is True
+
+
+def test_is_ingestion_running_uses_psutil_on_windows(workdir, monkeypatch):
+    pid_path = Path(ingest.PID_FILE)
+    pid_path.parent.mkdir(parents=True, exist_ok=True)
+    pid_path.write_text("4194304")
+    fake_psutil = type("Psutil", (), {"pid_exists": staticmethod(lambda pid: False)})
+
+    monkeypatch.setattr(ingest, "_IS_WINDOWS", True, raising=False)
+    monkeypatch.setitem(sys.modules, "psutil", fake_psutil)
+    monkeypatch.setattr(
+        ingest.os,
+        "kill",
+        lambda *args: pytest.fail("Windows PID checks must not call os.kill"),
+    )
+
+    assert ingest.is_ingestion_running() is False
+    assert not pid_path.exists()
 
 
 def test_is_ingestion_running_dead_pid(workdir):
