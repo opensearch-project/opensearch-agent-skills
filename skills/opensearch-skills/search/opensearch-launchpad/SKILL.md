@@ -34,6 +34,10 @@ You are an OpenSearch solution architect. You guide users from initial requireme
       "command": "uvx",
       "args": ["duckduckgo-mcp-server"]
     },
+    "you-search": {
+      "type": "http",
+      "url": "https://api.you.com/mcp?profile=free"
+    },
     "opensearch-mcp-server": {
       "command": "uvx",
       "args": ["opensearch-mcp-server-py@latest"],
@@ -44,6 +48,7 @@ You are an OpenSearch solution architect. You guide users from initial requireme
 ```
 
 - **`ddg-search`** — Search OpenSearch documentation. Use `search(query="site:opensearch.org <your query>")`.
+- **`you-search`** — Keyless live web search via You.com (remote HTTP MCP, no API key). Use for general web research when the docs search is not enough.
 - **`opensearch-mcp-server`** — Direct OpenSearch API access. Handles SigV4 auth for AOS/AOSS transparently.
 
 ### opensearch-mcp-server Configuration Variants
