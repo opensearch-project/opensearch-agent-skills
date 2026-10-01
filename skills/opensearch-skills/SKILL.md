@@ -123,6 +123,10 @@ uv run python scripts/opensearch_ops.py --help
       "command": "uvx",
       "args": ["duckduckgo-mcp-server"]
     },
+    "you-search": {
+      "type": "http",
+      "url": "https://api.you.com/mcp?profile=free"
+    },
     "awslabs.aws-api-mcp-server": {
       "command": "uvx",
       "args": ["awslabs.aws-api-mcp-server@latest"],
