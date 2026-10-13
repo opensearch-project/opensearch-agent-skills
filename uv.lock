@@ -2085,6 +2085,9 @@ dependencies = [
 
 [package.dev-dependencies]
 dev = [
+    { name = "pillow" },
+    { name = "psutil" },
+    { name = "pypdf" },
     { name = "pytest" },
     { name = "pyyaml" },
 ]
@@ -2108,6 +2111,9 @@ requires-dist = [{ name = "opensearch-py" }]
 
 [package.metadata.requires-dev]
 dev = [
+    { name = "pillow", specifier = ">=10.0" },
+    { name = "psutil", specifier = ">=5.9" },
+    { name = "pypdf", specifier = ">=4.0" },
     { name = "pytest", specifier = ">=9.0.3" },
     { name = "pyyaml", specifier = ">=6.0" },
 ]
