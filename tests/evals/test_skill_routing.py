@@ -85,7 +85,7 @@ def test_routing_accuracy(eval_results):
     print(f"Skill routing accuracy: {accuracy:.0%} ({len(correct)}/{len(eval_results)})")
     print(f"{'─' * 60}")
     for r in ran:
-        status = "✓" if r.result.routed_correctly else "✗"
+        status = "Y" if r.result.routed_correctly else "N"
         print(f"  {status} [{r.result.case_id}] expected={r.result.expected_skill}")
         if not r.result.routed_correctly:
             snippet = r.result.response[:200].replace("\n", " ")

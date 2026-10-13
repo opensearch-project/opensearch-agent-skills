@@ -53,4 +53,9 @@ local/
 .DS_Store
 Thumbs.db
 
+# Skill sync cache (upstream clones) — regenerable
+.sync-cache/
 
+# Eval run artifacts
+.deepeval/
+test-out/
