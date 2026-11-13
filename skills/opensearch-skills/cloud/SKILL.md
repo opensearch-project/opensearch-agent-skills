@@ -27,6 +27,7 @@ Category skill for deploying OpenSearch to managed cloud infrastructure.
 | [aws-setup](aws-setup/SKILL.md) | Provision and configure Amazon OpenSearch Service domains and Serverless collections, then deploy search configurations |
 | [aiven-setup](aiven-setup/SKILL.md) | Provision a managed Aiven for OpenSearch service, then deploy search configurations to it |
 | [managed-ingestion-service](managed-ingestion-service/SKILL.md) | Ingest chunks at scale via OSIS pipelines with optional ASE (semantic_enrichment) |
+| [querying-opensearch-catalog-assets](querying-opensearch-catalog-assets/SKILL.md) | Read-only queries against an OpenSearch index, collection or domain found in the AWS Glue Data Catalog |
 
 ## When to Use
 
@@ -47,6 +48,10 @@ Read [managed-ingestion-service/SKILL.md](managed-ingestion-service/SKILL.md) wh
 - Ingest JSONL chunks into an AOS domain or AOSS collection at scale via OSIS
 - Set up an OSIS pipeline with semantic_enrichment (ASE)
 - Upload chunks to S3 and create a managed ingestion pipeline
+
+Read [querying-opensearch-catalog-assets/SKILL.md](querying-opensearch-catalog-assets/SKILL.md) when the user wants to:
+- Read the data behind an OpenSearch asset (`amazon.opensearch::Index`, `::Collection` or `::Domain`) found in the AWS Glue Data Catalog
+- Diagnose a 401 or 403 while querying such an asset
 
 ## Usage Attribution
 
