@@ -124,5 +124,17 @@
     "prompt": "Deploy my local search setup to a managed OpenSearch on Aiven",
     "expected_skill": "aiven-setup",
     "rationale": "Migrating a local setup to Aiven-hosted OpenSearch"
+  },
+  {
+    "id": "routing-catalog-01",
+    "prompt": "I found an OpenSearch index in the AWS Glue Data Catalog (asset arn:aws:aoss:us-east-1:111122223333:collection/abc123/def456). Show me its 10 most recent documents.",
+    "expected_skill": "querying-opensearch-catalog-assets",
+    "rationale": "Read-only query of an OpenSearch asset found in the Glue Data Catalog"
+  },
+  {
+    "id": "routing-catalog-02",
+    "prompt": "My agent got a 403 querying an OpenSearch Serverless collection it found in the Glue Data Catalog. Which policy is blocking it?",
+    "expected_skill": "querying-opensearch-catalog-assets",
+    "rationale": "Access denial while reading a catalog asset"
   }
 ]
