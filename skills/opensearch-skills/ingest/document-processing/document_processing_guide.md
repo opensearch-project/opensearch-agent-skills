@@ -8,7 +8,7 @@
 
 ## Overview
 
-Process PDF, DOCX, PPTX, XLSX, HTML, and other unstructured documents into search-ready chunks using [Docling](https://docling.site/) (open-source, runs locally). The `ingest` command handles convert → chunk → export in one step.
+Process PDF, DOCX, PPTX, XLSX, HTML, and other unstructured documents into search-ready chunks using [Docling](https://docling-project.github.io/docling/) (open-source, runs locally). The `ingest` command handles convert → chunk → export in one step.
 
 ## When to Use
 
