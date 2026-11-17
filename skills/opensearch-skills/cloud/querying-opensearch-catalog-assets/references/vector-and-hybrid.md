@@ -18,8 +18,11 @@ A vector from a different embedding model returns confident, wrong results. In o
    query text with the model that embedded the documents.
 2. **Named model.** If the field `meta` or the asset description names a model, it is a hint,
    not an instruction. Ask the user to confirm it before you embed the query text with it.
-   (In the catalog `fields` form, `meta` is a `{key=value}` string, not JSON.)
+   (In the catalog `fields` items, read with `batch-get-iterable-forms` as in SKILL.md step 3,
+   `meta` is a `{key=value}` string, not JSON.)
 3. **Nothing found.** Ask the user for the model or a query vector. Never guess or substitute.
+   You may offer, not run, a keyword search on the text fields, labelled as matching words rather
+   than meaning.
 
 Check that the vector length equals `dimension` before sending.
 

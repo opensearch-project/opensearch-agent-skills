@@ -5,8 +5,8 @@ allowed to, and propose the smallest read-only grant for this one index. You nev
 
 ## 1. Collect the facts
 
-- Status code, the `x-aoss-response-hint` response header (AOSS), and `error.type` / `reason`
-  or `Message` from the body.
+- Status code, the `x-aoss-response-hint` response header (AOSS; send the request with `awscurl -i`
+  or `curl -D -` to see headers), and `error.type` / `reason` or `Message` from the body.
 - `aws sts get-caller-identity`. For an assumed role
   (`arn:aws:sts::<acct>:assumed-role/<role>/<session>`) get the role ARN, path included, with
   `aws iam get-role --role-name <role> --query Role.Arn`. Grants name the role ARN, never the
@@ -21,7 +21,7 @@ Check signing first: a signing error looks like an access denial.
 | both | 403 with a signature or credential message | Signing: service name (`aoss`/`es`), Region, `x-amz-content-sha256` signed, session token sent, no `:443`, credentials not expired. Fix and retry once. |
 | AOSS | 401, hint `X01:network-policy-deny` | Network policy does not allow this source (public, or a VPC endpoint). |
 | AOSS | 403, hint `X01:gw-helper-deny` | Data access policy does not grant this principal the operation on `index/<collection-name>/<index>`. |
-| AOSS | 403, no hint, signing correct | IAM: the principal lacks `aoss:APIAccessAll` on the collection. |
+| AOSS | 403, no hint, signing correct | IAM or the data access policy: a data access policy denial can also come without a hint, as `authorization_exception` or `security_exception`. Check both in step 3 before naming the layer. |
 | AOS | 403 `Message` naming an `es:ESHttp*` action | Domain resource policy or the principal's IAM policy. |
 | AOS | 403 `security_exception`, reason starts `no permissions for [` | Fine-grained access control: the principal is not mapped to a role that can read the index. |
 | AOS | 401 | Request unsigned or credentials expired. Re-sign. Never ask for a master user or password. |
@@ -31,9 +31,9 @@ Check signing first: a signing error looks like an access denial.
 AOSS:
 
 ```bash
-aws opensearchserverless list-security-policies --type network
+aws opensearchserverless list-security-policies --type network --resource "collection/<collection-name>"
 aws opensearchserverless get-security-policy --type network --name <name>
-aws opensearchserverless list-access-policies --type data
+aws opensearchserverless list-access-policies --type data --resource "collection/<collection-name>"
 aws opensearchserverless get-access-policy --type data --name <name>
 aws iam simulate-principal-policy --policy-source-arn <role-arn> \
   --action-names aoss:APIAccessAll --resource-arns <collection-arn>
@@ -41,7 +41,9 @@ aws iam simulate-principal-policy --policy-source-arn <role-arn> \
 
 Look for a rule whose resource matches `collection/<collection-name>` (network) or
 `index/<collection-name>/<index>` (data, patterns allowed) and whose principals include the
-role ARN. Data access policies name the collection by name, not ID.
+role ARN. Data access policies name the collection by name, not ID. IAM allows
+`aoss:APIAccessAll` and no data access rule covers the index for this role: the data access
+policy is the layer.
 
 AOS:
 
