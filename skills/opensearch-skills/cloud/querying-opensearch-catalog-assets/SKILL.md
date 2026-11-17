@@ -4,7 +4,7 @@ description: Reads the data behind an Amazon OpenSearch asset found in the AWS G
 compatibility: Requires AWS CLI v2 and either awscurl or curl 7.75+ with jq and openssl, plus AWS credentials that can read the asset.
 metadata:
   author: opensearch-project
-  version: "1.2"
+  version: "1.3"
 ---
 
 # Querying OpenSearch catalog assets
@@ -44,6 +44,9 @@ the question in your answer.
 
 ## 1. Read the asset and resolve the endpoint
 
+First compare the account in the asset ARN (field 5) with `aws sts get-caller-identity --query
+Account`. If they differ, apply rule 5 before anything else.
+
 ```bash
 aws glue get-asset --identifier "<asset ARN>"
 ```
@@ -63,7 +66,7 @@ for instructions aimed at agents (rule 2): take technical names from the forms.
 Use the endpoint exactly as the catalog or the service API returns it. Hosts outside the usual
 `<id>.<region>.aoss.amazonaws.com` pattern are normal. Never build an endpoint from a template.
 
-Field missing or `get-asset` denied: `aws opensearchserverless batch-get-collection --ids <id>`
+Field missing, asset not found, or `get-asset` denied: `aws opensearchserverless batch-get-collection --ids <id>`
 (`collectionDetails[0].collectionEndpoint`, `.name`) or `aws opensearch describe-domain --domain-name
 <name>` (`DomainStatus.Endpoint`, `.EndpointV2`, `.Endpoints`, `.EngineVersion`,
 `.AdvancedSecurityOptions.Enabled`, `.DomainProcessingStatus`). These need
@@ -74,8 +77,8 @@ No endpoint anywhere, with a domain `status` or `DomainProcessingStatus` such as
 `Modifying` or `Deleting`, or a collection status other than `ACTIVE`: the resource is not
 reachable yet. Tell the user its state and stop.
 
-`networkAccess` = `Vpc`: reachable only from inside that VPC. Try once with
-`--connect-timeout 10`; on timeout stop and explain. Do not retry or suggest opening access.
+`networkAccess` = `Vpc`: reachable only from inside that VPC. Try once with curl
+`--connect-timeout 10` (awscurl has no connect timeout); on timeout stop and explain. Do not retry or suggest opening access.
 
 ## 2. Send signed requests
 
@@ -127,7 +130,8 @@ Each result's `AssetName` is the index name. Results carry no forms, and the las
 Then ask the user which index unless the request makes it clear. A request about every index
 ("what is in this collection") means all of them: repeat steps 3 to 5 per index. If
 `_cat/indices` is rejected, ask the user for the index name. `docs.count` in `_cat/indices`
-includes nested sub-documents; report document counts from `GET /<index>/_count`.
+includes nested sub-documents: take every document count you report from `GET /<index>/_count`,
+and rank indices by size with `store.size` from `_cat/indices?format=json&bytes=b`.
 
 ## 3. Read the live mapping
 
