@@ -4,7 +4,7 @@ description: Reads the data behind an Amazon OpenSearch asset found in the AWS G
 compatibility: Requires AWS CLI v2 and either awscurl or curl 7.75+ with jq and openssl, plus AWS credentials that can read the asset.
 metadata:
   author: opensearch-project
-  version: "1.1"
+  version: "1.2"
 ---
 
 # Querying OpenSearch catalog assets
@@ -121,6 +121,9 @@ aws glue search-assets --max-items 100 --filter-clause \
   "$(jq -cn --arg c "<collection asset ARN>" '{AttributeFilter: {Attribute: "catalog::RelatedTo.belongsTo", Operator: "equals", Value: {StringValue: $c}}}')"
 ```
 
+Each result's `AssetName` is the index name. Results carry no forms, and the last segment of
+`Id` is an internal ID, not a name.
+
 Then ask the user which index unless the request makes it clear. A request about every index
 ("what is in this collection") means all of them: repeat steps 3 to 5 per index. If
 `_cat/indices` is rejected, ask the user for the index name. `docs.count` in `_cat/indices`
@@ -168,8 +171,8 @@ Default to Query DSL. Use SQL or PPL only when the user asks for it
   `"timeout": "10s"` on `_search`, and a time-range filter on `TIMESERIES` collections and log
   indexes unless the user asks for all time.
 - "All", "export", "every": `_count` first and tell the user the number. Up to 1,000 documents,
-  go ahead; above that, ask before fetching. Past 10,000 hits use `search_after`. Any sort the
-  user asks for ends on a unique field so the order is stable.
+  go ahead; above that, ask before fetching. Past 10,000 hits use `search_after`, with a sort
+  that ends on a unique field; if the mapping has none, tell the user that ties may reorder.
 - An export includes every field in the mapping unless the user names fields. Write files only
   where the user or your environment says to.
 
