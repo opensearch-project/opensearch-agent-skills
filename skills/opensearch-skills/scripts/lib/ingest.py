@@ -13,6 +13,8 @@ import tempfile
 import time
 from pathlib import Path
 
+_IS_WINDOWS = os.name == "nt"
+
 
 # ---------------------------------------------------------------------------
 # Page estimation
@@ -512,11 +514,11 @@ def _status_path() -> Path:
 
 
 def write_status(data: dict):
-    """Write ingestion status for UI polling. Uses atomic write (temp + rename)."""
+    """Write ingestion status for UI polling. Uses an atomic replacement."""
     path = _status_path()
     tmp_path = path.with_suffix(".tmp")
     tmp_path.write_text(json.dumps(data, indent=2))
-    tmp_path.rename(path)
+    tmp_path.replace(path)
 
 
 def read_status() -> dict:
@@ -547,17 +549,26 @@ def is_ingestion_running() -> bool:
     except (ValueError, OSError):
         return False
 
-    # Check if process is alive (signal 0 doesn't kill, just checks existence).
     try:
-        os.kill(pid, 0)
+        if _IS_WINDOWS:
+            import psutil
+
+            running = psutil.pid_exists(pid)
+        else:
+            # Signal 0 checks existence without sending a signal on POSIX.
+            os.kill(pid, 0)
+            running = True
+    except (ImportError, ProcessLookupError, OSError):
+        running = False
+
+    if running:
         return True
-    except (ProcessLookupError, OSError):
-        # Process is dead — clean up stale PID file.
-        try:
-            pid_path.unlink()
-        except OSError:
-            pass
-        return False
+
+    try:
+        pid_path.unlink()
+    except OSError:
+        pass
+    return False
 
 
 def ingest_background(
@@ -896,4 +907,3 @@ def ingest_local(
         "next_step": next_step,
         "visualize": f"launch-ui --mode ingestion --index {index_name}",
     }
-
