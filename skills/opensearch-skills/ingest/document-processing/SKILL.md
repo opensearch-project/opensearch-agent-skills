@@ -14,7 +14,7 @@ metadata:
 
 # Document Processing
 
-Process unstructured documents into search-ready JSONL chunks using [Docling](https://docling.site/) (open-source, runs locally). No AWS credentials or cloud services needed.
+Process unstructured documents into search-ready JSONL chunks using [Docling](https://docling-project.github.io/docling/) (open-source, runs locally). No AWS credentials or cloud services needed.
 
 ## Prerequisites
 
