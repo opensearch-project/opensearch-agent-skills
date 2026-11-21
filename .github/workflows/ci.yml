@@ -19,7 +19,7 @@ jobs:
       - name: Install UV
         uses: astral-sh/setup-uv@d0cc045d04ccac9d8b7881df0226f9e82c39688e # v6
       - name: Run tests
-        run: uv run pytest tests/ --ignore=tests/evals -v
+        run: uv run --group ingestion pytest tests/ --ignore=tests/evals -v
 
   test-macos:
     name: Test on macOS
@@ -34,7 +34,7 @@ jobs:
       - name: Install UV
         uses: astral-sh/setup-uv@d0cc045d04ccac9d8b7881df0226f9e82c39688e # v6
       - name: Run tests
-        run: uv run pytest tests/ --ignore=tests/evals -v
+        run: uv run --group ingestion pytest tests/ --ignore=tests/evals -v
 
   test-windows:
     name: Test on Windows
@@ -50,4 +50,4 @@ jobs:
         uses: astral-sh/setup-uv@d0cc045d04ccac9d8b7881df0226f9e82c39688e # v6
       - name: Run tests
         shell: pwsh
-        run: uv run pytest tests/ --ignore=tests/evals -v
+        run: uv run --group ingestion pytest tests/ --ignore=tests/evals -v

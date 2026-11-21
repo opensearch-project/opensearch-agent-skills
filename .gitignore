@@ -45,6 +45,8 @@ venv/
 .kiro/*
 !.kiro/skills
 local/
+/relevance-ui/
+/RELEVANCE_X_RAY_VIDEO_TRANSCRIPT.md
 
 # MCP config (may contain credentials)
 .mcp.json
@@ -52,5 +54,4 @@ local/
 # OS files
 .DS_Store
 Thumbs.db
-
 

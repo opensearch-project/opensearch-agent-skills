@@ -1,0 +1,20 @@
+{"index":{"_index":"relevance-x-ray-demo","_id":"1"}}
+{"title":"Lightweight Running Trainers","description":"Breathable mesh trainers built for daily runs and light trail use.","stemmed_text":"running shoes for daily training","brand":"TrailCo","category":"footwear","price":79.99,"popularity":88.0,"embedding":[0.92,0.08,0.0]}
+{"index":{"_index":"relevance-x-ray-demo","_id":"2"}}
+{"title":"Classic Canvas Sneakers","description":"Everyday canvas sneakers with a rubber sole.","stemmed_text":"casual canvas footwear","brand":"UrbanStep","category":"footwear","price":49.99,"popularity":95.0,"embedding":[1.0,0.0,0.0]}
+{"index":{"_index":"relevance-x-ray-demo","_id":"3"}}
+{"title":"Trail Trainers for Wet Weather","description":"Waterproof trainers with a reinforced toe cap.","stemmed_text":"wet weather trail footwear","brand":"TrailCo","category":"footwear","price":89.99,"popularity":72.0,"embedding":[0.85,0.15,0.0]}
+{"index":{"_index":"relevance-x-ray-demo","_id":"4"}}
+{"title":"Wireless Charging Pad","description":"Fast wireless charger compatible with most phone cases.","stemmed_text":"charging phones wirelessly","brand":"VoltEdge","category":"electronics","price":24.99,"popularity":91.0,"embedding":[0.0,1.0,0.0]}
+{"index":{"_index":"relevance-x-ray-demo","_id":"5"}}
+{"title":"Everyday Sneakers and Trainers","description":"A casual listing using both sneakers and trainers terminology.","stemmed_text":"casual footwear terminology","brand":"MetroSole","category":"footwear","price":59.99,"popularity":68.0,"embedding":[0.8,0.2,0.0]}
+{"index":{"_index":"relevance-x-ray-demo","_id":"6"}}
+{"title":"Road Sneakers, also known as Trainers","description":"Road footwear described with both sneakers and trainers vocabulary.","stemmed_text":"road footwear vocabulary","brand":"PaceWorks","category":"footwear","price":69.99,"popularity":76.0,"embedding":[0.78,0.22,0.0]}
+{"index":{"_index":"relevance-x-ray-demo","_id":"7"}}
+{"title":"Leather Hiking Boots","description":"Supportive leather boots for long mountain hikes, designed as an alternative to sneakers.","stemmed_text":"hiking mountain boots","brand":"TrailCo","category":"footwear","price":119.99,"popularity":64.0,"embedding":[0.55,0.45,0.0]}
+{"index":{"_index":"relevance-x-ray-demo","_id":"8"}}
+{"title":"Efficient Running Guide","description":"A guide to efficient form and pacing.","stemmed_text":"running efficiently","brand":"PacePress","category":"books","price":19.99,"popularity":55.0,"embedding":[0.7,0.3,0.0]}
+{"index":{"_index":"relevance-x-ray-demo","_id":"9"}}
+{"title":"Summer Walking Sandals","description":"Open sandals for warm weather walks when sneakers are too warm.","stemmed_text":"walking in warm weather","brand":"CoastStep","category":"footwear","price":39.99,"popularity":61.0,"embedding":[0.3,0.7,0.0]}
+{"index":{"_index":"relevance-x-ray-demo","_id":"10"}}
+{"title":"Developer Laptop","description":"Portable workstation with a high resolution display.","stemmed_text":"software development workstation","brand":"Northstar","category":"electronics","price":1499.0,"popularity":84.0,"embedding":[0.0,0.0,1.0]}

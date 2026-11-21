@@ -55,11 +55,33 @@ def resolve_http_auth() -> tuple[str, str] | None:
     return OPENSEARCH_DEFAULT_USER, OPENSEARCH_DEFAULT_PASSWORD
 
 
+def _is_local_host(host: str) -> bool:
+    """Return whether a host is explicitly local to this machine."""
+    normalized = str(host or "").strip().lower().rstrip(".")
+    return normalized in {"localhost", "127.0.0.1", "0.0.0.0", "::1"}
+
+
+def connection_ssl_modes(
+    http_auth: tuple[str, str] | None,
+    *,
+    host: str | None = None,
+    prefer_ssl: bool = True,
+) -> tuple[bool, ...]:
+    """Return safe protocol attempts for the endpoint and auth mode.
+
+    Basic credentials may use plaintext HTTP only for explicit loopback hosts.
+    """
+    target_host = OPENSEARCH_HOST if host is None else host
+    if http_auth is not None and not _is_local_host(target_host):
+        return (True,)
+    return (True, False) if prefer_ssl else (False, True)
+
+
 def build_client(use_ssl: bool, http_auth: tuple[str, str] | None = None) -> OpenSearch:
     # This client targets local Docker dev clusters. TLS verification is
     # disabled only for loopback hosts (self-signed certs). For non-loopback
     # hosts, verify certificates to prevent MITM credential theft.
-    is_local = OPENSEARCH_HOST in ("localhost", "127.0.0.1", "::1") or OPENSEARCH_HOST.startswith("127.")
+    is_local = _is_local_host(OPENSEARCH_HOST)
     verify = use_ssl and not is_local
     kwargs = {
         "hosts": [{"host": OPENSEARCH_HOST, "port": OPENSEARCH_PORT}],
@@ -158,28 +180,22 @@ def _start_local_container() -> None:
 
 def _wait_for_cluster() -> OpenSearch:
     http_auth = resolve_http_auth()
-    secure = build_client(use_ssl=True, http_auth=http_auth)
-    insecure = build_client(use_ssl=False, http_auth=http_auth)
+    clients = [
+        build_client(use_ssl=use_ssl, http_auth=http_auth)
+        for use_ssl in connection_ssl_modes(http_auth)
+    ]
     deadline = time.time() + OPENSEARCH_DOCKER_START_TIMEOUT
 
     while time.time() < deadline:
-        ok, _ = can_connect(secure)
-        if ok:
-            return secure
-        ok, _ = can_connect(insecure)
-        if ok:
-            return insecure
+        for client in clients:
+            ok, _ = can_connect(client)
+            if ok:
+                return client
         time.sleep(2)
 
     raise RuntimeError(
         f"OpenSearch did not become ready within {OPENSEARCH_DOCKER_START_TIMEOUT}s."
     )
-
-
-def _is_local_host(host: str) -> bool:
-    """Check if the given host is a local address."""
-    return host in {"localhost", "127.0.0.1", "0.0.0.0", "::1"}
-
 
 def preflight_check_cluster(
     auth_mode: str = "",
@@ -226,7 +242,8 @@ def preflight_check_cluster(
             return result
 
         custom_auth = (user, pwd)
-        for use_ssl in (True, False):
+        ssl_modes = connection_ssl_modes(custom_auth, host=host)
+        for use_ssl in ssl_modes:
             client = build_client(use_ssl=use_ssl, http_auth=custom_auth)
             ok, _ = can_connect(client)
             if ok:
@@ -247,16 +264,25 @@ def preflight_check_cluster(
                 return result
 
         result["status"] = "auth_required"
-        result["message"] = (
-            f"OpenSearch cluster at {host}:{port} rejected the provided "
-            f"credentials. Please verify username/password and try again."
-        )
-        result["auth_modes_tried"] = ["custom_ssl", "custom_http"]
+        if False not in ssl_modes:
+            result["message"] = (
+                f"Could not authenticate to OpenSearch at {host}:{port} over HTTPS. "
+                "Plaintext HTTP was not attempted because the endpoint is not local."
+            )
+        else:
+            result["message"] = (
+                f"OpenSearch cluster at {host}:{port} rejected the provided "
+                f"credentials. Please verify username/password and try again."
+            )
+        result["auth_modes_tried"] = [
+            f"custom_{'ssl' if use_ssl else 'http'}" for use_ssl in ssl_modes
+        ]
         return result
 
     # --- Caller-supplied no-auth mode ---
     if normalized_mode == "none":
-        for use_ssl in (False, True):
+        ssl_modes = connection_ssl_modes(None, host=host, prefer_ssl=False)
+        for use_ssl in ssl_modes:
             client = build_client(use_ssl=use_ssl, http_auth=None)
             ok, _ = can_connect(client)
             if ok:
@@ -280,13 +306,16 @@ def preflight_check_cluster(
             f"Could not connect to OpenSearch at {host}:{port} without "
             f"authentication. The cluster may require credentials."
         )
-        result["auth_modes_tried"] = ["none_http", "none_ssl"]
+        result["auth_modes_tried"] = [
+            f"none_{'ssl' if use_ssl else 'http'}" for use_ssl in ssl_modes
+        ]
         return result
 
     # --- Explicit default mode ---
     if normalized_mode == "default":
         default_auth = (OPENSEARCH_DEFAULT_USER, OPENSEARCH_DEFAULT_PASSWORD)
-        for use_ssl in (True, False):
+        ssl_modes = connection_ssl_modes(default_auth, host=host)
+        for use_ssl in ssl_modes:
             client = build_client(use_ssl=use_ssl, http_auth=default_auth)
             ok, _ = can_connect(client)
             if ok:
@@ -306,11 +335,19 @@ def preflight_check_cluster(
                 return result
 
         result["status"] = "auth_required"
-        result["message"] = (
-            f"Could not connect to OpenSearch at {host}:{port} with "
-            f"default credentials. The cluster may require custom credentials."
-        )
-        result["auth_modes_tried"] = ["default_ssl", "default_http"]
+        if False not in ssl_modes:
+            result["message"] = (
+                f"Could not authenticate to OpenSearch at {host}:{port} over HTTPS. "
+                "Plaintext HTTP was not attempted because the endpoint is not local."
+            )
+        else:
+            result["message"] = (
+                f"Could not connect to OpenSearch at {host}:{port} with "
+                f"default credentials. The cluster may require custom credentials."
+            )
+        result["auth_modes_tried"] = [
+            f"default_{'ssl' if use_ssl else 'http'}" for use_ssl in ssl_modes
+        ]
         return result
 
     # --- Auto-detect (no auth args supplied) ---
@@ -318,12 +355,15 @@ def preflight_check_cluster(
     saw_auth_failure = False
 
     default_auth = (OPENSEARCH_DEFAULT_USER, OPENSEARCH_DEFAULT_PASSWORD)
-    probes: list[tuple[bool, tuple[str, str] | None, str]] = [
-        (False, None, "none_http"),
-        (True, None, "none_ssl"),
-        (True, default_auth, "default_ssl"),
-        (False, default_auth, "default_http"),
-    ]
+    probes: list[tuple[bool, tuple[str, str] | None, str]] = []
+    probes.extend(
+        (use_ssl, None, f"none_{'ssl' if use_ssl else 'http'}")
+        for use_ssl in connection_ssl_modes(None, host=host, prefer_ssl=False)
+    )
+    probes.extend(
+        (use_ssl, default_auth, f"default_{'ssl' if use_ssl else 'http'}")
+        for use_ssl in connection_ssl_modes(default_auth, host=host)
+    )
 
     for use_ssl, http_auth, label in probes:
         auth_modes_tried.append(label)
@@ -383,19 +423,27 @@ def clear_cluster_credentials() -> None:
 def create_client() -> OpenSearch:
     http_auth = resolve_http_auth()
 
-    secure = build_client(use_ssl=True, http_auth=http_auth)
-    ok, _ = can_connect(secure)
-    if ok:
-        return secure
-
-    insecure = build_client(use_ssl=False, http_auth=http_auth)
-    ok, auth_fail = can_connect(insecure)
-    if ok:
-        return insecure
+    auth_fail = False
+    for use_ssl in connection_ssl_modes(http_auth):
+        client = build_client(use_ssl=use_ssl, http_auth=http_auth)
+        ok, attempt_auth_fail = can_connect(client)
+        auth_fail = auth_fail or attempt_auth_fail
+        if ok:
+            return client
 
     if auth_fail:
         raise RuntimeError(
             f"Authentication failed connecting to OpenSearch at {OPENSEARCH_HOST}:{OPENSEARCH_PORT}."
+        )
+    if not _is_local_host(OPENSEARCH_HOST):
+        protocol_note = (
+            " Plaintext HTTP was not attempted with credentials."
+            if http_auth is not None
+            else ""
+        )
+        raise RuntimeError(
+            f"Could not connect to remote OpenSearch at "
+            f"{OPENSEARCH_HOST}:{OPENSEARCH_PORT}.{protocol_note}"
         )
 
     _start_local_container()
