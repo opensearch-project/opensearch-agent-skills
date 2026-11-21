@@ -102,6 +102,24 @@
     "rationale": "Document processing (Docling) routes to the ingest/document-processing skill"
   },
   {
+    "id": "routing-permission-01",
+    "prompt": "I need search where each user only sees the documents they are authorized to read, enforced by OpenSearch not my app code",
+    "expected_skill": "permission-aware-search",
+    "rationale": "Permission-aware / document-level access control at the search layer"
+  },
+  {
+    "id": "routing-permission-02",
+    "prompt": "How do I set up document-level security with a terms lookup query so one role scales to all users?",
+    "expected_skill": "permission-aware-search",
+    "rationale": "DLS + TLQ are permission-aware-search keywords"
+  },
+  {
+    "id": "routing-permission-03",
+    "prompt": "Build a permission-aware RAG pipeline where the LLM never sees documents the caller cannot access",
+    "expected_skill": "permission-aware-search",
+    "rationale": "Permission-aware RAG is the optional mode of permission-aware-search"
+  },
+  {
     "id": "routing-negative-01",
     "prompt": "Bulk index my product catalog JSON into OpenSearch using the _bulk API",
     "expected_skill": "opensearch-launchpad",

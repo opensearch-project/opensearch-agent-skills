@@ -39,10 +39,35 @@ PRETRAINED_MODELS = {
     "amazon/metrics_correlation": "1.0.0b2",
 }
 
+DEFAULT_TEXT_EMBEDDING_MODEL = "huggingface/sentence-transformers/all-MiniLM-L6-v2"
+
 
 # ---------------------------------------------------------------------------
 # ML helpers
 # ---------------------------------------------------------------------------
+def find_registered_model(client: OpenSearch, model_name: str) -> dict | None:
+    """Return the root document of a registered model, or None if absent.
+
+    Chunk sub-documents are excluded: they carry `chunk_number` and no
+    `model_state`, so only the root document reports deployment state.
+    """
+    response = client.transport.perform_request(
+        "GET", "/_plugins/_ml/models/_search",
+        body={
+            "query": {
+                "bool": {
+                    "must": [{"match": {"name": model_name}}],
+                    "must_not": [{"exists": {"field": "chunk_number"}}],
+                }
+            },
+            "size": 1,
+        },
+    )
+    hits = response.get("hits", {}).get("hits", [])
+    return hits[0] if hits else None
+
+
+
 def _wait_for_ml_task(
     client: OpenSearch, task_id: str, *, max_polls: int = 100, interval: int = 3
 ) -> tuple[str, dict]:
@@ -71,6 +96,23 @@ def set_ml_settings(client: OpenSearch) -> None:
         }
     }
     client.transport.perform_request("PUT", "/_cluster/settings", body=body)
+
+
+# ---------------------------------------------------------------------------
+# Pipeline helpers
+# ---------------------------------------------------------------------------
+def put_ingest_pipeline(client: OpenSearch, pipeline_id: str, body: dict) -> None:
+    """Create or replace an ingest pipeline. Raises on failure."""
+    client.transport.perform_request(
+        "PUT", f"/_ingest/pipeline/{pipeline_id}", body=body
+    )
+
+
+def attach_default_pipeline(client: OpenSearch, index_name: str, pipeline_id: str) -> None:
+    """Make an ingest pipeline the index default, so every write runs it."""
+    client.indices.put_settings(
+        index=index_name, body={"index": {"default_pipeline": pipeline_id}}
+    )
 
 
 # ---------------------------------------------------------------------------

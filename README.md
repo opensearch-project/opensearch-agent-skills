@@ -11,6 +11,7 @@ Skills are organized in a tree — install the whole collection or pick individu
 | Category | Skill | Description |
 |----------|-------|-------------|
 | **Search** | [opensearch-launchpad](skills/opensearch-skills/search/opensearch-launchpad/) | Build search apps from scratch — BM25, semantic, hybrid, agentic search |
+| **Search** | [permission-aware-search](skills/opensearch-skills/search/permission-aware-search/) | Permission-aware search enforced by OpenSearch Document-Level Security (DLS) - users only see what they may read, with optional RAG |
 | **Observability** | [log-analytics](skills/opensearch-skills/observability/log-analytics/) | Query and analyze logs with PPL — error patterns, anomaly detection |
 | **Observability** | [trace-analytics](skills/opensearch-skills/observability/trace-analytics/) | Investigate distributed traces — slow spans, service maps, agent invocations |
 | **Cloud** | [aws-setup](skills/opensearch-skills/cloud/aws-setup/) | Deploy to Amazon OpenSearch Service or Serverless |
@@ -31,6 +32,7 @@ npx skills add opensearch-project/opensearch-agent-skills
 
 # Install a specific skill
 npx skills add opensearch-project/opensearch-agent-skills@opensearch-launchpad --full-depth
+npx skills add opensearch-project/opensearch-agent-skills@permission-aware-search --full-depth
 npx skills add opensearch-project/opensearch-agent-skills@log-analytics --full-depth
 npx skills add opensearch-project/opensearch-agent-skills@trace-analytics --full-depth
 npx skills add opensearch-project/opensearch-agent-skills@aws-setup --full-depth
@@ -90,12 +92,16 @@ skills/
   opensearch-skills/                  # Top-level meta-skill
     SKILL.md                          # Routes to category skills
     cli-reference.md                  # Shared CLI command reference
-    scripts/                          # Shared scripts, UI, sample data
+    scripts/                          # Shared scripts (opensearch_ops.py,
+                                      #   permission_search.py), lib, UI, sample data
     search/                           # Category: Search
       SKILL.md
       opensearch-launchpad/           # Search app builder
         SKILL.md
         *.md                          # Model guides, evaluation, strategies
+      permission-aware-search/        # Permission-aware search (DLS) + optional RAG
+        SKILL.md
+        references/                   # DLS model, index mapping, embedding, CLI
     observability/                    # Category: Observability
       SKILL.md
       log-analytics/                  # Log querying & analysis

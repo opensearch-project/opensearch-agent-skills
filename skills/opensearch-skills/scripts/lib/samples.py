@@ -1,17 +1,24 @@
 """Sample data loading for OpenSearch search builder."""
 
 import csv
-import http.client
-import ipaddress
 import json
 import os
-import socket
 import sys
 import urllib.request
 from pathlib import Path
 from urllib.parse import urlparse
 
 from .client import create_client
+from .http_safe import (
+    RevalidatingRedirectHandler,
+    ValidatingHTTPConnection,
+    ValidatingHTTPHandler,
+    ValidatingHTTPSConnection,
+    ValidatingHTTPSHandler,
+    build_safe_opener,
+    is_restricted_ip,
+    validate_url,
+)
 
 
 def _load_records_from_file(file_path: Path, limit: int = 10) -> tuple[list[dict], str | None]:
@@ -194,82 +201,16 @@ def load_sample_from_file(file_path: str) -> str:
     }, ensure_ascii=False, default=str)
 
 
-def _is_restricted_ip(ip_str: str) -> bool:
-    """True if ip_str is private, loopback, link-local (includes
-    169.254.0.0/16), or otherwise reserved."""
-    addr = ipaddress.ip_address(ip_str)
-    if isinstance(addr, ipaddress.IPv6Address) and addr.ipv4_mapped:
-        addr = addr.ipv4_mapped
-    return (
-        addr.is_private
-        or addr.is_loopback
-        or addr.is_link_local
-        or addr.is_reserved
-        or addr.is_unspecified
-        or addr.is_multicast
-    )
-
-
-def _validate_url(url: str) -> None:
-    """Only allow http/https URLs whose host resolves to a public address."""
-    parsed = urlparse(url)
-    if parsed.scheme not in ("http", "https"):
-        raise ValueError(f"URL scheme must be http or https, got: {parsed.scheme!r}")
-    hostname = parsed.hostname
-    if not hostname:
-        raise ValueError("URL must include a hostname")
-    try:
-        infos = socket.getaddrinfo(hostname, parsed.port or 443, proto=socket.IPPROTO_TCP)
-    except socket.gaierror as e:
-        raise ValueError(f"Could not resolve host: {hostname} ({e})")
-    for info in infos:
-        if _is_restricted_ip(info[4][0]):
-            raise ValueError(f"URL resolves to a restricted address: {info[4][0]}")
-
-
-class _RevalidatingConnectionMixin:
-    """Re-checks the resolved address right before connecting."""
-
-    def connect(self):
-        for info in socket.getaddrinfo(self.host, self.port, proto=socket.IPPROTO_TCP):
-            if _is_restricted_ip(info[4][0]):
-                raise ValueError(f"URL resolves to a restricted address: {info[4][0]}")
-        super().connect()
-
-
-class _ValidatingHTTPConnection(_RevalidatingConnectionMixin, http.client.HTTPConnection):
-    pass
-
-
-class _ValidatingHTTPSConnection(_RevalidatingConnectionMixin, http.client.HTTPSConnection):
-    pass
-
-
-class _ValidatingHTTPHandler(urllib.request.HTTPHandler):
-    def http_open(self, req):
-        return self.do_open(_ValidatingHTTPConnection, req)
-
-
-class _ValidatingHTTPSHandler(urllib.request.HTTPSHandler):
-    def https_open(self, req):
-        return self.do_open(_ValidatingHTTPSConnection, req)
-
-
-class _RevalidatingRedirectHandler(urllib.request.HTTPRedirectHandler):
-    """Re-validates each redirect target before following it."""
-
-    def redirect_request(self, req, fp, code, msg, headers, newurl):
-        _validate_url(newurl)
-        return super().redirect_request(req, fp, code, msg, headers, newurl)
-
-
-def _build_safe_opener() -> urllib.request.OpenerDirector:
-    return urllib.request.build_opener(
-        urllib.request.ProxyHandler({}),
-        _ValidatingHTTPHandler(),
-        _ValidatingHTTPSHandler(),
-        _RevalidatingRedirectHandler(),
-    )
+# The SSRF-hardened fetch stack lives in lib/http_safe.py so that every caller
+# shares one implementation. These names are kept for existing callers.
+_is_restricted_ip = is_restricted_ip
+_validate_url = validate_url
+_build_safe_opener = build_safe_opener
+_ValidatingHTTPConnection = ValidatingHTTPConnection
+_ValidatingHTTPSConnection = ValidatingHTTPSConnection
+_ValidatingHTTPHandler = ValidatingHTTPHandler
+_ValidatingHTTPSHandler = ValidatingHTTPSHandler
+_RevalidatingRedirectHandler = RevalidatingRedirectHandler
 
 
 def load_sample_from_url(url: str) -> str:
