@@ -7,6 +7,8 @@ description: >
   observability task. Activate even if the user says log analysis, Fluent Bit,
   Fluentd, Logstash, syslog, traceId, OpenTelemetry, PPL, span, latency,
   error rate, anomaly detection, or log analytics without mentioning OpenSearch.
+  For root cause analysis, RCA, postmortem, incident investigation, or checking
+  whether a reported spike is real, route to the unclosed skill.
 compatibility: Requires a running OpenSearch cluster. PPL queries require the SQL plugin (built-in).
 metadata:
   author: opensearch-project
@@ -23,6 +25,7 @@ Category skill for log analytics and trace investigation with OpenSearch.
 |---|---|
 | [log-analytics](log-analytics/SKILL.md) | Query and analyze log data — error patterns, log volume, anomaly detection, PPL queries |
 | [trace-analytics](trace-analytics/SKILL.md) | Investigate distributed traces — slow spans, error spans, service maps, agent invocations |
+| [unclosed](unclosed/SKILL.md) | Audit whether a reported incident is real before investigating, and report the derivation tree instead of asserting a root cause |
 
 ## When to Use
 
@@ -30,4 +33,5 @@ Category skill for log analytics and trace investigation with OpenSearch.
 |---|---|
 | Query logs, analyze errors, discover patterns, check log volume | [log-analytics](log-analytics/SKILL.md) |
 | Investigate traces, debug spans, analyze latency, service dependencies | [trace-analytics](trace-analytics/SKILL.md) |
+| Verify a reported spike/regression is real, audit an incident's premise, demand the causal chain close | [unclosed](unclosed/SKILL.md) |
 | Both logs and traces (e.g., correlate errors with spans) | Start with the primary intent, cross-reference using `traceId` |
