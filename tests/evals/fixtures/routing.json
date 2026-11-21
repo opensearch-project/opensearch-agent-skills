@@ -18,6 +18,24 @@
     "rationale": "Document ingestion + search setup"
   },
   {
+    "id": "routing-tuner-01",
+    "prompt": "My k-NN index is running out of heap. Benchmark FP16 vs FP32 and tell me the cheapest config that still holds recall@10 above 0.95.",
+    "expected_skill": "ai-search-tuner",
+    "rationale": "Tuning an existing k-NN index for recall vs graph-memory — a quantization/OOM tradeoff, not building a new app"
+  },
+  {
+    "id": "routing-tuner-02",
+    "prompt": "My neural sparse index is 6x larger than BM25. What prune_ratio shrinks it without hurting NDCG?",
+    "expected_skill": "ai-search-tuner",
+    "rationale": "Neural sparse prune_ratio tuning to reduce index size — an ai-search-tuner benchmark"
+  },
+  {
+    "id": "routing-tuner-03",
+    "prompt": "I'm guessing dense:sparse hybrid weights of 0.3/0.7. Find the empirically optimal ratio for my corpus.",
+    "expected_skill": "ai-search-tuner",
+    "rationale": "Hybrid weight optimization via measured NDCG on an existing setup — not app building"
+  },
+  {
     "id": "routing-logs-01",
     "prompt": "Show me the top 10 errors in my application logs from the last hour",
     "expected_skill": "log-analytics",

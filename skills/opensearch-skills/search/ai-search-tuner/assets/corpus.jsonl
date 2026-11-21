@@ -1,0 +1,67 @@
+{"id": "v0", "text": "generic corpus record entry item", "vector": [0.9578262852211513, 0.0, 0.0, 0.0, 0.2873478855663454, 0.0, 0.0, 0.0]}
+{"id": "v1", "text": "generic corpus record entry item", "vector": [0.9524241471993242, 0.0, 0.0, 0.0, 0.30477572710378376, 0.0, 0.0, 0.0]}
+{"id": "v2", "text": "generic corpus record entry item", "vector": [0.9467727448197129, 0.0, 0.0, 0.0, 0.32190273323870233, 0.0, 0.0, 0.0]}
+{"id": "v3", "text": "generic corpus record entry item", "vector": [0.9408874118687268, 0.0, 0.0, 0.0, 0.33871946827274163, 0.0, 0.0, 0.0]}
+{"id": "v4", "text": "generic corpus record entry item", "vector": [0.9347835805883489, 0.0, 0.0, 0.0, 0.3552177606235726, 0.0, 0.0, 0.0]}
+{"id": "v5", "text": "generic corpus record entry item", "vector": [0.9284766908852592, 0.0, 0.0, 0.0, 0.37139067635410367, 0.0, 0.0, 0.0]}
+{"id": "v6", "text": "generic corpus record entry item", "vector": [0.0, 0.9578262852211513, 0.0, 0.0, 0.0, 0.2873478855663454, 0.0, 0.0]}
+{"id": "v7", "text": "generic corpus record entry item", "vector": [0.0, 0.9524241471993242, 0.0, 0.0, 0.0, 0.30477572710378376, 0.0, 0.0]}
+{"id": "v8", "text": "generic corpus record entry item", "vector": [0.0, 0.9467727448197129, 0.0, 0.0, 0.0, 0.32190273323870233, 0.0, 0.0]}
+{"id": "v9", "text": "generic corpus record entry item", "vector": [0.0, 0.9408874118687268, 0.0, 0.0, 0.0, 0.33871946827274163, 0.0, 0.0]}
+{"id": "v10", "text": "generic corpus record entry item", "vector": [0.0, 0.9347835805883489, 0.0, 0.0, 0.0, 0.3552177606235726, 0.0, 0.0]}
+{"id": "v11", "text": "generic corpus record entry item", "vector": [0.0, 0.9284766908852592, 0.0, 0.0, 0.0, 0.37139067635410367, 0.0, 0.0]}
+{"id": "v12", "text": "generic corpus record entry item", "vector": [0.0, 0.0, 0.9578262852211513, 0.0, 0.0, 0.0, 0.2873478855663454, 0.0]}
+{"id": "v13", "text": "generic corpus record entry item", "vector": [0.0, 0.0, 0.9524241471993242, 0.0, 0.0, 0.0, 0.30477572710378376, 0.0]}
+{"id": "v14", "text": "generic corpus record entry item", "vector": [0.0, 0.0, 0.9467727448197129, 0.0, 0.0, 0.0, 0.32190273323870233, 0.0]}
+{"id": "v15", "text": "generic corpus record entry item", "vector": [0.0, 0.0, 0.9408874118687268, 0.0, 0.0, 0.0, 0.33871946827274163, 0.0]}
+{"id": "v16", "text": "generic corpus record entry item", "vector": [0.0, 0.0, 0.9347835805883489, 0.0, 0.0, 0.0, 0.3552177606235726, 0.0]}
+{"id": "v17", "text": "generic corpus record entry item", "vector": [0.0, 0.0, 0.9284766908852592, 0.0, 0.0, 0.0, 0.37139067635410367, 0.0]}
+{"id": "v18", "text": "generic corpus record entry item", "vector": [0.0, 0.0, 0.0, 0.9578262852211513, 0.0, 0.0, 0.0, 0.2873478855663454]}
+{"id": "v19", "text": "generic corpus record entry item", "vector": [0.0, 0.0, 0.0, 0.9524241471993242, 0.0, 0.0, 0.0, 0.30477572710378376]}
+{"id": "v20", "text": "generic corpus record entry item", "vector": [0.0, 0.0, 0.0, 0.9467727448197129, 0.0, 0.0, 0.0, 0.32190273323870233]}
+{"id": "v21", "text": "generic corpus record entry item", "vector": [0.0, 0.0, 0.0, 0.9408874118687268, 0.0, 0.0, 0.0, 0.33871946827274163]}
+{"id": "v22", "text": "generic corpus record entry item", "vector": [0.0, 0.0, 0.0, 0.9347835805883489, 0.0, 0.0, 0.0, 0.3552177606235726]}
+{"id": "v23", "text": "generic corpus record entry item", "vector": [0.0, 0.0, 0.0, 0.9284766908852592, 0.0, 0.0, 0.0, 0.37139067635410367]}
+{"id": "t0", "text": "quantum entanglement physics manuscript 0", "vector": [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0]}
+{"id": "t1", "text": "quantum entanglement physics manuscript 1", "vector": [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.029986509105671005, 0.9995503035223668]}
+{"id": "t2", "text": "quantum entanglement physics manuscript 2", "vector": [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.059892290727946725, 0.9982048454657787]}
+{"id": "t3", "text": "quantum entanglement physics manuscript 3", "vector": [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.08963769949589058, 0.9959744388432287]}
+{"id": "t4", "text": "maritime shipping logistics manuscript 4", "vector": [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0]}
+{"id": "t5", "text": "maritime shipping logistics manuscript 5", "vector": [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.029986509105671005, 0.9995503035223668]}
+{"id": "t6", "text": "maritime shipping logistics manuscript 6", "vector": [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.059892290727946725, 0.9982048454657787]}
+{"id": "t7", "text": "maritime shipping logistics manuscript 7", "vector": [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.08963769949589058, 0.9959744388432287]}
+{"id": "t8", "text": "baroque orchestral composition manuscript 8", "vector": [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0]}
+{"id": "t9", "text": "baroque orchestral composition manuscript 9", "vector": [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.029986509105671005, 0.9995503035223668]}
+{"id": "t10", "text": "baroque orchestral composition manuscript 10", "vector": [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.059892290727946725, 0.9982048454657787]}
+{"id": "t11", "text": "baroque orchestral composition manuscript 11", "vector": [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.08963769949589058, 0.9959744388432287]}
+{"id": "t12", "text": "volcanic sediment geology manuscript 12", "vector": [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0]}
+{"id": "t13", "text": "volcanic sediment geology manuscript 13", "vector": [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.029986509105671005, 0.9995503035223668]}
+{"id": "t14", "text": "volcanic sediment geology manuscript 14", "vector": [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.059892290727946725, 0.9982048454657787]}
+{"id": "t15", "text": "volcanic sediment geology manuscript 15", "vector": [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.08963769949589058, 0.9959744388432287]}
+{"id": "t16", "text": "pediatric cardiology surgery manuscript 16", "vector": [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0]}
+{"id": "t17", "text": "pediatric cardiology surgery manuscript 17", "vector": [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.029986509105671005, 0.9995503035223668]}
+{"id": "t18", "text": "pediatric cardiology surgery manuscript 18", "vector": [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.059892290727946725, 0.9982048454657787]}
+{"id": "t19", "text": "pediatric cardiology surgery manuscript 19", "vector": [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.08963769949589058, 0.9959744388432287]}
+{"id": "t20", "text": "arctic migratory ornithology manuscript 20", "vector": [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0]}
+{"id": "t21", "text": "arctic migratory ornithology manuscript 21", "vector": [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.029986509105671005, 0.9995503035223668]}
+{"id": "t22", "text": "arctic migratory ornithology manuscript 22", "vector": [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.059892290727946725, 0.9982048454657787]}
+{"id": "t23", "text": "arctic migratory ornithology manuscript 23", "vector": [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.08963769949589058, 0.9959744388432287]}
+{"id": "hA0", "text": "neural network training deep model variant 0", "vector": [0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0]}
+{"id": "hA1", "text": "neural network training deep model variant 1", "vector": [0.0, 0.0, 0.0, 0.0, 0.04993761694389223, 0.9987523388778446, 0.0, 0.0]}
+{"id": "hA2", "text": "neural network training deep model variant 2", "vector": [0.0, 0.0, 0.0, 0.0, 0.09950371902099893, 0.9950371902099893, 0.0, 0.0]}
+{"id": "hB0", "text": "unrelated ledger inventory token 0", "vector": [0.7071067811865475, 0.7071067811865475, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]}
+{"id": "hB1", "text": "unrelated ledger inventory token 1", "vector": [0.7058823529411765, 0.7058823529411765, 0.05882352941176471, 0.0, 0.0, 0.0, 0.0, 0.0]}
+{"id": "hB2", "text": "unrelated ledger inventory token 2", "vector": [0.7022468831767834, 0.7022468831767834, 0.11704114719613057, 0.0, 0.0, 0.0, 0.0, 0.0]}
+{"id": "hQ", "text": "neural network training", "vector": [0.7071067811865475, 0.7071067811865475, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]}
+{"id": "hDsp0", "text": "neural network unrelated noise 0", "vector": [0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0]}
+{"id": "hDde0", "text": "ledger inventory filler 0", "vector": [0.7071067811865475, 0.7071067811865475, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]}
+{"id": "hDsp1", "text": "neural network unrelated noise 1", "vector": [0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0]}
+{"id": "hDde1", "text": "ledger inventory filler 1", "vector": [0.7022468831767834, 0.7022468831767834, 0.0, 0.0, 0.0, 0.0, 0.0, 0.11704114719613057]}
+{"id": "hDsp2", "text": "neural network unrelated noise 2", "vector": [0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0]}
+{"id": "hDde2", "text": "ledger inventory filler 2", "vector": [0.6882472016116853, 0.6882472016116853, 0.0, 0.0, 0.0, 0.0, 0.0, 0.2294157338705618]}
+{"id": "x0", "text": "unrelated filler noise 0", "vector": [0.7832604499879573, 0.23497813499638717, 0.23497813499638717, 0.23497813499638717, 0.23497813499638717, 0.23497813499638717, 0.23497813499638717, 0.23497813499638717]}
+{"id": "x1", "text": "unrelated filler noise 1", "vector": [0.23497813499638717, 0.7832604499879573, 0.23497813499638717, 0.23497813499638717, 0.23497813499638717, 0.23497813499638717, 0.23497813499638717, 0.23497813499638717]}
+{"id": "x2", "text": "unrelated filler noise 2", "vector": [0.23497813499638717, 0.23497813499638717, 0.7832604499879573, 0.23497813499638717, 0.23497813499638717, 0.23497813499638717, 0.23497813499638717, 0.23497813499638717]}
+{"id": "x3", "text": "unrelated filler noise 3", "vector": [0.23497813499638717, 0.23497813499638717, 0.23497813499638717, 0.7832604499879573, 0.23497813499638717, 0.23497813499638717, 0.23497813499638717, 0.23497813499638717]}
+{"id": "x4", "text": "unrelated filler noise 4", "vector": [0.23497813499638717, 0.23497813499638717, 0.23497813499638717, 0.23497813499638717, 0.7832604499879573, 0.23497813499638717, 0.23497813499638717, 0.23497813499638717]}
+{"id": "x5", "text": "unrelated filler noise 5", "vector": [0.23497813499638717, 0.23497813499638717, 0.23497813499638717, 0.23497813499638717, 0.23497813499638717, 0.7832604499879573, 0.23497813499638717, 0.23497813499638717]}
